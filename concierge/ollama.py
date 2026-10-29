@@ -113,8 +113,18 @@ class Ollama:
         """Models in memory right now, with Ollama's own size figures."""
         return self._get("/api/ps").get("models", [])
 
+    def refresh(self, name: str, keep_alive: str) -> None:
+        """Restart a loaded model's unload timer. Loads it if it is not loaded."""
+        self._post("/api/generate", {"model": name, "keep_alive": keep_alive, "stream": False})
+
     def unload(self, name: str) -> None:
-        self._post("/api/generate", {"model": name, "keep_alive": 0})
+        # Short timeout: this also runs while Windows is closing the window,
+        # which allows a handler only about five seconds.
+        self._check(
+            requests.post(
+                f"{self.base_url}/api/generate", json={"model": name, "keep_alive": 0}, timeout=4
+            )
+        )
 
     # -------------------------------------------------------------- chat
 
@@ -124,10 +134,16 @@ class Ollama:
         messages: list[dict],
         think: bool | None = None,
         options: dict | None = None,
-        keep_alive: str = "30m",
+        keep_alive: str | None = None,
     ) -> Iterator[str]:
-        """Stream the reply's text as it is generated."""
-        body = {"model": model, "messages": messages, "keep_alive": keep_alive}
+        """Stream the reply's text as it is generated.
+
+        keep_alive is how long the model stays loaded after this reply, such
+        as "10m"; None leaves Ollama's default of five minutes.
+        """
+        body = {"model": model, "messages": messages}
+        if keep_alive is not None:
+            body["keep_alive"] = keep_alive
         if think is not None:
             body["think"] = think
         if options:

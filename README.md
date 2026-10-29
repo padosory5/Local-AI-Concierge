@@ -50,6 +50,20 @@ python -m concierge measure TAG # real graphics memory a model uses
 pytest                          # run the tests
 ```
 
+## When Elaina uses graphics memory
+
+Elaina is loaded once you send the first message, stays loaded while the
+program is open, and leaves when it closes. The settings are at the top of
+`concierge/elaina.py`:
+
+- `UNLOAD_ON_EXIT`: unload her right away on `/exit`, Ctrl+C or closing the
+  window.
+- `KEEP_ALIVE` and `HEARTBEAT_SECONDS`: if the program is killed without a
+  chance to clean up (Task Manager, a crash), Ollama frees her `KEEP_ALIVE`
+  after the program's last check-in.
+
+To free her by hand: `ollama stop elaina`.
+
 ## Growing the tested model list
 
 `models.yaml` is the list Elaina picks from, best first. Ollama's own memory

@@ -7,13 +7,62 @@ class FakeOllama:
         self.reply = reply
         self.caps = list(capabilities)
         self.calls = []
+        self.unloaded = []
 
     def capabilities(self, name):
         return self.caps
 
-    def chat(self, model, messages, think=None):
-        self.calls.append({"messages": list(messages), "think": think})
+    def chat(self, model, messages, think=None, keep_alive=None):
+        self.calls.append({"messages": list(messages), "think": think, "keep_alive": keep_alive})
         yield from self.reply.split(" ")
+
+    def unload(self, name):
+        self.unloaded.append(name)
+
+    is_loaded = False
+    refreshed = 0
+
+    def loaded(self):
+        return [{"name": "elaina:latest"}] if self.is_loaded else []
+
+    def refresh(self, name, keep_alive):
+        self.refreshed += 1
+
+
+def test_check_in_keeps_a_loaded_elaina_loaded():
+    chat = elaina.ElainaChat(FakeOllama())
+    chat.ollama.is_loaded = True
+    chat.check_in()
+    assert chat.ollama.refreshed == 1
+
+
+def test_check_in_never_loads_elaina():
+    chat = elaina.ElainaChat(FakeOllama())
+    chat.check_in()
+    assert chat.ollama.refreshed == 0
+
+
+def test_no_check_in_after_close():
+    chat = elaina.ElainaChat(FakeOllama())
+    chat.ollama.is_loaded = True
+    chat.close()
+    chat.check_in()
+    assert chat.ollama.refreshed == 0
+
+
+def test_close_unloads_elaina():
+    chat = elaina.ElainaChat(FakeOllama())
+    "".join(chat.send("hello"))
+    assert chat.ollama.calls[0]["keep_alive"] == elaina.KEEP_ALIVE
+    chat.close()
+    assert chat.ollama.unloaded == [elaina.ELAINA_MODEL]
+
+
+def test_close_can_be_turned_off(monkeypatch):
+    monkeypatch.setattr(elaina, "UNLOAD_ON_EXIT", False)
+    chat = elaina.ElainaChat(FakeOllama())
+    chat.close()
+    assert chat.ollama.unloaded == []
 
 
 def test_thinking_is_turned_off_for_thinking_models():

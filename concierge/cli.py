@@ -114,6 +114,14 @@ def cmd_chat() -> int:
         return 1
 
     chat = elaina.ElainaChat(ollama)
+    _on_window_close(chat.close)
+    try:
+        return _chat_loop(chat)
+    finally:
+        chat.close()
+
+
+def _chat_loop(chat: elaina.ElainaChat) -> int:
     print("Chat with Elaina. Type /reset to start over, /exit to leave.\n")
     while True:
         try:
@@ -192,6 +200,39 @@ def _print_recommendation(rec: Recommendation) -> None:
           f"leaving {rec.left_free_gb:g} GB for your other apps and agents.")
     print(f"  Download size: {rec.model.download_gb:g} GB")
     print(f"  Why: {rec.reason}\n")
+
+
+_close_handlers = []  # Keeps the Windows callback alive while the program runs.
+
+
+def _on_window_close(callback) -> None:
+    """Run callback when the terminal window is closed, not only on /exit.
+
+    Closing the window skips Python's normal shutdown, so `finally` blocks
+    never run. Windows sends a close event first and allows about five
+    seconds; macOS and Linux send SIGHUP.
+    """
+    if sys.platform == "win32":
+        import ctypes
+
+        close_events = (2, 5, 6)  # window closed, user logged off, shutdown
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_uint)
+        def handler(event):
+            if event in close_events:
+                callback()
+            return False  # Let Windows (and Python's Ctrl+C handling) carry on.
+
+        _close_handlers.append(handler)
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(handler, True)
+    else:
+        import signal
+
+        def on_hangup(signum, frame):
+            callback()
+            sys.exit(0)
+
+        signal.signal(signal.SIGHUP, on_hangup)
 
 
 def _confirm(question: str) -> bool:
