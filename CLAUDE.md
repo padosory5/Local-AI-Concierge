@@ -7,7 +7,7 @@ are not technical: plain words, no jargon, nothing complicated.
 
 Two people work on this, each on their own branch:
 - **Engine** (`concierge/`): hardware check, model choice, Elaina, agents.
-- **UI**: the chat window. Just a chat with Elaina and her agents.
+- **UI** (`concierge/ui/`): the chat window. Just a chat with Elaina and her agents.
 
 ## The rule between UI and engine
 
@@ -73,6 +73,8 @@ py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 python -m concierge          # terminal version: hardware, model, setup, chat
+python -m concierge.ui       # chat window with the real Elaina
+python -m concierge.ui --fake # chat window with FakeEngine, no model needed
 pytest                       # all tests; none need Ollama
 python -m concierge.agents.eval_router   # router accuracy with the real model
 ```
@@ -87,3 +89,32 @@ python -m concierge.agents.eval_router   # router accuracy with the real model
   often wrong; measure the card (`python -m concierge measure <tag>`).
 - Talk to Ollama at `127.0.0.1`, never `localhost` (IPv6 delay on Windows).
 - Comments explain why, in plain sentences, like the existing code.
+
+## Names in use
+
+Both people work with Claude, so this list keeps us (and our Claudes) from
+picking the same name twice or building something that already exists.
+Before adding a module, class, function, constant, command or event that
+other code can see, check this list. When you add, rename or remove one,
+update the list in the same commit. Private helpers (leading `_`) and
+variables inside a function do not need listing.
+
+| File | Side | Names |
+| --- | --- | --- |
+| `concierge/hardware.py` | Engine | `GB`, `MIN_USABLE_VRAM_GB`, `GPU`, `HardwareReport`, `detect`, `parse_nvidia_smi`, `describe` |
+| `concierge/catalog.py` | Engine | `CATALOG_PATH`, `GPU_SHARE`, `APPLE_SHARE`, `CPU_SHARE`, `CPU_MAX_GB`, `GPU_HEADROOM_GB`, `RAM_HEADROOM_GB`, `DISK_HEADROOM_GB`, `ModelEntry`, `Recommendation`, `load_catalog`, `find_model`, `memory_budget`, `recommend` |
+| `concierge/elaina.py` | Engine | `ELAINA_MODEL`, `PERSONA_PATH`, `NUM_CTX`, `HISTORY_CHARS`, `UNLOAD_ON_EXIT`, `KEEP_ALIVE`, `HEARTBEAT_SECONDS`, `system_prompt`, `configure`, `needs_configure`, `ElainaChat`, `data_dir`, `load_state`, `save_state` |
+| `concierge/ollama.py` | Engine | `DEFAULT_URL`, `DOWNLOAD_PAGE`, `OllamaError`, `Ollama` |
+| `concierge/events.py` | Both (contract) | `SystemInfo`, `ElainaText`, `ElainaDone`, `Question`, `AgentCard`, `Progress`, `Source`, `Result`, `AgentList`, `Error`, `Event`, `to_dict`, `Engine` |
+| `concierge/engine.py` | Engine | `ElainaEngine` |
+| `concierge/fake_engine.py` | Engine | `FakeEngine` |
+| `concierge/cli.py` | Engine | `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure]` |
+| `concierge/agents/blueprint.py` | Engine | `BLUEPRINT_DIR`, `Slot`, `Blueprint`, `load_blueprints`; templates in `agents/blueprints/*.yaml` (`documents_qa`) |
+| `concierge/agents/builder.py` | Engine | `PLACES`, `CANCEL_WORDS`, `YES_WORDS`, `BLOCKED`, `SKIP_WHILE_SEARCHING`, `Draft`, `AgentBuilder`, `say`, `place_dirs`, `find_folders`, `is_blocked`, `describe_files` |
+| `concierge/agents/files.py` | Engine | `TEXT_TYPES`, `SUPPORTED`, `MAX_FILES`, `MAX_FILE_MB`, `PASSAGE_CHARS`, `PASSAGE_OVERLAP`, `Passage`, `ScanResult`, `scan`, `read_pages`, `split`, `passages_of`, `tokens`, `SearchIndex`, `folder_signature` |
+| `concierge/agents/router.py` | Engine | `WANTS_NEW`, `Route`, `route`; test cases in `agents/router_cases.yaml` |
+| `concierge/agents/runner.py` | Engine | `TOP_PASSAGES`, `MAX_CONTENTS`, `STOPWORDS`, `run`, `matching_words`, `clean_answer`, `refresh_index`, `best_sentence` |
+| `concierge/agents/store.py` | Engine | `Agent`, `agents_dir`, `slugify`, `list_agents`, `find_agent`, `name_taken`, `save`, `load_index`, `delete` |
+| `concierge/agents/eval_router.py` | Engine | `CASES`, `main`; command `python -m concierge.agents.eval_router` |
+| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `ChatBridge` (the page calls its `startup`, `send`, `choose`, `reset`), `open_window`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
+| `concierge/ui/web/` | UI | `index.html`, `style.css`, `app.js`; JavaScript global `app.onEvent(event)`, which `ChatBridge` calls with `events.to_dict(event)` |
