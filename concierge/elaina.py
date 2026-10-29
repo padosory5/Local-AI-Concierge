@@ -102,6 +102,10 @@ class ElainaChat:
     def reset(self) -> None:
         self.history.clear()
 
+    def remember(self, user_text: str, reply: str) -> None:
+        """Add an exchange Elaina did not answer herself, such as an agent's answer."""
+        self.history += [{"role": "user", "content": user_text}, {"role": "assistant", "content": reply}]
+
     def close(self) -> None:
         """Stop checking in and unload Elaina, if UNLOAD_ON_EXIT is on. Safe to call twice."""
         with self._lock:

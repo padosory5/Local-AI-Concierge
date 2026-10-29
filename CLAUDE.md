@@ -49,8 +49,15 @@ from concierge.fake_engine import FakeEngine
 from concierge.engine import ElainaEngine
 
 engine = FakeEngine()      # while building the UI
-engine = ElainaEngine()    # real Elaina (chat only until agents land)
+engine = ElainaEngine()    # real Elaina: chat, creating agents, running them
 ```
+
+The real engine produces the same events as the fake one. Its `Question` ids
+are `folder`, `name`, `pick_folder` and `change`, and the agent card's id is
+`card`; the UI should not depend on ids beyond passing them back. To try the
+real agent flow, ask Elaina to make an agent for `examples/sample_docs`
+(made-up contracts, a lease and meeting notes). Agents are saved per user in
+`%LOCALAPPDATA%\LocalAIConcierge\agents`.
 
 The UI technology is the UI developer's choice. A UI not written in Python
 (web, Electron, Tauri) should run a small local server around the engine and
@@ -67,6 +74,7 @@ py -3.11 -m venv .venv
 pip install -r requirements-dev.txt
 python -m concierge          # terminal version: hardware, model, setup, chat
 pytest                       # all tests; none need Ollama
+python -m concierge.agents.eval_router   # router accuracy with the real model
 ```
 
 ## Conventions

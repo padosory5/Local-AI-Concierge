@@ -18,6 +18,19 @@ import sys
 
 from . import elaina, hardware
 from .catalog import Recommendation, find_model, recommend
+from .engine import ElainaEngine
+from .events import (
+    AgentCard,
+    AgentList,
+    ElainaDone,
+    ElainaText,
+    Error,
+    Event,
+    Progress,
+    Question,
+    Result,
+    SystemInfo,
+)
 from .ollama import Ollama, OllamaError
 
 
@@ -97,16 +110,24 @@ def cmd_chat(setup_first: bool) -> int:
         return 1
     _print_in_use(rec)
 
-    chat = elaina.ElainaChat(ollama)
-    _on_window_close(chat.close)
+    engine = ElainaEngine(ollama)
+    screen = TerminalScreen()
+    for event in engine.startup():
+        if isinstance(event, Error):
+            screen.draw(event)
+            return 1
+        if not isinstance(event, SystemInfo):  # already shown above
+            screen.draw(event)
+    _on_window_close(engine.close)
     try:
-        return _chat_loop(chat)
+        return _chat_loop(engine, screen)
     finally:
-        chat.close()
+        engine.close()
 
 
-def _chat_loop(chat: elaina.ElainaChat) -> int:
-    print("Chat with Elaina. Type /reset to start over, /exit to leave.\n")
+def _chat_loop(engine: ElainaEngine, screen: TerminalScreen) -> int:
+    print("Chat with Elaina. Type /reset to start over, /exit to leave.")
+    print('Try: "make an agent for my Documents folder".\n')
     while True:
         try:
             text = input("You: ").strip()
@@ -118,16 +139,89 @@ def _chat_loop(chat: elaina.ElainaChat) -> int:
         if text in ("/exit", "/quit"):
             return 0
         if text == "/reset":
-            chat.reset()
+            engine.reset()
+            screen.pending = None
             print("(Started a new conversation.)\n")
             continue
-        print("Elaina: ", end="", flush=True)
+        picked = screen.pick(text)
+        events = engine.choose(*picked) if picked else engine.send(text)
+        screen.pending = None
         try:
-            for chunk in chat.send(text):
-                print(chunk, end="", flush=True)
+            for event in events:
+                screen.draw(event)
         except KeyboardInterrupt:
-            print(" (stopped)", end="")
-        print("\n")
+            print(" (stopped)\n")
+        screen.end_progress()
+
+
+class TerminalScreen:
+    """Draws engine events as text. Buttons become numbered choices: the user
+    types the number (or the choice itself) to click one."""
+
+    def __init__(self):
+        self.pending: tuple[str, list[str]] | None = None  # (id, choices) waiting for a pick
+        self.in_reply = False
+        self.progress = False
+
+    def pick(self, text: str) -> tuple[str, str] | None:
+        if not self.pending:
+            return None
+        id, choices = self.pending
+        if text.isdigit() and 1 <= int(text) <= len(choices):
+            return id, choices[int(text) - 1]
+        match = next((c for c in choices if c.lower() == text.lower()), None)
+        return (id, match) if match else None
+
+    def end_progress(self) -> None:
+        if self.progress:
+            print("\r" + " " * 78 + "\r", end="", flush=True)
+            self.progress = False
+
+    def draw(self, event: Event) -> None:
+        if not isinstance(event, Progress):
+            self.end_progress()
+        if isinstance(event, ElainaText):
+            if not self.in_reply:
+                print("Elaina: ", end="")
+                self.in_reply = True
+            print(event.text, end="", flush=True)
+        elif isinstance(event, ElainaDone):
+            print("\n")
+            self.in_reply = False
+        elif isinstance(event, Question):
+            print(f"Elaina: {event.text}")
+            self._choices(event.id, event.choices)
+            print()
+        elif isinstance(event, AgentCard):
+            print(f"  +-- {event.name}  ({event.kind})")
+            for line in event.reads:
+                print(f"  |  Reads:     {line}")
+            print(f"  |  Can do:    {'; '.join(event.can_do)}")
+            print(f"  |  Can't do:  {'; '.join(event.cannot_do)}")
+            print(f"  |  Runs on:   {event.runs_on}")
+            print("  +--")
+            self._choices(event.id, event.actions)
+            print()
+        elif isinstance(event, Progress):
+            print(f"\r  {event.text[:74]:<76}", end="", flush=True)
+            self.progress = True
+        elif isinstance(event, Result):
+            print(f"[{event.agent}] {event.text}")
+            for source in event.sources:
+                quote = f': "{source.quote}"' if source.quote else ""
+                print(f"    from {source.path}{quote}")
+            print()
+        elif isinstance(event, AgentList):
+            if event.agents:
+                print(f"Your agents: {', '.join(event.agents)}\n")
+        elif isinstance(event, Error):
+            print(f"(Problem) {event.text}\n")
+
+    def _choices(self, id: str, choices: list[str] | None) -> None:
+        if choices:
+            for number, choice in enumerate(choices, 1):
+                print(f"  {number}. {choice}")
+            self.pending = (id, choices)
 
 
 def cmd_measure(tag: str) -> int:
