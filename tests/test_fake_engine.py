@@ -3,6 +3,7 @@ from concierge.engine import ElainaEngine
 from concierge.events import (
     AgentCard,
     AgentList,
+    ChatList,
     ElainaDone,
     ElainaText,
     Error,
@@ -19,11 +20,13 @@ def types(evts):
 
 
 def test_startup_sends_system_info_then_agents():
-    assert types(FakeEngine(delay=0).startup()) == [SystemInfo, AgentList]
+    assert types(FakeEngine(delay=0).startup()) == [SystemInfo, AgentList, ChatList]
 
 
 def test_chat_streams_then_finishes():
     evts = list(FakeEngine(delay=0).send("hello"))
+    assert isinstance(evts[0], ChatList)  # a new conversation appears in the list first
+    evts = evts[1:]
     assert all(isinstance(e, ElainaText) for e in evts[:-1])
     assert isinstance(evts[-1], ElainaDone)
 

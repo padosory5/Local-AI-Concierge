@@ -30,13 +30,14 @@ def types(window):
 def test_startup_pushes_system_info_then_agents():
     bridge, window = bridge_for(FakeEngine(delay=0))
     bridge.startup()
-    assert types(window) == ["SystemInfo", "AgentList"]
+    assert types(window) == ["SystemInfo", "AgentList", "ChatList"]
 
 
 def test_reply_streams_to_the_page_then_finishes():
     bridge, window = bridge_for(FakeEngine(delay=0))
     bridge.send("hello")
-    assert set(types(window)[:-1]) == {"ElainaText"}
+    assert types(window)[0] == "ChatList"  # the new conversation appears in the list first
+    assert set(types(window)[1:-1]) == {"ElainaText"}
     assert types(window)[-1] == "ElainaDone"
 
 
@@ -76,7 +77,8 @@ def test_closing_frees_elaina_and_stops_drawing():
     assert window.events == []
 
 
-def test_page_sees_only_the_four_calls():
+def test_page_sees_only_the_engine_calls():
     # pywebview hands every public attribute of the bridge to the page.
     public = {name for name in dir(ChatBridge(FakeEngine())) if not name.startswith("_")}
-    assert public == {"startup", "send", "choose", "reset"}
+    assert public == {"startup", "send", "choose", "reset",
+                      "new_chat", "open_chat", "delete_chat", "delete_agent"}

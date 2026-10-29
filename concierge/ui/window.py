@@ -32,7 +32,7 @@ class ChatBridge:
     """What the page can call, as window.pywebview.api.<method>.
 
     pywebview hands every public attribute to the page, so everything except
-    these four calls is kept private with a leading underscore.
+    these calls is kept private with a leading underscore.
     """
 
     def __init__(self, engine: Engine):
@@ -51,6 +51,18 @@ class ChatBridge:
 
     def choose(self, id: str, choice: str) -> None:
         self._run(self._engine.choose, id, choice)
+
+    def new_chat(self) -> None:
+        self._run(self._engine.new_chat)
+
+    def open_chat(self, id: str) -> None:
+        self._run(self._engine.open_chat, id)
+
+    def delete_chat(self, id: str) -> None:
+        self._run(self._engine.delete_chat, id)
+
+    def delete_agent(self, name: str) -> None:
+        self._run(self._engine.delete_agent, name)
 
     def reset(self) -> None:
         with self._lock:

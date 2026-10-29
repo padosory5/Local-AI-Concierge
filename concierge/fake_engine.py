@@ -11,6 +11,9 @@ What to type to see each flow:
     files or a folder)
     "ask ..."              run the existing agent: Progress, Result with sources
     "error"                an Error event
+
+Conversations are kept in memory (same ChatBook as the real engine), so New
+chat, reopening and deleting chats work too, and so does deleting an agent.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 
+from .conversations import ChatBook
 from .events import (
     AgentCard,
     AgentList,
@@ -40,6 +44,8 @@ class FakeEngine:
         self.agents = ["Contracts helper"]
         self.draft: dict = {}
         self.waiting_for: str | None = None  # which typed answer we expect next
+        self.deleting: str | None = None
+        self.book = ChatBook(None)
 
     # ---------------------------------------------------------- contract
 
@@ -56,8 +62,47 @@ class FakeEngine:
             device="NVIDIA GeForce RTX 5080",
         )
         yield AgentList(list(self.agents))
+        yield self.book.chat_list()
 
     def send(self, text: str) -> Iterator[Event]:
+        yield from self.book.record(text, self._reply(text))
+
+    def choose(self, id: str, choice: str) -> Iterator[Event]:
+        yield from self.book.record(choice, self._choice(id, choice))
+
+    def new_chat(self) -> Iterator[Event]:
+        self.reset()
+        yield from self.book.new()
+
+    def open_chat(self, id: str) -> Iterator[Event]:
+        self.draft, self.waiting_for = {}, None
+        if self.book.open(id) is None:
+            yield Error("That conversation could not be found.")
+        else:
+            yield self.book.transcript()
+        yield self.book.chat_list()
+
+    def delete_chat(self, id: str) -> Iterator[Event]:
+        yield from self.book.delete(id)
+
+    def delete_agent(self, name: str) -> Iterator[Event]:
+        def ask():
+            self.deleting = name
+            yield Question("delete_agent", f"Delete {name}? It forgets everything it read.",
+                           ["Delete it", "Keep it"])
+        yield from self.book.record("", ask())
+
+    def reset(self) -> None:
+        self.draft = {}
+        self.waiting_for = None
+        self.book.new()
+
+    def close(self) -> None:
+        pass
+
+    # ----------------------------------------------------------- scripts
+
+    def _reply(self, text: str) -> Iterator[Event]:
         lowered = text.lower()
         if self.waiting_for == "folder":
             self.waiting_for = None
@@ -82,8 +127,16 @@ class FakeEngine:
                 "a few words at a time, until the reply is done."
             )
 
-    def choose(self, id: str, choice: str) -> Iterator[Event]:
-        if id == "file_types":
+    def _choice(self, id: str, choice: str) -> Iterator[Event]:
+        if id == "delete_agent":
+            name, self.deleting = self.deleting, None
+            if choice == "Delete it" and name in self.agents:
+                self.agents.remove(name)
+                yield from self._say(f"Deleted {name}.")
+                yield AgentList(list(self.agents))
+            else:
+                yield from self._say("Okay, I kept it.")
+        elif id == "file_types":
             self.draft["file_types"] = choice
             yield self._card()
         elif id == "card":
@@ -101,15 +154,6 @@ class FakeEngine:
             yield Question("file_types", "Which files should it read?", ["PDF only", "Word only", "Everything"])
         else:
             yield Error(f"Nothing is waiting for an answer to {id!r}.")
-
-    def reset(self) -> None:
-        self.draft = {}
-        self.waiting_for = None
-
-    def close(self) -> None:
-        pass
-
-    # ----------------------------------------------------------- scripts
 
     def _say(self, text: str) -> Iterator[Event]:
         for word in text.split(" "):

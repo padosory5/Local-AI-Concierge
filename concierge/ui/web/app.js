@@ -17,6 +17,7 @@ window.app = (() => {
   let busy = false;
   let bubble = null; // Elaina's message that streamed text is added to
   let typing = null; // the "..." row shown until the first event arrives
+  let currentChat = null; // id of the open conversation, from ChatList
 
   // ------------------------------------------------------------- drawing
 
@@ -139,16 +140,81 @@ window.app = (() => {
     },
 
     AgentList(e) {
-      const names = e.agents.length
-        ? e.agents.map((name) => el("li", "agent", name))
-        : [el("li", "muted", "No agents yet")];
-      $("agents").replaceChildren(...names);
+      const items = e.agents.map((name) => {
+        // Clicking an agent starts a message to it, which is how it is used.
+        const use = itemButton("item-main", name, () => {
+          input.value = `${name}: `;
+          grow();
+          input.focus();
+        });
+        use.title = `Ask ${name} something`;
+        // Elaina asks to confirm in the chat, so the engine decides.
+        const remove = itemButton("item-delete", "✕", () => run(() => api.delete_agent(name)));
+        remove.setAttribute("aria-label", `Delete ${name}`);
+        remove.title = `Delete ${name}`;
+        const li = el("li", "agent");
+        li.append(use, remove);
+        return li;
+      });
+      $("agents").replaceChildren(...(items.length ? items : [el("li", "muted", "No agents yet")]));
     },
 
     Error(e) {
       message("error", e.text);
     },
+
+    ChatList(e) {
+      currentChat = e.current;
+      const items = e.chats.map((chat) => {
+        const open = itemButton("item-main", chat.title, () => {
+          if (chat.id !== currentChat) run(() => api.open_chat(chat.id), { showDots: false });
+        });
+        open.title = `${chat.title}\nLast message ${new Date(chat.updated).toLocaleString()}`;
+        const remove = itemButton("item-delete", "✕", () => confirmDelete(remove, chat.id));
+        remove.setAttribute("aria-label", `Delete chat: ${chat.title}`);
+        remove.title = "Delete this chat";
+        const li = el("li", chat.id === e.current ? "current" : "");
+        li.append(open, remove);
+        return li;
+      });
+      $("chats").replaceChildren(...(items.length ? items : [el("li", "muted", "No chats yet")]));
+    },
+
+    Transcript(e) {
+      bubble = null;
+      messages.replaceChildren(empty);
+      empty.hidden = e.items.length > 0;
+      for (const item of e.items) {
+        if (item.role === "result") draw.Result(item);
+        else message(item.role === "user" ? "user" : item.role === "error" ? "error" : "elaina", item.text);
+      }
+      messages.scrollTop = messages.scrollHeight;
+    },
   };
+
+  function itemButton(className, text, onClick) {
+    const button = el("button", className, text);
+    button.type = "button";
+    button.addEventListener("click", () => {
+      if (!busy) onClick();
+    });
+    return button;
+  }
+
+  // Deleting a chat cannot be undone, so the first click only arms the
+  // button ("Delete?") and a second click within a few seconds deletes.
+  function confirmDelete(button, id) {
+    if (!button.classList.contains("confirm")) {
+      button.classList.add("confirm");
+      button.textContent = "Delete?";
+      setTimeout(() => {
+        button.classList.remove("confirm");
+        button.textContent = "✕";
+      }, 3000);
+      return;
+    }
+    run(() => api.delete_chat(id), { showDots: false });
+  }
 
   // Called from Python (ChatBridge._push) with events.to_dict(event).
   function onEvent(event) {
@@ -169,6 +235,7 @@ window.app = (() => {
     busy = value;
     sendButton.disabled = value || !input.value.trim();
     newChatButton.disabled = value;
+    document.querySelectorAll(".item-main, .item-delete").forEach((b) => (b.disabled = value));
   }
 
   // Runs one engine call. The input stays off until Python returns, which is
@@ -223,13 +290,10 @@ window.app = (() => {
 
   input.addEventListener("input", grow);
 
-  newChatButton.addEventListener("click", async () => {
-    if (busy) return;
-    await api.reset();
-    bubble = null;
-    messages.replaceChildren(empty);
-    empty.hidden = false;
-    input.focus();
+  // The engine keeps the current chat in the list and sends an empty
+  // Transcript, which clears the chat area.
+  newChatButton.addEventListener("click", () => {
+    if (!busy) run(() => api.new_chat(), { showDots: false });
   });
 
   $("about-open").addEventListener("click", () => $("about").showModal());

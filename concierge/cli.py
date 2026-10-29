@@ -126,7 +126,7 @@ def cmd_chat(setup_first: bool) -> int:
 
 
 def _chat_loop(engine: ElainaEngine, screen: TerminalScreen) -> int:
-    print("Chat with Elaina. Type /reset to start over, /exit to leave.")
+    print("Chat with Elaina. Type /new for a new chat (this one is saved), /exit to leave.")
     print('Try: "make an agent for my Documents folder".\n')
     while True:
         try:
@@ -138,10 +138,10 @@ def _chat_loop(engine: ElainaEngine, screen: TerminalScreen) -> int:
             continue
         if text in ("/exit", "/quit"):
             return 0
-        if text == "/reset":
+        if text in ("/new", "/reset"):
             engine.reset()
             screen.pending = None
-            print("(Started a new conversation.)\n")
+            print("(Started a new chat. The last one is saved in the app's chat list.)\n")
             continue
         picked = screen.pick(text)
         events = engine.choose(*picked) if picked else engine.send(text)
