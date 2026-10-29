@@ -2,7 +2,7 @@
 model, set her up, and chat. A real UI comes later and will reuse the same
 modules; nothing here holds logic the UI would need.
 
-    python -m concierge             set up if needed, then chat
+    python -m concierge             show the computer and models, set up if needed, chat
     python -m concierge hardware    show what this computer has (--json for raw)
     python -m concierge recommend   show which model Elaina would use and why
     python -m concierge setup       download the model and (re)build Elaina
@@ -17,7 +17,7 @@ import json
 import sys
 
 from . import elaina, hardware
-from .catalog import Recommendation, recommend
+from .catalog import Recommendation, find_model, recommend
 from .ollama import Ollama, OllamaError
 
 
@@ -44,13 +44,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "recommend":
             return cmd_recommend()
         if args.command == "setup":
-            return cmd_setup(assume_yes=args.yes, force=True)
+            return cmd_setup(assume_yes=args.yes)
         if args.command == "chat":
-            return cmd_chat()
+            return cmd_chat(setup_first=False)
         if args.command == "measure":
             return cmd_measure(args.tag)
-        code = cmd_setup(assume_yes=False, force=False)
-        return code or cmd_chat()
+        return cmd_chat(setup_first=True)
     except OllamaError as exc:
         print(f"\n{exc}")
         return 1
@@ -78,40 +77,25 @@ def cmd_recommend() -> int:
     return 0
 
 
-def cmd_setup(assume_yes: bool, force: bool) -> int:
-    print("Checking your computer...")
-    report = hardware.detect()
-    rec = recommend(report)
-    ollama = Ollama()
-    ollama.ensure_running()
-
-    if not force and rec.model and not elaina.needs_configure(ollama, rec.model, rec, report):
-        return 0  # Elaina is already set up for this machine.
-
-    _print_hardware(report)
-    _print_recommendation(rec)
-    if rec.model is None:
-        return 1
-
-    if not ollama.has_model(rec.model.tag):
-        if not assume_yes and not _confirm(f"Download {rec.model.name} ({rec.model.download_gb:g} GB) now?"):
-            print("Nothing was downloaded.")
-            return 1
-        ollama.pull(rec.model.tag, on_progress=_progress_printer())
-        print()
-
-    print("Setting up Elaina...")
-    elaina.configure(ollama, rec.model, rec, report)
-    print("Elaina is ready.\n")
-    return 0
+def cmd_setup(assume_yes: bool) -> int:
+    ollama, report, rec = _check_computer()
+    code = _ensure_elaina(ollama, rec, report, assume_yes, force=True)
+    if code == 0:
+        _print_in_use(rec)
+    return code
 
 
-def cmd_chat() -> int:
-    ollama = Ollama()
-    ollama.ensure_running()
+def cmd_chat(setup_first: bool) -> int:
+    """Show the computer, the recommended model and Elaina's model, then chat."""
+    ollama, report, rec = _check_computer()
+    if setup_first:
+        code = _ensure_elaina(ollama, rec, report, assume_yes=False, force=False)
+        if code:
+            return code
     if not ollama.has_model(elaina.ELAINA_MODEL):
         print("Elaina is not set up yet. Run: python -m concierge setup")
         return 1
+    _print_in_use(rec)
 
     chat = elaina.ElainaChat(ollama)
     _on_window_close(chat.close)
@@ -179,6 +163,48 @@ def cmd_measure(tag: str) -> int:
     return 0
 
 
+# ----------------------------------------------------------------- steps
+
+
+def _check_computer() -> tuple[Ollama, hardware.HardwareReport, Recommendation]:
+    """Steps 1 and 2: read the hardware and pick a model, and show both."""
+    print("Checking your computer...")
+    report = hardware.detect()
+    rec = recommend(report)
+    ollama = Ollama()
+    ollama.ensure_running()
+    _print_hardware(report)
+    _print_recommendation(rec, downloaded=bool(rec.model) and ollama.has_model(rec.model.tag))
+    return ollama, report, rec
+
+
+def _ensure_elaina(
+    ollama: Ollama, rec: Recommendation, report: hardware.HardwareReport, assume_yes: bool, force: bool
+) -> int:
+    """Step 3: build Elaina from the recommended model if she is missing or
+    out of date. Returns 0 when there is an Elaina to talk to."""
+    has_elaina = ollama.has_model(elaina.ELAINA_MODEL)
+    if rec.model is None:
+        return 0 if has_elaina else 1
+    if not force and not elaina.needs_configure(ollama, rec.model, rec, report):
+        return 0
+
+    if not ollama.has_model(rec.model.tag):
+        if not assume_yes and not _confirm(f"Download {rec.model.name} ({rec.model.download_gb:g} GB) now?"):
+            if has_elaina:
+                print("Nothing was downloaded. Elaina keeps the model she already has.\n")
+                return 0
+            print("Nothing was downloaded.")
+            return 1
+        ollama.pull(rec.model.tag, on_progress=_progress_printer())
+        print()
+
+    print("Setting up Elaina...")
+    elaina.configure(ollama, rec.model, rec, report)
+    print("Elaina is ready.\n")
+    return 0
+
+
 # --------------------------------------------------------------- output
 
 
@@ -189,17 +215,30 @@ def _print_hardware(report: hardware.HardwareReport) -> None:
     print()
 
 
-def _print_recommendation(rec: Recommendation) -> None:
+def _print_recommendation(rec: Recommendation, downloaded: bool = False) -> None:
     if rec.model is None:
-        print(f"Elaina cannot run well on this computer yet. {rec.reason}")
+        print(f"No model recommended: Elaina cannot run well on this computer yet. {rec.reason}\n")
         return
     where = {"gpu": "graphics memory", "apple": "shared memory", "cpu": "memory"}[rec.device]
     estimate = "" if rec.model.measured else " (estimate)"
-    print(f"Elaina's brain: {rec.model.name} ({rec.model.tag})")
+    print(f"Recommended for this computer: {rec.model.name} ({rec.model.tag})")
     print(f"  Uses about {rec.model.memory_gb:g} GB of {where}{estimate}, "
           f"leaving {rec.left_free_gb:g} GB for your other apps and agents.")
-    print(f"  Download size: {rec.model.download_gb:g} GB")
+    if not downloaded:
+        print(f"  Download size: {rec.model.download_gb:g} GB")
     print(f"  Why: {rec.reason}\n")
+
+
+def _print_in_use(rec: Recommendation) -> None:
+    """The model Elaina is actually built from, which can differ from the
+    recommendation when the user declined to download a new one."""
+    tag = elaina.load_state().get("base_model")
+    model = find_model(tag) if tag else None
+    name = f"{model.name} ({tag})" if model else tag or "an unknown model"
+    print(f"Elaina is using: {name} on {rec.device_name}")
+    if rec.model and tag != rec.model.tag:
+        print(f"  Not the recommended {rec.model.name}. Run `python -m concierge setup` to switch.")
+    print()
 
 
 _close_handlers = []  # Keeps the Windows callback alive while the program runs.

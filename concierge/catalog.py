@@ -57,6 +57,10 @@ def load_catalog(path: Path = CATALOG_PATH) -> list[ModelEntry]:
     return [ModelEntry(**entry) for entry in data["models"]]
 
 
+def find_model(tag: str) -> ModelEntry | None:
+    return next((m for m in load_catalog() if m.tag == tag), None)
+
+
 def memory_budget(report: HardwareReport) -> tuple[str, str, float, float]:
     """Return (device, device name, budget in GB, device memory in GB)."""
     gpu = report.best_gpu()

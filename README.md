@@ -41,7 +41,7 @@ On macOS or Linux use `python3.11 -m venv .venv` and `source .venv/bin/activate`
 ## Run
 
 ```bash
-python -m concierge             # set up if needed, then chat
+python -m concierge             # show your computer and Elaina's model, set up if needed, chat
 python -m concierge hardware    # what this computer has (--json for raw)
 python -m concierge recommend   # which model Elaina would use, and why
 python -m concierge setup       # download the model and rebuild Elaina
@@ -89,6 +89,9 @@ concierge/
   persona/        Elaina's persona prompt
   ollama.py       small client for the local Ollama server
   cli.py          temporary terminal front end
+  events.py       the contract between engine and UI (see CLAUDE.md)
+  engine.py       the real engine the UI talks to
+  fake_engine.py  scripted engine for building the UI without a model
 tests/            pytest suite, no Ollama needed
 ```
 
