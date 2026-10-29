@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import sys
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -25,6 +26,17 @@ NUM_CTX = 4096
 # Roughly 2,500 tokens of past conversation, leaving room for the system
 # prompt and the reply inside NUM_CTX.
 HISTORY_CHARS = 9000
+# Elaina stays in graphics memory while the program is open, and leaves it
+# when the program closes.
+#
+# A normal exit (/exit, Ctrl+C) unloads her at once when UNLOAD_ON_EXIT is on.
+# A program that is killed (window or tab closed, Task Manager, crash) gets no
+# chance to do that, so instead it checks in with Ollama every
+# HEARTBEAT_SECONDS to keep her loaded; once the check-ins stop, Ollama frees
+# her after KEEP_ALIVE.
+UNLOAD_ON_EXIT = True
+KEEP_ALIVE = "60s"
+HEARTBEAT_SECONDS = 20
 
 
 def system_prompt(base: ModelEntry, rec: Recommendation, report: HardwareReport) -> str:
@@ -66,12 +78,19 @@ class ElainaChat:
         # Thinking models (Qwen 3, Qwen 3.5) reason silently before answering,
         # which makes a chat feel slow. Elaina answers directly.
         self.think = False if "thinking" in ollama.capabilities(model) else None
+        self._closed = threading.Event()
+        # Held while checking in and while unloading, so a check-in cannot
+        # load Elaina again right after close() unloaded her.
+        self._lock = threading.Lock()
+        threading.Thread(target=self._heartbeat, daemon=True).start()
 
     def send(self, text: str) -> Iterator[str]:
         self.history.append({"role": "user", "content": text})
         reply = []
         try:
-            for chunk in self.ollama.chat(self.model, self._recent(), think=self.think):
+            for chunk in self.ollama.chat(
+                self.model, self._recent(), think=self.think, keep_alive=KEEP_ALIVE
+            ):
                 reply.append(chunk)
                 yield chunk
         finally:
@@ -82,6 +101,35 @@ class ElainaChat:
 
     def reset(self) -> None:
         self.history.clear()
+
+    def close(self) -> None:
+        """Stop checking in and unload Elaina, if UNLOAD_ON_EXIT is on. Safe to call twice."""
+        with self._lock:
+            self._closed.set()
+            if not UNLOAD_ON_EXIT:
+                return
+            try:
+                self.ollama.unload(self.model)
+            except Exception:
+                pass  # Ollama already stopped; nothing is loaded.
+
+    def _heartbeat(self) -> None:
+        while not self._closed.wait(HEARTBEAT_SECONDS):
+            self.check_in()
+
+    def check_in(self) -> None:
+        """Keep Elaina loaded for another KEEP_ALIVE, but only if she is loaded now.
+
+        Never loads her: memory is only taken once the user actually talks.
+        """
+        with self._lock:
+            if self._closed.is_set():
+                return
+            try:
+                if any(m["name"].split(":")[0] == self.model for m in self.ollama.loaded()):
+                    self.ollama.refresh(self.model, KEEP_ALIVE)
+            except Exception:
+                pass  # Ollama is restarting; try again on the next beat.
 
     def _recent(self) -> list[dict]:
         """The latest messages that fit in HISTORY_CHARS, always starting with the user."""
