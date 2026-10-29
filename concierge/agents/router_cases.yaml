@@ -1,0 +1,38 @@
+# Labelled messages for scoring the router against the real model:
+#     python -m concierge.agents.eval_router
+# The "agents" list is the user's existing agents during the test.
+
+agents:
+  - name: Contracts helper
+    blueprint: documents_qa
+    slots: {folder: C:/Users/test/Desktop/Contracts}
+
+cases:
+  # chat
+  - {text: "hi Elaina", kind: chat}
+  - {text: "how are you today?", kind: chat}
+  - {text: "what's the capital of Australia?", kind: chat}
+  - {text: "rewrite this to sound friendlier: send me the report by friday", kind: chat}
+  - {text: "what should I cook tonight", kind: chat}
+  - {text: "explain what RAM is in one sentence", kind: chat}
+  - {text: "thanks, that helped", kind: chat}
+  - {text: "what graphics card do I have?", kind: chat}
+  - {text: "can you book me a flight to Tokyo?", kind: chat}
+  - {text: "write a short poem about rain", kind: chat}
+  - {text: "오늘 날씨 어때?", kind: chat}
+  - {text: "translate 'good morning' into Korean", kind: chat}
+  # new agent
+  - {text: "I want to ask questions about my lecture notes", kind: new_agent, blueprint: documents_qa}
+  - {text: "can you search through my research papers folder?", kind: new_agent, blueprint: documents_qa}
+  - {text: "make me an agent that reads my recipes folder", kind: new_agent, blueprint: documents_qa}
+  - {text: "I have a bunch of manuals in Downloads, help me look things up in them", kind: new_agent, blueprint: documents_qa}
+  - {text: "set up something that answers questions about my tax documents", kind: new_agent, blueprint: documents_qa}
+  - {text: "can you read the PDFs in my Documents folder and answer questions?", kind: new_agent, blueprint: documents_qa}
+  - {text: "I want a helper for my meeting notes so I can find what we decided", kind: new_agent, blueprint: documents_qa}
+  - {text: "내 강의 노트 폴더에 대해 질문할 수 있게 해줘", kind: new_agent, blueprint: documents_qa}
+  # run agent
+  - {text: "ask Contracts helper who signed the Acme deal", kind: run_agent, agent: Contracts helper}
+  - {text: "Contracts helper: when does the lease end?", kind: run_agent, agent: Contracts helper}
+  - {text: "what are the payment terms in my contracts?", kind: run_agent, agent: Contracts helper}
+  - {text: "check my contracts for the termination notice period", kind: run_agent, agent: Contracts helper}
+  - {text: "which of my contracts mention a penalty fee?", kind: run_agent, agent: Contracts helper}
