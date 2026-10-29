@@ -52,6 +52,32 @@ python -m concierge.ui --fake   # the same window with a scripted Elaina, no mod
 pytest                          # run the tests
 ```
 
+## Agents
+
+Ask Elaina for help with your own files and she creates an agent for it:
+
+1. **Understand the task.** The router (`concierge/agents/router.py`) sorts
+   each message into chat, a new agent, or a job for an existing agent. The
+   model can only pick from options that exist, and code adds evidence first:
+   an agent named in the message is used directly, "make an agent" always
+   means a new one, and a quick search tells it which agent's files contain
+   the message's words.
+2. **Ask if this agent is good.** Elaina offers a tested blueprint
+   (`concierge/agents/blueprints/`), asks only what is missing (which folder),
+   and shows an agent card written by code: what it reads, can do, cannot do.
+3. **Create it.** It reads the files (PDF, Word, text), saves the agent, and
+   gives it a test drive on a question about your files so you see it work.
+4. **Run it.** Ask a question that its files cover, or start with its name
+   ("Sample docs helper: when does the lease end?"). Code finds the best
+   passages; the model answers only from them and the answer shows its source.
+
+Try it with the made-up files in `examples/sample_docs`. After changing the
+router or a blueprint, check the router still scores 100%:
+
+```bash
+python -m concierge.agents.eval_router
+```
+
 ## When Elaina uses graphics memory
 
 Elaina is loaded once you send the first message, stays loaded while the

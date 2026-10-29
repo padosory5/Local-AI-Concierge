@@ -153,6 +153,32 @@ class Ollama:
             if text:
                 yield text
 
+    def chat_json(
+        self,
+        model: str,
+        messages: list[dict],
+        schema: dict,
+        think: bool | None = None,
+        keep_alive: str | None = None,
+    ) -> dict:
+        """One reply forced into a JSON schema.
+
+        Ollama constrains the model's output to the schema, so an "enum" field
+        can only ever hold one of the listed values. This is how code, not the
+        model, decides what the possible answers are.
+        """
+        body = {"model": model, "messages": messages, "format": schema, "stream": False,
+                "options": {"temperature": 0}}
+        if think is not None:
+            body["think"] = think
+        if keep_alive is not None:
+            body["keep_alive"] = keep_alive
+        content = self._post("/api/chat", body)["message"]["content"]
+        try:
+            return json.loads(content)
+        except ValueError as exc:
+            raise OllamaError(f"The model did not return valid JSON: {content[:200]}") from exc
+
     # --------------------------------------------------------- transport
 
     def _get(self, path: str) -> dict:

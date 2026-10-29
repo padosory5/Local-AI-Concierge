@@ -1,0 +1,47 @@
+# A blueprint is a tested agent template. Elaina never designs agents from
+# scratch: she picks a blueprint and fills in its slots with the user.
+#
+#   id           Stable name, used in saved agents.
+#   name         What the user sees as the agent's kind.
+#   pitch        One sentence Elaina says when she offers it.
+#   when         For the router: what kind of request this blueprint fits.
+#   examples     Requests it fits, for the router and its tests.
+#   slots        What the interview fills in. `ask` is the question, or null
+#                when a default is used without asking. Only `changeable`
+#                slots appear under "Change something" on the card.
+#   can_do / cannot_do   Shown on the agent card exactly as written.
+#   can_change_files     false = read-only, no approval steps needed.
+
+id: documents_qa
+name: Ask my documents
+pitch: >-
+  It answers questions about a folder of your files and shows where it found
+  each answer.
+when: >-
+  The user wants to ask questions about, search, or look things up in their
+  own files: documents, PDFs, notes, contracts, reports, manuals.
+examples:
+  - I want to ask questions about my contract PDFs
+  - Can you search through my notes folder for me?
+  - make me something that reads my lecture slides and answers questions
+  - I keep forgetting what's in my lease, can you help me look things up in it
+  - 내 문서 폴더에 있는 파일들에 대해 질문하고 싶어
+slots:
+  folder:
+    label: Folder
+    type: folder
+    ask: Which folder should it read? You can type a path, or a name like "Documents" or "the Work folder on my desktop".
+    changeable: true
+  name:
+    label: Name
+    type: text
+    ask: null           # suggested from the folder's name
+    changeable: true
+can_do:
+  - Find and quote passages from those files
+  - Answer questions about them, with the file each answer came from
+cannot_do:
+  - Change, move or delete files
+  - Read anything outside that folder
+  - Use the internet
+can_change_files: false
