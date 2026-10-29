@@ -114,8 +114,43 @@ class Error:
     text: str
 
 
+@dataclass(frozen=True)
+class ChatSummary:
+    id: str
+    title: str  # from the first message, e.g. "who signed the Acme contract?"
+    updated: str  # ISO date and time of the last message
+
+
+@dataclass(frozen=True)
+class ChatList:
+    """Saved conversations, newest first, for the sidebar. Sent by startup()
+    and whenever a conversation is created, opened, started or deleted."""
+
+    chats: list[ChatSummary]
+    current: str | None  # the open conversation; None for a new one with no messages yet
+
+
+@dataclass(frozen=True)
+class TranscriptItem:
+    role: str  # "user", "elaina", "result" (an agent's answer) or "error"
+    text: str
+    agent: str = ""  # for "result": which agent answered
+    sources: list[Source] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Transcript:
+    """Replace everything in the chat area with these messages: after opening
+    a saved conversation, or empty after starting a new one. Old questions
+    and cards come back as plain messages without buttons."""
+
+    id: str | None
+    items: list[TranscriptItem]
+
+
 Event = Union[
-    SystemInfo, ElainaText, ElainaDone, Question, AgentCard, Progress, Result, AgentList, Error
+    SystemInfo, ElainaText, ElainaDone, Question, AgentCard, Progress, Result, AgentList, Error,
+    ChatList, Transcript,
 ]
 
 
@@ -134,19 +169,40 @@ class Engine(Protocol):
     built against the fake and switched to the real one with one line."""
 
     def startup(self) -> Iterator[Event]:
-        """Call once when the UI opens. Yields SystemInfo, then AgentList."""
+        """Call once when the UI opens. Yields SystemInfo, AgentList, then ChatList."""
         ...
 
     def send(self, text: str) -> Iterator[Event]:
-        """The user typed a message."""
+        """The user typed a message. The first message of a new conversation
+        also yields a ChatList, since the conversation now has a place in it."""
         ...
 
     def choose(self, id: str, choice: str) -> Iterator[Event]:
         """The user clicked a choice on a Question or an action on an AgentCard."""
         ...
 
+    def new_chat(self) -> Iterator[Event]:
+        """Keep the current conversation in the list and start an empty one.
+        Yields an empty Transcript, then ChatList."""
+        ...
+
+    def open_chat(self, id: str) -> Iterator[Event]:
+        """Reopen a saved conversation. Yields its Transcript, then ChatList."""
+        ...
+
+    def delete_chat(self, id: str) -> Iterator[Event]:
+        """Delete a saved conversation (the UI confirms first). Yields ChatList,
+        and an empty Transcript first if it was the open one."""
+        ...
+
+    def delete_agent(self, name: str) -> Iterator[Event]:
+        """The user wants an agent removed. Elaina asks to confirm with a
+        Question; answering it through choose() deletes it and yields AgentList."""
+        ...
+
     def reset(self) -> None:
-        """Start a new conversation."""
+        """Start a new conversation without drawing anything (terminal /reset).
+        The current one is kept in the list, like new_chat()."""
         ...
 
     def close(self) -> None:

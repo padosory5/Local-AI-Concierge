@@ -43,7 +43,7 @@ def route(
     evidence: dict[str, list[str]] | None = None,
 ) -> Route:
     """evidence: for each agent name, words of the message found in its files."""
-    named = _names_an_agent(text, agents)
+    named = names_an_agent(text, agents)
     if named:
         return Route("run_agent", agent=named.name, request=_strip_agent_name(text, named.name))
 
@@ -104,7 +104,7 @@ def _loose(text: str) -> str:
     return re.sub(r"[\s_\-]+", " ", text.lower())
 
 
-def _names_an_agent(text: str, agents: list[Agent]) -> Agent | None:
+def names_an_agent(text: str, agents: list[Agent]) -> Agent | None:
     lowered = _loose(text)
     for agent in sorted(agents, key=lambda a: -len(a.name)):
         if _loose(agent.name) in lowered:

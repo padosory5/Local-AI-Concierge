@@ -29,7 +29,8 @@ YES_WORDS = ("yes", "yeah", "yep", "sure", "ok", "okay", "create", "do it", "go 
 BLOCKED = [Path(os.environ.get(v, "")) for v in ("SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData")]
 SKIP_WHILE_SEARCHING = {"appdata", "node_modules", ".git", "$recycle.bin", "library"}
 
-CARD, CHANGE, PICK_FOLDER = "card", "change", "pick_folder"
+CARD, CHANGE, PICK_FOLDER, DUPLICATE = "card", "change", "pick_folder", "duplicate"
+REPLACE, MAKE_ANOTHER = "Replace it", "Make another one"
 
 
 @dataclass
@@ -39,6 +40,8 @@ class Draft:
     waiting: str | None = None  # slot key we asked for, or CARD / PICK_FOLDER / CHANGE
     file_count: int = 0
     file_summary: str = ""
+    duplicate_of: str | None = None  # existing agent that reads the same folder
+    replaces: str | None = None  # agent to delete when this one is created
 
 
 class AgentBuilder:
@@ -106,6 +109,17 @@ class AgentBuilder:
             else:
                 draft.waiting = slot.key
                 yield Question(slot.key, f"What should the {slot.label.lower()} be?")
+        elif id == DUPLICATE and choice.startswith("Use "):
+            name = draft.duplicate_of
+            self.draft = None
+            yield from say(f'Okay, keep using {name}. Ask it anything, like "{name}: what does it say about...".')
+        elif id == DUPLICATE and choice == REPLACE:
+            draft.replaces = draft.duplicate_of
+            draft.slots["name"] = draft.duplicate_of
+            yield from say(f"Okay. When you create this one, it replaces {draft.duplicate_of}.")
+            yield from self._next()
+        elif id == DUPLICATE:
+            yield from self._next()
         elif id == PICK_FOLDER and choice != "None of these":
             yield from self._use_folder(Path(choice))
         elif id == PICK_FOLDER:
@@ -159,6 +173,17 @@ class AgentBuilder:
         draft.file_summary = describe_files(files)
         readable = re.sub(r"[_\-]+", " ", folder.name).strip()
         draft.slots.setdefault("name", self._unique_name(f"{readable} helper"))
+
+        existing = agent_for_folder(folder)
+        if existing and draft.replaces != existing.name:
+            draft.duplicate_of = existing.name
+            draft.waiting = DUPLICATE
+            yield Question(
+                DUPLICATE,
+                f"You already have {existing.name}, which reads this folder. What would you like to do?",
+                [f"Use {existing.name}", REPLACE, MAKE_ANOTHER],
+            )
+            return
         yield from self._next()
 
     def _take_name(self, text: str) -> Iterator[Event]:
@@ -166,7 +191,7 @@ class AgentBuilder:
         if not name:
             yield Question("name", "What should it be called?")
             return
-        if store.name_taken(name):
+        if store.name_taken(name) and name.lower() != (self.draft.replaces or "").lower():
             yield from say(f"You already have an agent called {name}.")
             yield Question("name", "What should this one be called?")
             return
@@ -200,6 +225,9 @@ class AgentBuilder:
 
     def _create(self) -> Iterator[Event]:
         draft = self.draft
+        old = store.find_agent(draft.replaces) if draft.replaces else None
+        if old:
+            store.delete(old)
         agent = store.Agent(name=draft.slots["name"], blueprint=draft.blueprint.id, slots=dict(draft.slots))
         try:
             index = yield from runner.refresh_index(agent)  # reads the files and saves the agent
@@ -336,6 +364,16 @@ def find_folders(name: str, place: str | None, limit: int = 6) -> list[Path]:
                 break
     found = exact or partial
     return sorted(found, key=lambda p: len(p.parts))[:limit]
+
+
+def agent_for_folder(folder: Path) -> store.Agent | None:
+    """An existing agent that already reads this folder."""
+    wanted = os.path.normcase(str(folder.resolve()))
+    for agent in store.list_agents():
+        path = agent.slots.get("folder")
+        if path and os.path.normcase(str(Path(path).resolve())) == wanted:
+            return agent
+    return None
 
 
 def is_blocked(folder: Path) -> bool:

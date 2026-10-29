@@ -17,12 +17,20 @@ is `concierge/events.py`; read it first. Change it only when both people
 agree.
 
 ```python
-engine.startup()             # once when the UI opens: SystemInfo, AgentList
+engine.startup()             # once when the UI opens: SystemInfo, AgentList, ChatList
 engine.send(text)            # the user typed something
 engine.choose(id, choice)    # the user clicked a button on a Question or AgentCard
-engine.reset()               # new conversation
-engine.close()               # UI closing: frees Elaina's graphics memory
+engine.new_chat()            # "New chat": keeps the current one in the list, starts empty
+engine.open_chat(id)         # reopen a saved conversation from the list
+engine.delete_chat(id)       # delete a saved conversation (the UI confirms first)
+engine.delete_agent(name)    # Elaina asks to confirm with a Question; choose() deletes
+engine.reset()               # new chat without drawing anything (terminal /new)
+engine.close()               # UI closing: saves the chat, frees Elaina's graphics memory
 ```
+
+Every conversation is saved automatically after each message (in
+`%LOCALAPPDATA%\LocalAIConcierge\conversations`), including what Elaina
+remembers of it, so a reopened chat carries on where it stopped.
 
 Each call returns an iterator of events; draw them as they arrive (replies
 stream).
@@ -36,8 +44,10 @@ stream).
 | `AgentCard` | A card with name, kind, what it reads, can do, cannot do, runs on, and `actions` as buttons calling `choose(id, action)` |
 | `Progress` | One status line ("Reading 23 files..."); each new one replaces the last, cleared by any other event |
 | `Result` | An agent's answer, with its `sources` (file path and quote) shown small underneath |
-| `AgentList` | The user's agents, for a sidebar or menu. Sent again whenever it changes |
+| `AgentList` | The user's agents, for a sidebar or menu, each with a delete button calling `delete_agent(name)`. Sent again whenever it changes |
 | `Error` | A friendly error message; the text is already written for the user |
+| `ChatList` | Saved conversations, newest first, with `current` marking the open one. Clicking one calls `open_chat(id)`; each has a delete button calling `delete_chat(id)` after a confirm |
+| `Transcript` | Replace the whole chat area with these items (`role`: user, elaina, result, error). Empty after New chat or deleting the open chat |
 
 Build the UI against `FakeEngine` (`concierge/fake_engine.py`). It needs no
 model and plays scripted flows that produce every event: type anything for a

@@ -133,28 +133,93 @@ button:disabled {
   letter-spacing: 0.04em;
 }
 
+.chats,
 .agents {
-  flex: 1;
   margin: 0;
   padding: 0;
   list-style: none;
   overflow-y: auto;
 }
 
+/* Chats take the free space; agents keep a share of it below. */
+.chats {
+  flex: 1;
+  min-height: 60px;
+}
+
+.agents {
+  flex: 0 1 auto;
+  max-height: 32%;
+}
+
+.chats li,
 .agents li {
-  padding: 7px 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   border-radius: 6px;
+}
+
+.chats li.muted,
+.agents li.muted {
+  padding: 7px 6px;
+}
+
+.item-main {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.agent::before {
+.item-main:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.chats li.current .item-main {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.agent .item-main::before {
   content: "●";
   margin-right: 8px;
   color: var(--accent);
   font-size: 9px;
   vertical-align: middle;
+}
+
+/* Shown on hover so the lists stay calm; always reachable by keyboard. */
+.item-delete {
+  flex: none;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  opacity: 0;
+}
+
+li:hover .item-delete,
+.item-delete:focus-visible,
+.item-delete.confirm {
+  opacity: 1;
+}
+
+.item-delete:hover:not(:disabled),
+.item-delete.confirm {
+  color: var(--error-text);
+  background: var(--error-bg);
 }
 
 .muted {
