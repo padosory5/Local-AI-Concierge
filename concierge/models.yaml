@@ -1,0 +1,61 @@
+# The tested model list for Elaina's own brain.
+#
+# Elaina is the always-on concierge, so her model must be small enough to stay
+# loaded without slowing the computer down or crowding out the bigger model an
+# agent will use later. The picker in catalog.py takes the FIRST entry below
+# that fits the machine, so keep the list ordered best first.
+#
+# Fields:
+#   tag          Ollama model tag (ollama pull <tag>).
+#   name         What the user sees.
+#   download_gb  Size of the download, from the Ollama registry manifest.
+#   memory_gb    Memory the loaded model really uses with num_ctx 4096.
+#   measured     true when memory_gb was measured on a real card with
+#                `python -m concierge measure <tag>`, false while it is an
+#                estimate. Do not trust Ollama's own number: it reported
+#                1.45 GB for gemma4:12b while the card used 9.7 GB.
+#   languages    Languages it handles well enough to talk with people.
+#   notes        Why it is on the list, and what it is bad at.
+
+models:
+  - tag: qwen3.5:4b
+    name: Qwen 3.5 4B
+    download_gb: 3.32
+    memory_gb: 3.8  # RTX 5080, 2026-10-28; Ollama claimed 2.92
+    measured: true
+    languages: [en, ko, ja, zh]
+    notes: >-
+      Newest small Qwen. Its 9B sibling beat qwen3:8b on everyday
+      conversation in the first comparison round (80% vs 56% wants met).
+
+  - tag: qwen3:4b
+    name: Qwen 3 4B
+    download_gb: 2.5
+    memory_gb: 3.4
+    measured: false
+    languages: [en, ko, ja, zh]
+    notes: Proven older generation; fallback when qwen3.5:4b does not fit.
+
+  - tag: qwen3:1.7b
+    name: Qwen 3 1.7B
+    download_gb: 1.36
+    memory_gb: 2.1
+    measured: false
+    languages: [en, ko, ja, zh]
+    notes: For 8 GB graphics cards and 16 GB laptops. Short answers only.
+
+  - tag: gemma3:1b
+    name: Gemma 3 1B
+    download_gb: 0.81
+    memory_gb: 1.3
+    measured: false
+    languages: [en, ko, ja]
+    notes: Smallest model that still holds a sensible conversation.
+
+  - tag: qwen3:0.6b
+    name: Qwen 3 0.6B
+    download_gb: 0.52
+    memory_gb: 1.1
+    measured: false
+    languages: [en]
+    notes: Last resort for very small machines. Often confused; tell the user.
