@@ -18,6 +18,8 @@ window.app = (() => {
   let bubble = null; // Elaina's message that streamed text is added to
   let typing = null; // the "..." row shown until the first event arrives
   let currentChat = null; // id of the open conversation, from ChatList
+  let thinkMode = false; // the Think button: Elaina shows her full thinking
+  let thinking = null; // the fog box of the current turn, while it is open
 
   // ------------------------------------------------------------- drawing
 
@@ -99,6 +101,24 @@ window.app = (() => {
       $("about-device").textContent = e.device;
     },
 
+    // Elaina working it out: faded "fog" that streams in, then folds into
+    // one line ("Thought for 12s") as soon as anything else arrives.
+    Thinking(e) {
+      const box = thinkingBox();
+      if (e.kind === "thought") {
+        if (!box.thought) {
+          box.thought = el("div", "thinking-thought");
+          box.body.append(box.thought);
+        }
+        box.thought.append(e.text);
+      } else {
+        box.body.append(el("div", "thinking-step", e.text));
+        box.steps += 1;
+      }
+      box.body.scrollTop = box.body.scrollHeight;
+      follow(() => {});
+    },
+
     ElainaText(e) {
       if (!bubble) bubble = message("elaina", "");
       follow(() => bubble.append(e.text));
@@ -124,6 +144,25 @@ window.app = (() => {
       addRow("elaina", card);
     },
 
+    IdeaCard(e) {
+      const words = { ready: "Ready", not_built: "Not built yet", not_possible: "Not possible", unclear: "Not sure" };
+      const steps = el("ul", "idea-steps");
+      for (const step of e.steps) {
+        const li = el("li", "idea-step");
+        const text = el("span", "", step.text);
+        if (step.note) text.append(el("span", "idea-note", step.note));
+        li.append(el("span", `idea-status ${step.status}`, words[step.status] || step.status), text);
+        steps.append(li);
+      }
+      const card = el("div", `card idea ${e.level}`);
+      card.append(el("div", "card-name", e.title), el("div", "card-kind", "Your idea"));
+      card.append(el("div", "card-label", "What it needs"), steps);
+      if (e.difficulty) card.append(el("div", "card-label", "On this computer"), el("div", "card-value", e.difficulty));
+      card.append(el("div", "idea-verdict", e.verdict));
+      card.append(choiceButtons(e.id, e.actions));
+      addRow("elaina", card);
+    },
+
     Progress(e) {
       $("progress-text").textContent = e.text;
       $("progress").hidden = false;
@@ -140,14 +179,26 @@ window.app = (() => {
     },
 
     AgentList(e) {
+      const switchable = new Set(e.switchable || []);
+      const active = new Set(e.active || []);
       const items = e.agents.map((name) => {
-        // Clicking an agent starts a message to it, which is how it is used.
-        const use = itemButton("item-main", name, () => {
-          input.value = `${name}: `;
-          grow();
-          input.focus();
-        });
-        use.title = `Ask ${name} something`;
+        let use;
+        if (switchable.has(name)) {
+          // Switch-on agents work outside the chat: clicking switches them.
+          const on = active.has(name);
+          use = itemButton("item-main", "", () => run(() => api.toggle_agent(name), { showDots: false }));
+          use.append(el("span", "item-name", name), el("span", `switch ${on ? "on" : "off"}`, on ? "On" : "Off"));
+          use.title = on ? `${name} is on. Click to switch it off` : `Click to switch ${name} on`;
+          use.setAttribute("aria-pressed", String(on));
+        } else {
+          // Clicking an agent starts a message to it, which is how it is used.
+          use = itemButton("item-main", name, () => {
+            input.value = `${name}: `;
+            grow();
+            input.focus();
+          });
+          use.title = `Ask ${name} something`;
+        }
         // Elaina asks to confirm in the chat, so the engine decides.
         const remove = itemButton("item-delete", "✕", () => run(() => api.delete_agent(name)));
         remove.setAttribute("aria-label", `Delete ${name}`);
@@ -216,13 +267,37 @@ window.app = (() => {
     run(() => api.delete_chat(id), { showDots: false });
   }
 
+  function thinkingBox() {
+    if (thinking) return thinking;
+    const box = el("div", "thinking live open");
+    const header = el("button", "thinking-header", "Thinking");
+    header.type = "button";
+    header.addEventListener("click", () => box.classList.toggle("open"));
+    const body = el("div", "thinking-body");
+    box.append(header, body);
+    addRow("elaina", box);
+    thinking = { box, header, body, started: Date.now(), steps: 0, thought: null };
+    return thinking;
+  }
+
+  function finishThinking() {
+    if (!thinking) return;
+    const seconds = Math.max(1, Math.round((Date.now() - thinking.started) / 1000));
+    const steps = `${thinking.steps} step${thinking.steps === 1 ? "" : "s"}`;
+    thinking.header.textContent = thinking.thought ? `Thought for ${seconds}s` : `Worked it out in ${steps}`;
+    thinking.box.classList.remove("live", "open");
+    thinking = null;
+  }
+
   // Called from Python (ChatBridge._push) with events.to_dict(event).
   function onEvent(event) {
     hideTyping();
+    // The fog folds away as soon as the answer, or anything else, arrives.
+    if (event.type !== "Thinking") finishThinking();
     // Progress is cleared by any other event, as events.py asks.
     if (event.type !== "Progress") $("progress").hidden = true;
     // Anything drawn in the chat ends the message Elaina was streaming into.
-    if (["Question", "AgentCard", "Result", "Error"].includes(event.type)) finishBubble();
+    if (["Question", "AgentCard", "IdeaCard", "Result", "Error"].includes(event.type)) finishBubble();
 
     const handler = draw[event.type];
     if (handler) handler(event);
@@ -251,6 +326,7 @@ window.app = (() => {
       console.error(err);
       draw.Error({ text: "Something went wrong on my side. Please try again." });
     } finally {
+      finishThinking();
       hideTyping();
       finishBubble();
       $("progress").hidden = true;
@@ -265,7 +341,7 @@ window.app = (() => {
     input.value = "";
     grow();
     message("user", text);
-    run(() => api.send(text));
+    run(() => api.send(text, thinkMode));
   }
 
   function grow() {
@@ -297,6 +373,16 @@ window.app = (() => {
   });
 
   $("about-open").addEventListener("click", () => $("about").showModal());
+
+  $("think").addEventListener("click", () => {
+    thinkMode = !thinkMode;
+    $("think").setAttribute("aria-pressed", String(thinkMode));
+    $("think").classList.toggle("on", thinkMode);
+    $("think-hint").textContent = thinkMode
+      ? "Think is on: Elaina shows her thinking first (slower)"
+      : "Think is off";
+    input.focus();
+  });
 
   // ------------------------------------------------------------- startup
 

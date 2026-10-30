@@ -31,6 +31,22 @@ class SystemInfo:
 
 
 @dataclass(frozen=True)
+class Thinking:
+    """Elaina working something out. Show it faded ("foggy") in the chat, and
+    fold it away into one line ("Thought for 12s") as soon as any other event
+    arrives; the user can click to open it again.
+
+    kind "step": one of her real decisions, a short line of its own, such as
+    "This asks for a new agent: Highlight translator".
+    kind "thought": a piece of her model's own thinking, streamed like
+    ElainaText; sent only when the user asked her to think it through.
+    """
+
+    text: str
+    kind: str = "step"
+
+
+@dataclass(frozen=True)
 class ElainaText:
     """A piece of Elaina's reply. Append it to her current message bubble;
     replies stream in many small pieces."""
@@ -102,9 +118,16 @@ class Result:
 @dataclass(frozen=True)
 class AgentList:
     """The user's agents, for a sidebar or menu. Sent by startup() and again
-    whenever an agent is created or deleted."""
+    whenever an agent is created, deleted, or switched on or off.
+
+    Agents in `switchable` work outside the chat while switched on (such as a
+    highlight translator): show them with an on/off switch that calls
+    toggle_agent(name). `active` lists the ones switched on right now.
+    """
 
     agents: list[str]
+    switchable: list[str] = field(default_factory=list)
+    active: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -112,6 +135,33 @@ class Error:
     """Something went wrong. text is written for the user, not a stack trace."""
 
     text: str
+
+
+@dataclass(frozen=True)
+class IdeaStep:
+    text: str  # e.g. "Translate text (into Korean)"
+    status: str  # "ready", "not_built", "not_possible" or "unclear"
+    note: str = ""  # shown small, e.g. "Moving files will always show a preview first"
+
+
+@dataclass(frozen=True)
+class IdeaCard:
+    """Elaina's honest answer to "could you make a helper that...?".
+
+    Show the title, each step with its status, the difficulty line (does it
+    need a bigger model, does that fit this computer) and the verdict, with
+    `actions` as buttons calling choose(id, action). Everything on it is
+    written by code, not the model. `level` is the overall answer, for a
+    colour or icon: "ready", "not_built", "too_big", "not_possible", "unclear".
+    """
+
+    id: str
+    title: str
+    steps: list[IdeaStep]
+    difficulty: str
+    verdict: str
+    level: str
+    actions: list[str]
 
 
 @dataclass(frozen=True)
@@ -149,8 +199,8 @@ class Transcript:
 
 
 Event = Union[
-    SystemInfo, ElainaText, ElainaDone, Question, AgentCard, Progress, Result, AgentList, Error,
-    ChatList, Transcript,
+    Thinking, SystemInfo, ElainaText, ElainaDone, Question, AgentCard, Progress, Result, AgentList, Error,
+    ChatList, Transcript, IdeaCard,
 ]
 
 
@@ -172,9 +222,13 @@ class Engine(Protocol):
         """Call once when the UI opens. Yields SystemInfo, AgentList, then ChatList."""
         ...
 
-    def send(self, text: str) -> Iterator[Event]:
+    def send(self, text: str, think: bool = False) -> Iterator[Event]:
         """The user typed a message. The first message of a new conversation
-        also yields a ChatList, since the conversation now has a place in it."""
+        also yields a ChatList, since the conversation now has a place in it.
+
+        think: the user asked Elaina to think it through (the Think button).
+        Her own replies then come after streamed Thinking thoughts, which
+        takes much longer (about 20 seconds on a 4B model)."""
         ...
 
     def choose(self, id: str, choice: str) -> Iterator[Event]:
@@ -198,6 +252,11 @@ class Engine(Protocol):
     def delete_agent(self, name: str) -> Iterator[Event]:
         """The user wants an agent removed. Elaina asks to confirm with a
         Question; answering it through choose() deletes it and yields AgentList."""
+        ...
+
+    def toggle_agent(self, name: str) -> Iterator[Event]:
+        """Switch a switchable agent on or off. Elaina says what changed, then
+        AgentList with the new `active` list."""
         ...
 
     def reset(self) -> None:

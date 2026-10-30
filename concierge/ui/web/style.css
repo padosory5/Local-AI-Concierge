@@ -197,6 +197,39 @@ button:disabled {
   vertical-align: middle;
 }
 
+/* On/off pill for agents that work outside the chat while switched on. */
+.item-main:has(.switch) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.switch {
+  flex: none;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.switch.on {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.switch.off {
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
 /* Shown on hover so the lists stay calm; always reachable by keyboard. */
 .item-delete {
   flex: none;
@@ -432,6 +465,61 @@ li:hover .item-delete,
   margin-top: 2px;
 }
 
+/* Elaina's answer to "could you make a helper that...?". */
+.idea-steps {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.idea-step {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.idea-status {
+  flex: none;
+  min-width: 92px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.idea-status.ready {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.idea-status.not_built {
+  background: var(--note-bg);
+  color: var(--note-text);
+}
+
+.idea-status.not_possible {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.idea-status.unclear {
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.idea-note {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.idea-verdict {
+  margin-top: 10px;
+  font-weight: 600;
+}
+
 /* An agent's answer, with where it found it underneath. */
 .result {
   padding: 12px 14px;
@@ -528,6 +616,92 @@ li:hover .item-delete,
 
 .composer button:hover:not(:disabled) {
   background: var(--accent-hover);
+}
+
+/* The Think button: a quiet toggle next to Send. */
+.composer button.think-toggle {
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.composer button.think-toggle:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.composer button.think-toggle.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Elaina's thinking: faded, italic "fog" above her answer. */
+.thinking {
+  max-width: 640px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.thinking-header {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-style: italic;
+  cursor: pointer;
+}
+
+.thinking-header::before {
+  content: "▸ ";
+}
+
+.thinking.open .thinking-header::before {
+  content: "▾ ";
+}
+
+.thinking.live .thinking-header::after {
+  content: "...";
+  animation: thinking-dots 1.2s steps(4) infinite;
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  width: 0;
+}
+
+@keyframes thinking-dots {
+  to {
+    width: 1.2em;
+  }
+}
+
+.thinking-body {
+  display: none;
+  margin-top: 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  font-style: italic;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 22em;
+  overflow-y: auto;
+}
+
+.thinking.open .thinking-body {
+  display: block;
+}
+
+/* While it streams, older lines fade into fog at the top. */
+.thinking.live .thinking-body {
+  max-height: 9em;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 3em);
+  mask-image: linear-gradient(to bottom, transparent 0, black 3em);
+}
+
+.thinking-step::before {
+  content: "· ";
 }
 
 .hint {

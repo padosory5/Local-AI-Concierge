@@ -11,7 +11,7 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
-from ..events import Event, Progress, Result, Source
+from ..events import Event, Progress, Result, Source, Thinking
 from ..ollama import Ollama
 from . import store
 from .files import SearchIndex, folder_signature, passages_of, scan, tokens
@@ -27,6 +27,9 @@ def run(
     index = yield from refresh_index(agent)
     yield Progress(f"Searching {agent.name}'s files...")
     hits = index.search(request, TOP_PASSAGES)
+    if hits:
+        files = ", ".join(dict.fromkeys(p.path for p in hits))
+        yield Thinking(f"Found {len(hits)} matching passage{'s' if len(hits) != 1 else ''} in {files}.")
     if not hits:
         yield Result(agent.name, f"I couldn't find anything about that in {agent.slots['folder']}.")
         return

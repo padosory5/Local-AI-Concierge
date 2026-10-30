@@ -10,6 +10,8 @@ What to type to see each flow:
     (or mention documents,   with buttons, AgentCard, Progress, Result
     files or a folder)
     "ask ..."              run the existing agent: Progress, Result with sources
+    "translate ...", "screenshot ..." or "idea"
+                           an IdeaCard: Elaina's verdict on a helper idea
     "error"                an Error event
 
 Conversations are kept in memory (same ChatBook as the real engine), so New
@@ -24,6 +26,8 @@ from collections.abc import Iterator
 from .conversations import ChatBook
 from .events import (
     AgentCard,
+    IdeaCard,
+    IdeaStep,
     AgentList,
     ElainaDone,
     ElainaText,
@@ -41,7 +45,9 @@ class FakeEngine:
     def __init__(self, delay: float = 0.03):
         # Seconds between streamed pieces and progress steps; 0 for tests.
         self.delay = delay
-        self.agents = ["Contracts helper"]
+        self.agents = ["Contracts helper", "Korean translator"]
+        self.switchable = {"Korean translator"}
+        self.on: set[str] = set()
         self.draft: dict = {}
         self.waiting_for: str | None = None  # which typed answer we expect next
         self.deleting: str | None = None
@@ -61,11 +67,18 @@ class FakeEngine:
             in_use="Qwen 3.5 4B (qwen3.5:4b)",
             device="NVIDIA GeForce RTX 5080",
         )
-        yield AgentList(list(self.agents))
+        yield self._agent_list()
         yield self.book.chat_list()
 
-    def send(self, text: str) -> Iterator[Event]:
-        yield from self.book.record(text, self._reply(text))
+    def send(self, text: str, think: bool = False) -> Iterator[Event]:
+        def with_thinking():
+            if think:
+                from .events import Thinking
+                yield Thinking("This is normal conversation, so I'll answer myself.")
+                for word in "The user is saying hello, so a short friendly reply fits.".split(" "):
+                    yield Thinking(word + " ", "thought")
+            yield from self._reply(text)
+        yield from self.book.record(text, with_thinking())
 
     def choose(self, id: str, choice: str) -> Iterator[Event]:
         yield from self.book.record(choice, self._choice(id, choice))
@@ -84,6 +97,21 @@ class FakeEngine:
 
     def delete_chat(self, id: str) -> Iterator[Event]:
         yield from self.book.delete(id)
+
+    def toggle_agent(self, name: str) -> Iterator[Event]:
+        def flip():
+            if name not in self.switchable:
+                yield Error(f"{name} isn't an agent that can be switched on.")
+                return
+            self.on ^= {name}
+            state = "on. Highlight text in any program" if name in self.on else "off"
+            yield from self._say(f"{name} is {state}.")
+            yield self._agent_list()
+        yield from self.book.record("", flip())
+
+    def _agent_list(self) -> AgentList:
+        return AgentList(list(self.agents), sorted(self.switchable & set(self.agents)),
+                         sorted(self.on & set(self.agents)))
 
     def delete_agent(self, name: str) -> Iterator[Event]:
         def ask():
@@ -109,6 +137,18 @@ class FakeEngine:
             self.draft["folder"] = text.strip()
             yield from self._say("Got it. Should it read every file there, or only some kinds?")
             yield Question("file_types", "Which files should it read?", ["PDF only", "Word only", "Everything"])
+        elif any(word in lowered for word in ("translate", "shortcut", "screenshot", "idea")):
+            yield IdeaCard(
+                "idea", "Highlight translator",
+                [IdeaStep("When you press a shortcut key (Ctrl+F1)", "not_built"),
+                 IdeaStep("The text you highlighted", "not_built"),
+                 IdeaStep("Translate text (into Korean)", "not_built"),
+                 IdeaStep("Show the result in a small bubble or notification", "not_built")],
+                "Easy: Elaina's own model can do this, nothing extra to download.",
+                "Your computer can do this, but the app can't build it yet. Save the idea, and "
+                "the most wanted parts get built first.",
+                "not_built", ["Save the idea", "Change the idea", "Cancel"],
+            )
         elif "error" in lowered:
             yield Error("Ollama is not running. Open the Ollama app and try again.")
         elif lowered.startswith("ask "):
@@ -133,9 +173,15 @@ class FakeEngine:
             if choice == "Delete it" and name in self.agents:
                 self.agents.remove(name)
                 yield from self._say(f"Deleted {name}.")
-                yield AgentList(list(self.agents))
+                yield self._agent_list()
             else:
                 yield from self._say("Okay, I kept it.")
+        elif id == "idea" and choice == "Change the idea":
+            yield Question("idea_change", "What should be different?")
+        elif id == "idea" and choice == "Save the idea":
+            yield from self._say('Saved "Highlight translator" to your ideas (1 saved).')
+        elif id == "idea":
+            yield from self._say("Okay, I've put that idea aside.")
         elif id == "file_types":
             self.draft["file_types"] = choice
             yield self._card()
@@ -188,7 +234,7 @@ class FakeEngine:
             self.agents.append(name)
         self.draft = {}
         yield from self._say(f"{name} is ready. Ask it anything about those files.")
-        yield AgentList(list(self.agents))
+        yield self._agent_list()
 
     def _run_agent(self, name: str, question: str) -> Iterator[Event]:
         for step in ("Searching 23 files...", "Reading the 3 best matches..."):

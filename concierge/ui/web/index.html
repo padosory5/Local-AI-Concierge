@@ -44,9 +44,11 @@
 
     <form id="composer" class="composer">
       <textarea id="input" rows="1" placeholder="Message Elaina" aria-label="Message Elaina"></textarea>
+      <button id="think" class="think-toggle" type="button" aria-pressed="false"
+              title="Elaina shows her full thinking before answering. Much slower (about 20 seconds).">Think</button>
       <button id="send" type="submit" disabled>Send</button>
     </form>
-    <p class="hint">Enter to send, Shift+Enter for a new line</p>
+    <p class="hint">Enter to send, Shift+Enter for a new line · <span id="think-hint">Think is off</span></p>
   </main>
 
   <dialog id="about" class="about">

@@ -53,7 +53,7 @@ def test_button_clicks_reach_the_engine():
 
 def test_engine_crash_becomes_a_friendly_error():
     class BrokenEngine(FakeEngine):
-        def send(self, text):
+        def send(self, text, think=False):
             yield ElainaText("Hel")
             raise ConnectionError("Ollama went away")
 
@@ -81,4 +81,4 @@ def test_page_sees_only_the_engine_calls():
     # pywebview hands every public attribute of the bridge to the page.
     public = {name for name in dir(ChatBridge(FakeEngine())) if not name.startswith("_")}
     assert public == {"startup", "send", "choose", "reset",
-                      "new_chat", "open_chat", "delete_chat", "delete_agent"}
+                      "new_chat", "open_chat", "delete_chat", "delete_agent", "toggle_agent"}

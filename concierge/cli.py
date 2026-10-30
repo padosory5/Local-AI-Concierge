@@ -13,6 +13,7 @@ modules; nothing here holds logic the UI would need.
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import sys
 
@@ -25,6 +26,8 @@ from .events import (
     ElainaDone,
     ElainaText,
     Error,
+    IdeaCard,
+    Thinking,
     Event,
     Progress,
     Question,
@@ -37,6 +40,8 @@ from .ollama import Ollama, OllamaError
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if sys.platform == "win32":
+        os.system("")  # switches on colour codes in the classic Windows console
         sys.stdin.reconfigure(encoding="utf-8", errors="replace")
 
     parser = argparse.ArgumentParser(prog="concierge", description="Local AI Concierge")
@@ -126,8 +131,10 @@ def cmd_chat(setup_first: bool) -> int:
 
 
 def _chat_loop(engine: ElainaEngine, screen: TerminalScreen) -> int:
-    print("Chat with Elaina. Type /new for a new chat (this one is saved), /exit to leave.")
+    print("Chat with Elaina. Type /new for a new chat (this one is saved), /think to see her")
+    print("thinking (slower), /exit to leave.")
     print('Try: "make an agent for my Documents folder".\n')
+    think = False
     while True:
         try:
             text = input("You: ").strip()
@@ -138,13 +145,17 @@ def _chat_loop(engine: ElainaEngine, screen: TerminalScreen) -> int:
             continue
         if text in ("/exit", "/quit"):
             return 0
+        if text == "/think":
+            think = not think
+            print(f"(Think is {'on: Elaina shows her thinking first, which is slower' if think else 'off'}.)\n")
+            continue
         if text in ("/new", "/reset"):
             engine.reset()
             screen.pending = None
             print("(Started a new chat. The last one is saved in the app's chat list.)\n")
             continue
         picked = screen.pick(text)
-        events = engine.choose(*picked) if picked else engine.send(text)
+        events = engine.choose(*picked) if picked else engine.send(text, think)
         screen.pending = None
         try:
             for event in events:
@@ -152,6 +163,10 @@ def _chat_loop(engine: ElainaEngine, screen: TerminalScreen) -> int:
         except KeyboardInterrupt:
             print(" (stopped)\n")
         screen.end_progress()
+
+
+# Dim and normal text in the terminal (Windows 10 and later understand these).
+DIM, PLAIN = "\033[2m", "\033[0m"
 
 
 class TerminalScreen:
@@ -162,6 +177,7 @@ class TerminalScreen:
         self.pending: tuple[str, list[str]] | None = None  # (id, choices) waiting for a pick
         self.in_reply = False
         self.progress = False
+        self.thinking = False  # in the middle of a dimmed thinking block
 
     def pick(self, text: str) -> tuple[str, str] | None:
         if not self.pending:
@@ -180,6 +196,19 @@ class TerminalScreen:
     def draw(self, event: Event) -> None:
         if not isinstance(event, Progress):
             self.end_progress()
+        if isinstance(event, Thinking):
+            # Dimmed, like the window's fog. Steps get a line each; thoughts stream.
+            if event.kind == "step":
+                print(f"{DIM}  · {event.text}{PLAIN}")
+            else:
+                if not self.thinking:
+                    print(f"{DIM}  (thinking) ", end="")
+                    self.thinking = True
+                print(event.text, end="", flush=True)
+            return
+        if self.thinking:
+            print(f"{PLAIN}\n")
+            self.thinking = False
         if isinstance(event, ElainaText):
             if not self.in_reply:
                 print("Elaina: ", end="")
@@ -202,6 +231,20 @@ class TerminalScreen:
             print("  +--")
             self._choices(event.id, event.actions)
             print()
+        elif isinstance(event, IdeaCard):
+            words = {"ready": "ready", "not_built": "not built yet", "not_possible": "not possible",
+                     "unclear": "not sure"}
+            print(f"  +-- Idea: {event.title}")
+            for step in event.steps:
+                print(f"  |  [{words.get(step.status, step.status)}] {step.text}")
+                if step.note:
+                    print(f"  |      {step.note}")
+            if event.difficulty:
+                print(f"  |  {event.difficulty}")
+            print(f"  |  {event.verdict}")
+            print("  +--")
+            self._choices(event.id, event.actions)
+            print()
         elif isinstance(event, Progress):
             print(f"\r  {event.text[:74]:<76}", end="", flush=True)
             self.progress = True
@@ -213,7 +256,9 @@ class TerminalScreen:
             print()
         elif isinstance(event, AgentList):
             if event.agents:
-                print(f"Your agents: {', '.join(event.agents)}\n")
+                names = [f"{n} ({'on' if n in event.active else 'off'})" if n in event.switchable else n
+                         for n in event.agents]
+                print(f"Your agents: {', '.join(names)}\n")
         elif isinstance(event, Error):
             print(f"(Problem) {event.text}\n")
 
