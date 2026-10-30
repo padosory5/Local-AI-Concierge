@@ -6,6 +6,9 @@ agents:
   - name: Contracts helper
     blueprint: documents_qa
     slots: {folder: C:/Users/test/Desktop/Contracts}
+  - name: Korean translator
+    blueprint: custom
+    slots: {instruction: Translate the text into Korean., when: "While it's switched on", show: A bubble above the text, keep: A few seconds}
 
 cases:
   # chat
@@ -20,7 +23,7 @@ cases:
   - {text: "can you book me a flight to Tokyo?", kind: chat}
   - {text: "write a short poem about rain", kind: chat}
   - {text: "오늘 날씨 어때?", kind: chat}
-  - {text: "translate 'good morning' into Korean", kind: chat}
+  - {text: "translate 'good morning' into Korean", kind: run_agent, agent: Korean translator}  # exactly its job
   # new agent
   - {text: "I want to ask questions about my lecture notes", kind: new_agent, blueprint: documents_qa}
   - {text: "can you search through my research papers folder?", kind: new_agent, blueprint: documents_qa}
@@ -36,3 +39,22 @@ cases:
   - {text: "what are the payment terms in my contracts?", kind: run_agent, agent: Contracts helper}
   - {text: "check my contracts for the termination notice period", kind: run_agent, agent: Contracts helper}
   - {text: "which of my contracts mention a penalty fee?", kind: run_agent, agent: Contracts helper}
+  # idea for another kind of helper
+  - {text: "can you make something that translates text when I highlight it?", kind: idea}
+  - {text: "I want an agent that copies my screenshots automatically", kind: idea}
+  - {text: "make a helper that sorts my Downloads folder by file type", kind: idea}
+  - {text: "set up a reminder to stretch every hour", kind: idea}
+  - {text: "could you build an agent that books flights for me?", kind: idea}
+  - {text: "make Ctrl+Shift+D type today's date for me", kind: idea}
+  # helpers made from parts (the idea planner builds them)
+  - {text: "make an agent that translates whatever I highlight into Korean", kind: idea}
+  - {text: "when I select text in my browser, show me the translation", kind: idea}
+  - {text: "하이라이트한 문장을 자동으로 번역해주는 에이전트 만들어줘", kind: idea}
+  - {text: "translate 'thank you very much' into Japanese", kind: chat}
+  # changing an agent the user already has (the model's part; code catches most first)
+  - {text: "can you make the translation stay on until I unhighlight it", kind: change_agent, agent: Korean translator}
+  - {text: "I want the Korean translator to copy to the clipboard instead", kind: change_agent, agent: Korean translator}
+  - {text: "rename Contracts helper to Lease papers", kind: change_agent, agent: Contracts helper}
+  - {text: "Korean translator: see you tomorrow", kind: run_agent, agent: Korean translator}
+  - {text: "make an agent that explains difficult English words I highlight in simple Korean", kind: idea}
+  - {text: "I want something that fixes the grammar of sentences I paste here", kind: idea}

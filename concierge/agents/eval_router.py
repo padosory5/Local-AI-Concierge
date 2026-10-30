@@ -38,7 +38,7 @@ def main() -> int:
         ok = got.kind == case["kind"]
         if ok and case["kind"] == "new_agent":
             ok = got.blueprint == case.get("blueprint")
-        if ok and case["kind"] == "run_agent":
+        if ok and case["kind"] in ("run_agent", "change_agent"):
             ok = got.agent == case.get("agent")
         passed += ok
         if not ok:

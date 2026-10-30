@@ -8,8 +8,10 @@ them in means every chat starts as Elaina, and `ollama run elaina` works too.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import os
+import re
 import sys
 import threading
 from collections.abc import Iterator
@@ -68,6 +70,39 @@ def needs_configure(ollama: Ollama, base: ModelEntry, rec: Recommendation, repor
     )
 
 
+# Closing lines small models add however often the persona forbids them:
+# "Let me know if you need anything else!", "Feel free to ask...".
+CLOSING_FILLER = re.compile(
+    r"^\s*(let me know|just let me know|feel free|if you need|if you have any|anything else|"
+    r"is there anything|hope (this|that) helps|happy to help|더 필요한|궁금한 (점|게)|언제든)",
+    re.IGNORECASE,
+)
+_SENTENCE_END = re.compile(r"(?<=[.!?。])\s+")
+
+
+def without_closing_filler(chunks: Iterator[str]) -> Iterator[str]:
+    """Pass a streamed reply through sentence by sentence, dropping filler
+    sentences at its very end. A filler sentence in the middle is kept: it is
+    held back only until it is clear more text follows."""
+    pending, held, said = "", [], False
+    for chunk in chunks:
+        pending += chunk
+        while match := _SENTENCE_END.search(pending):
+            sentence, pending = pending[:match.end()], pending[match.end():]
+            if CLOSING_FILLER.match(sentence):
+                held.append(sentence)
+                continue
+            if held:
+                yield "".join(held)
+                held = []
+            yield sentence
+            said = True
+    if pending.strip() and not CLOSING_FILLER.match(pending):
+        yield "".join(held) + pending
+    elif not said and (held or pending.strip()):
+        yield (held or [pending])[0]  # all filler ("Happy to help!"): never answer with nothing
+
+
 class ElainaChat:
     """One conversation with Elaina. Independent of the UI that shows it."""
 
@@ -88,11 +123,43 @@ class ElainaChat:
         self.history.append({"role": "user", "content": text})
         reply = []
         try:
-            for chunk in self.ollama.chat(
-                self.model, self._recent(), think=self.think, keep_alive=KEEP_ALIVE
-            ):
-                reply.append(chunk)
-                yield chunk
+            chunks = self.ollama.chat(self.model, self._recent(), think=self.think, keep_alive=KEEP_ALIVE)
+            for piece in without_closing_filler(chunks):
+                reply.append(piece)
+                yield piece
+        finally:
+            if reply:
+                self.history.append({"role": "assistant", "content": "".join(reply).strip()})
+            else:
+                self.history.pop()
+
+    @property
+    def can_think(self) -> bool:
+        """Whether this model can show its thinking (Qwen 3 and 3.5 can)."""
+        return self.think is False
+
+    def think_through(self, text: str) -> Iterator[tuple[str, str]]:
+        """Like send(), but the model thinks first and its thoughts stream too:
+        ("thought", piece) pieces, then ("text", piece) pieces of the reply.
+        Only the reply goes into her memory of the conversation."""
+        self.history.append({"role": "user", "content": text})
+        parts = self.ollama.chat_parts(self.model, self._recent(), think=True, keep_alive=KEEP_ALIVE)
+        reply = []
+
+        def rest_of_reply():
+            for kind, piece in parts:
+                if kind == "text":
+                    yield piece
+
+        try:
+            for kind, piece in parts:
+                if kind == "thought":
+                    yield "thought", piece
+                    continue
+                for out in without_closing_filler(itertools.chain([piece], rest_of_reply())):
+                    reply.append(out)
+                    yield "text", out
+                break
         finally:
             if reply:
                 self.history.append({"role": "assistant", "content": "".join(reply).strip()})

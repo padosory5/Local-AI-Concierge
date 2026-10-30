@@ -104,3 +104,27 @@ def test_ollama_host_values_become_urls():
     assert _normalize_url("0.0.0.0") == "http://127.0.0.1:11434"
     assert _normalize_url("localhost:11500") == "http://127.0.0.1:11500"
     assert _normalize_url("http://192.168.0.5:11434/") == "http://192.168.0.5:11434"
+
+
+def test_closing_filler_is_dropped():
+    reply = "The capital of Australia is Canberra. Let me know if you need anything else!"
+    model = FakeOllama()
+    model.chat = lambda *a, **k: iter(word + " " for word in reply.split(" "))  # streamed word by word
+    chat = elaina.ElainaChat(model)
+    assert "".join(chat.send("capital of Australia?")).strip() == "The capital of Australia is Canberra."
+    assert chat.history[-1]["content"] == "The capital of Australia is Canberra."
+
+
+def test_filler_in_the_middle_is_kept():
+    pieces = list(elaina.without_closing_filler(iter(["If you need a spare key, ask the office. ",
+                                                       "It opens at 9."])))
+    assert "".join(pieces) == "If you need a spare key, ask the office. It opens at 9."
+
+
+def test_reply_that_is_only_text_without_a_full_stop():
+    assert "".join(elaina.without_closing_filler(iter(["Hi there"]))) == "Hi there"
+
+
+def test_a_reply_that_is_all_filler_keeps_its_first_sentence():
+    pieces = elaina.without_closing_filler(iter(["Happy to help! ", "Let me know if you need more."]))
+    assert "".join(pieces) == "Happy to help! "

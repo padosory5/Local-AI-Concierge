@@ -24,6 +24,7 @@ from .events import (
     ElainaText,
     Error,
     Event,
+    IdeaCard,
     Question,
     Result,
     Source,
@@ -83,6 +84,8 @@ class ChatBook:
                     self._add("elaina", event.text)
                 elif isinstance(event, AgentCard):
                     self._add("elaina", f"Suggested agent: {event.name} ({event.kind})")
+                elif isinstance(event, IdeaCard):
+                    self._add("elaina", f"Idea: {event.title}. {event.verdict}")
                 elif isinstance(event, Result):
                     self._add("result", event.text, event.agent, event.sources)
                 elif isinstance(event, Error):

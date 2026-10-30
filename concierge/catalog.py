@@ -52,9 +52,54 @@ class Recommendation:
     reason: str
 
 
+@dataclass
+class HelperModel(ModelEntry):
+    role: str = "general"  # "general", "vision" or "speech"
+
+
+# On the processor, a helper model may use up to this share of system
+# memory together with Elaina; beyond it the whole computer slows down.
+CPU_HELPER_SHARE = 0.5
+
+
 def load_catalog(path: Path = CATALOG_PATH) -> list[ModelEntry]:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return [ModelEntry(**entry) for entry in data["models"]]
+
+
+def load_helpers(path: Path = CATALOG_PATH) -> list[HelperModel]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return [HelperModel(**entry) for entry in data.get("helpers", [])]
+
+
+def helper_room(report: HardwareReport, elaina_gb: float) -> tuple[float, bool]:
+    """(GB a helper model may use next to Elaina, whether it runs on the processor).
+
+    Uses the device's total memory, not what happens to be free right now:
+    the question is whether the computer can do the job, not whether it can
+    this minute with a game open.
+    """
+    gpu = report.best_gpu()
+    if gpu and gpu.vendor == "apple":
+        return round(gpu.vram_total_gb - elaina_gb - RAM_HEADROOM_GB, 1), False
+    if gpu:
+        return round(gpu.vram_total_gb - elaina_gb - GPU_HEADROOM_GB, 1), False
+    return round(report.ram_total_gb * CPU_HELPER_SHARE - elaina_gb, 1), True
+
+
+def pick_helper(role: str, report: HardwareReport, elaina_gb: float) -> tuple[HelperModel | None, float, bool]:
+    """The best helper model for a role that fits next to Elaina.
+
+    Returns (model or None, room in GB, runs on the processor). Speech models
+    are small enough to run on the processor whatever the graphics card.
+    """
+    room, on_cpu = helper_room(report, elaina_gb)
+    if role == "speech":
+        room, on_cpu = max(room, report.ram_total_gb * CPU_HELPER_SHARE - elaina_gb), on_cpu
+    for helper in load_helpers():
+        if helper.role == role and helper.memory_gb <= room:
+            return helper, room, on_cpu
+    return None, room, on_cpu
 
 
 def find_model(tag: str) -> ModelEntry | None:

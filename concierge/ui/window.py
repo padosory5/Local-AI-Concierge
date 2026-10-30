@@ -46,8 +46,8 @@ class ChatBridge:
     def startup(self) -> None:
         self._run(self._engine.startup)
 
-    def send(self, text: str) -> None:
-        self._run(self._engine.send, text)
+    def send(self, text: str, think: bool = False) -> None:
+        self._run(self._engine.send, text, bool(think))
 
     def choose(self, id: str, choice: str) -> None:
         self._run(self._engine.choose, id, choice)
@@ -63,6 +63,9 @@ class ChatBridge:
 
     def delete_agent(self, name: str) -> None:
         self._run(self._engine.delete_agent, name)
+
+    def toggle_agent(self, name: str) -> None:
+        self._run(self._engine.toggle_agent, name)
 
     def reset(self) -> None:
         with self._lock:

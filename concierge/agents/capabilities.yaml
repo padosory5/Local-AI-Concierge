@@ -1,0 +1,177 @@
+# The building blocks an agent can be made of.
+#
+# When the user describes an idea, Elaina's model breaks it into these blocks
+# (it can only pick ids from this list, or "other"). Code then decides what
+# is possible from the fields below, never the model.
+#
+#   kind     trigger (when it runs), input (what it works on),
+#            action (what it does) or output (where the result goes).
+#   name     What the user sees on the idea card.
+#   ai       What it needs:
+#              none    plain code
+#              small   Elaina's own model is enough
+#              large   a bigger general model (8B and up)
+#              vision  a model that understands images
+#              speech  a speech-to-text model
+#   status   ready        built and usable in the app today
+#            planned      possible, but not built yet
+#            unsupported  the app will not do this, see note
+#   Which agent types combine which blocks is said by each blueprint's
+#   `blocks` list (agents/blueprints/*.yaml).
+#   note     Shown to the user when it matters.
+#
+# Build a block, then change its status to ready here. Saved ideas that use
+# it become possible straight away.
+
+blocks:
+  on_request:
+    kind: trigger
+    name: When you ask in the chat
+    ai: none
+    status: ready
+  hotkey:
+    kind: trigger
+    name: When you press a shortcut key
+    ai: none
+    status: planned
+  while_on:
+    kind: trigger
+    name: Every time, while you have it switched on
+    ai: none
+    status: ready
+  new_screenshot:
+    kind: trigger
+    name: When you take a screenshot
+    ai: none
+    status: planned
+  new_file:
+    kind: trigger
+    name: When a new file appears in a folder
+    ai: none
+    status: planned
+  schedule:
+    kind: trigger
+    name: At set times, like every morning or every week
+    ai: none
+    status: planned
+
+  selected_text:
+    kind: input
+    name: The text you highlighted
+    ai: none
+    status: ready
+  folder_files:
+    kind: input
+    name: The files in a folder you choose
+    ai: none
+    status: ready
+  clipboard_in:
+    kind: input
+    name: What you copied
+    ai: none
+    status: planned
+
+  ask_documents:
+    kind: action
+    name: Answer questions about your files, with where each answer came from
+    ai: small
+    status: ready
+  translate:
+    kind: action
+    name: Translate text
+    ai: small
+    status: ready
+  rewrite:
+    kind: action
+    name: Rewrite or fix text (tone, grammar, shorter, clearer)
+    ai: small
+    status: ready
+  summarize:
+    kind: action
+    name: Summarize text or documents
+    ai: small
+    status: ready
+  extract:
+    kind: action
+    name: Pull out facts into a list or table (dates, totals, names)
+    ai: small
+    status: ready
+  classify:
+    kind: action
+    name: Decide which group or category something belongs to
+    ai: small
+    status: ready
+  move_files:
+    kind: action
+    name: Move, rename or sort files into folders
+    ai: none
+    status: planned
+    note: Moving files will always show a preview first and can be undone.
+  read_image:
+    kind: action
+    name: Read the text in an image or understand what it shows
+    ai: vision
+    status: planned
+  transcribe:
+    kind: action
+    name: Turn speech or recordings into text
+    ai: speech
+    status: planned
+  write_long:
+    kind: action
+    name: Write long text such as essays, reports or stories
+    ai: large
+    status: planned
+    note: Even bigger local models write noticeably weaker long text than online AI.
+  write_code:
+    kind: action
+    name: Write or fix computer programs
+    ai: large
+    status: planned
+    note: Local models manage small scripts; real programs need much bigger models.
+
+  copy_clipboard:
+    kind: output
+    name: Put the result on the clipboard, ready to paste
+    ai: none
+    status: ready
+  show_popup:
+    kind: output
+    name: Show the result in a small bubble or notification
+    ai: none
+    status: ready
+  replace_text:
+    kind: output
+    name: Replace the highlighted text with the result
+    ai: none
+    status: planned
+  save_file:
+    kind: output
+    name: Save the result as a file
+    ai: none
+    status: planned
+
+  web:
+    kind: action
+    name: Search or read websites
+    ai: none
+    status: unsupported
+    note: Everything here runs on your computer without the internet, so reading the web is not part of the app.
+  send_message:
+    kind: action
+    name: Send emails or messages, or post online
+    ai: none
+    status: unsupported
+    note: The app never acts outside your computer on your behalf.
+  money:
+    kind: action
+    name: Buy things, pay, or handle money
+    ai: none
+    status: unsupported
+    note: Never, for your safety.
+  control_apps:
+    kind: action
+    name: Click and type inside other programs for you
+    ai: vision
+    status: unsupported
+    note: Small local models get this wrong too often to be safe.

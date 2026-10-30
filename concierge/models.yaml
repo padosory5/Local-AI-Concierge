@@ -59,3 +59,47 @@ models:
     measured: false
     languages: [en]
     notes: Last resort for very small machines. Often confused; tell the user.
+
+# Bigger models for agent jobs Elaina's own model is too small for. They load
+# only while such an agent works, next to Elaina, so they must fit in what
+# her model leaves free (see catalog.helper_room). Best first within a role.
+#
+#   role   general (bigger all-round model), vision (understands images),
+#          speech (speech to text; runs with faster-whisper, not Ollama)
+
+helpers:
+  - tag: qwen3.5:9b
+    name: Qwen 3.5 9B
+    role: general
+    download_gb: 6.6
+    memory_gb: 7.2
+    measured: true
+    languages: [en, ko, ja, zh]
+    notes: Best everyday results in the first comparison round (80% wants met).
+
+  - tag: qwen3:8b
+    name: Qwen 3 8B
+    role: general
+    download_gb: 5.2
+    memory_gb: 6.6
+    measured: true
+    languages: [en, ko, ja, zh]
+    notes: The old Elaina's model; fallback when Qwen 3.5 9B does not fit.
+
+  - tag: qwen3-vl:8b
+    name: Qwen 3 VL 8B
+    role: vision
+    download_gb: 6.1
+    memory_gb: 7.5
+    measured: false
+    languages: [en, ko, ja, zh]
+    notes: Reads text in screenshots and describes images.
+
+  - tag: whisper-small
+    name: Whisper Small
+    role: speech
+    download_gb: 0.5
+    memory_gb: 1.0
+    measured: false
+    languages: [en, ko, ja, zh]
+    notes: Speech to text. Runs on the processor too, a little slower than real time.

@@ -26,6 +26,9 @@ examples:
   - make me something that reads my lecture slides and answers questions
   - I keep forgetting what's in my lease, can you help me look things up in it
   - 내 문서 폴더에 있는 파일들에 대해 질문하고 싶어
+# The building blocks (capabilities.yaml) this agent is made of, so the idea
+# planner can offer it when an idea needs only these.
+blocks: [on_request, folder_files, ask_documents]
 slots:
   folder:
     label: Folder

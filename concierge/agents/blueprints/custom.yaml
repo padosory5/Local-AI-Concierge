@@ -1,0 +1,55 @@
+# The one template every agent Elaina makes from parts shares. It is not a
+# kind of agent: the idea planner decides which parts an idea needs, Elaina
+# writes the instruction (what to do with the text), and these slots hold the
+# result so every such agent is shown, changed and run the same way
+# (agents/recipe.py, quick/agents.py). A translator, a word explainer and a
+# grammar fixer are all this template with a different instruction.
+#
+#   generic   true: never offered by the router as a kind of agent; only
+#             used when an idea's parts are all among `blocks`.
+
+id: custom
+name: Made from parts
+generic: true
+pitch: ""
+when: ""
+examples: []
+blocks: [on_request, while_on, selected_text, translate, rewrite, summarize, extract, classify,
+         show_popup, copy_clipboard]
+slots:
+  instruction:
+    label: What it does
+    type: instruction
+    ask: null
+    changeable: true
+  when:
+    label: When it works
+    type: choice
+    ask: null
+    choices: [While it's switched on, When you ask in the chat]
+    default: While it's switched on
+    changeable: true
+  show:
+    label: How it shows the result
+    type: choice
+    ask: null
+    choices: [A bubble above the text, Copy it to the clipboard, Both]
+    default: A bubble above the text
+    changeable: true
+  keep:
+    label: How long the result stays
+    type: choice
+    ask: null
+    choices: [Until you unhighlight the text, A few seconds]
+    default: Until you unhighlight the text
+    changeable: true
+  name:
+    label: Name
+    type: text
+    ask: null
+    changeable: true
+can_do: []  # written in code from the slots, see AgentBuilder._show_card
+cannot_do:
+  - Change your files or the text you highlight
+  - Send anything over the internet
+can_change_files: false

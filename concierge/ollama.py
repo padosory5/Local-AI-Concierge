@@ -128,6 +128,31 @@ class Ollama:
 
     # -------------------------------------------------------------- chat
 
+    def chat_parts(
+        self,
+        model: str,
+        messages: list[dict],
+        think: bool | None = None,
+        options: dict | None = None,
+        keep_alive: str | None = None,
+    ) -> Iterator[tuple[str, str]]:
+        """Stream ("thought", text) pieces of the model's thinking, then
+        ("text", text) pieces of its reply. Thoughts only come with think=True
+        on a model that can think."""
+        body = {"model": model, "messages": messages}
+        if keep_alive is not None:
+            body["keep_alive"] = keep_alive
+        if think is not None:
+            body["think"] = think
+        if options:
+            body["options"] = options
+        for event in self._stream("/api/chat", body, timeout=600):
+            message = event.get("message", {})
+            if message.get("thinking"):
+                yield "thought", message["thinking"]
+            if message.get("content"):
+                yield "text", message["content"]
+
     def chat(
         self,
         model: str,
