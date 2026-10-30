@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Elaina chat</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<!-- The compact chat that opens from the bubble. It shows the same
+     conversation as the full app (index.html) and uses the same app.js. -->
+<body class="panel">
+  <div class="panel-shell">
+    <header class="panel-header pywebview-drag-region">
+      <div class="avatar" aria-hidden="true">AC</div>
+      <div class="panel-title">
+        <div class="brand-name">Elaina</div>
+        <div id="model-line" class="chat-sub">Checking your computer...</div>
+      </div>
+      <button id="new-chat" class="icon-button" type="button" title="New chat" aria-label="New chat">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+      </button>
+      <button id="open-app" class="icon-button" type="button" title="Open the full app" aria-label="Open the full app">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"/></svg>
+      </button>
+      <button id="hide-panel" class="icon-button" type="button" title="Hide (Esc)" aria-label="Hide the chat">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9"/></svg>
+      </button>
+    </header>
+
+    <section id="messages" class="messages" aria-live="polite">
+      <div id="empty" class="empty">
+        <p class="empty-title">Say hi to Elaina</p>
+        <p>Everything you write stays on this computer.</p>
+      </div>
+    </section>
+
+    <div id="progress" class="progress" hidden>
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="progress-text"></span>
+    </div>
+
+    <form id="composer" class="composer">
+      <textarea id="input" rows="1" placeholder="Message Elaina" aria-label="Message Elaina"></textarea>
+      <button id="think" class="think-toggle" type="button" aria-pressed="false"
+              title="Elaina shows her full thinking before answering. Much slower (about 20 seconds).">Think</button>
+      <button id="send" type="submit" disabled>Send</button>
+    </form>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
