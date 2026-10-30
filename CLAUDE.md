@@ -7,7 +7,11 @@ are not technical: plain words, no jargon, nothing complicated.
 
 Two people work on this, each on their own branch:
 - **Engine** (`concierge/`): hardware check, model choice, Elaina, agents.
-- **UI** (`concierge/ui/`): the chat window. Just a chat with Elaina and her agents.
+- **UI** (`concierge/ui/`): a round "AC" bubble at the side of the screen.
+  Clicking it opens a compact chat panel; right-click, Open app shows the full
+  window, and minimizing that folds it back into the bubble. Just a chat with
+  Elaina and her agents. The panel and the full app share one conversation
+  (`ChatHub` sends every event to both).
 
 ## The rule between UI and engine
 
@@ -154,8 +158,8 @@ py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 python -m concierge          # terminal version: hardware, model, setup, chat
-python -m concierge.ui       # chat window with the real Elaina
-python -m concierge.ui --fake # chat window with FakeEngine, no model needed
+python -m concierge.ui       # the bubble overlay with the real Elaina
+python -m concierge.ui --fake # the bubble overlay with FakeEngine, no model needed
 pytest                       # all tests; none need Ollama
 python -m concierge.agents.eval_router   # router accuracy with the real model (must stay 100%)
 ```
@@ -204,5 +208,5 @@ variables inside a function do not need listing.
 | `concierge/agents/runner.py` | Engine | `TOP_PASSAGES`, `MAX_CONTENTS`, `STOPWORDS`, `run`, `matching_words`, `clean_answer`, `refresh_index`, `best_sentence` |
 | `concierge/agents/store.py` | Engine | `Agent`, `agents_dir`, `slugify`, `list_agents`, `find_agent`, `name_taken`, `save`, `load_index`, `delete` |
 | `concierge/agents/eval_router.py` | Engine | `CASES`, `main`; command `python -m concierge.agents.eval_router` |
-| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `ChatBridge` (the page calls its `startup`, `send`, `choose`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `open_window`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
-| `concierge/ui/web/` | UI | `index.html`, `style.css`, `app.js`; JavaScript global `app.onEvent(event)`, which `ChatBridge` calls with `events.to_dict(event)` |
+| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `BUBBLE_SIZE`, `MENU_SIZE`, `EDGE_GAP`, `PANEL_WIDTH_SHARE`, `PANEL_MIN_WIDTH`, `PANEL_MAX_WIDTH`, `PANEL_RATIO`, `PANEL_MAX_HEIGHT_SHARE`, `FULL_SIZE`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a chat page calls its `startup`, `send`, `choose`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `PanelBridge` (adds `open_app`, `hide_panel`), `BubbleBridge` (`toggle_panel`, `menu`, `moved`, `open_app`, `quit`), `Overlay`, `bubble_home`, `panel_size`, `place_panel`, `place_menu`, `work_area`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
+| `concierge/ui/web/` | UI | `index.html` (full app), `panel.html` (compact chat), `bubble.html` (the round bubble and its menu), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`) and `bubble.setMenu(grow)` |

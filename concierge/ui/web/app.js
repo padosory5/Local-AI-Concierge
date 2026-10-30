@@ -4,6 +4,11 @@
 //
 // Text from the engine is always set with textContent, never as HTML, so
 // whatever the model writes is shown as plain text.
+//
+// Two pages use this script: the full app (index.html) and the compact panel
+// (panel.html), which has no sidebar or "about" box, so those parts are
+// drawn only when the page has them. Both pages show the same conversation:
+// Python sends every event to both (see ChatHub in window.py).
 
 window.app = (() => {
   const $ = (id) => document.getElementById(id);
@@ -93,6 +98,7 @@ window.app = (() => {
   const draw = {
     SystemInfo(e) {
       $("model-line").textContent = `Running on ${e.in_use} · ${e.device}`;
+      if (!$("about")) return; // the panel shows only the model line
       $("note").textContent = e.note;
       $("note").hidden = !e.note;
       $("about-hardware").replaceChildren(...e.hardware.map((line) => el("li", "", line)));
@@ -179,6 +185,7 @@ window.app = (() => {
     },
 
     AgentList(e) {
+      if (!$("agents")) return;
       const switchable = new Set(e.switchable || []);
       const active = new Set(e.active || []);
       const items = e.agents.map((name) => {
@@ -216,6 +223,7 @@ window.app = (() => {
 
     ChatList(e) {
       currentChat = e.current;
+      if (!$("chats")) return;
       const items = e.chats.map((chat) => {
         const open = itemButton("item-main", chat.title, () => {
           if (chat.id !== currentChat) run(() => api.open_chat(chat.id), { showDots: false });
@@ -313,26 +321,51 @@ window.app = (() => {
     document.querySelectorAll(".item-main, .item-delete").forEach((b) => (b.disabled = value));
   }
 
-  // Runs one engine call. The input stays off until Python returns, which is
-  // after the last event of the call has been drawn.
-  async function run(call, { showDots = true } = {}) {
+  function begin({ showDots = true } = {}) {
     // Old questions and cards are answered once the user moves on.
     document.querySelectorAll(".choices button").forEach((b) => (b.disabled = true));
     setBusy(true);
     if (showDots) showTyping();
+  }
+
+  function end() {
+    finishThinking();
+    hideTyping();
+    finishBubble();
+    $("progress").hidden = true;
+    setBusy(false);
+  }
+
+  // Runs one engine call. The input stays off until Python returns, which is
+  // after the last event of the call has been drawn.
+  async function run(call, options) {
+    begin(options);
     try {
       await call();
     } catch (err) {
       console.error(err);
       draw.Error({ text: "Something went wrong on my side. Please try again." });
     } finally {
-      finishThinking();
-      hideTyping();
-      finishBubble();
-      $("progress").hidden = true;
-      setBusy(false);
+      end();
       input.focus();
     }
+  }
+
+  // Called from Python when the other page starts or finishes a call, so this
+  // page shows the user's message and waits along with it.
+  function mirror(m) {
+    if (m.state === "start") {
+      if (m.user) message("user", m.user);
+      begin({ showDots: m.dots });
+    } else {
+      end();
+    }
+  }
+
+  // Called from Python each time this page's window is shown.
+  function shown() {
+    messages.scrollTop = messages.scrollHeight;
+    input.focus();
   }
 
   function submit() {
@@ -372,17 +405,28 @@ window.app = (() => {
     if (!busy) run(() => api.new_chat(), { showDots: false });
   });
 
-  $("about-open").addEventListener("click", () => $("about").showModal());
+  if ($("about-open")) $("about-open").addEventListener("click", () => $("about").showModal());
 
   $("think").addEventListener("click", () => {
     thinkMode = !thinkMode;
     $("think").setAttribute("aria-pressed", String(thinkMode));
     $("think").classList.toggle("on", thinkMode);
-    $("think-hint").textContent = thinkMode
-      ? "Think is on: Elaina shows her thinking first (slower)"
-      : "Think is off";
+    if ($("think-hint")) {
+      $("think-hint").textContent = thinkMode
+        ? "Think is on: Elaina shows her thinking first (slower)"
+        : "Think is off";
+    }
     input.focus();
   });
+
+  // The panel's header buttons; Esc hides the panel like its "–" button.
+  if ($("open-app")) $("open-app").addEventListener("click", () => api && api.open_app());
+  if ($("hide-panel")) {
+    $("hide-panel").addEventListener("click", () => api && api.hide_panel());
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && api) api.hide_panel();
+    });
+  }
 
   // ------------------------------------------------------------- startup
 
@@ -397,5 +441,5 @@ window.app = (() => {
   if (window.pywebview && window.pywebview.api && window.pywebview.api.startup) start();
   else window.addEventListener("pywebviewready", start);
 
-  return { onEvent };
+  return { onEvent, mirror, shown };
 })();

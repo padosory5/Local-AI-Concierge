@@ -762,3 +762,98 @@ li:hover .item-delete,
   background: var(--accent);
   color: var(--accent-text);
 }
+
+/* ------------------------------------------------------------- panel */
+
+/* The compact chat that opens from the bubble (panel.html): a tall,
+   phone-shaped window. Windows 11 rounds its corners and adds the shadow
+   (see _shape in window.py), so the page just fills it. */
+body.panel {
+  display: block;
+}
+
+.panel-shell {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.panel .avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  font-size: 12px;
+}
+
+.panel-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.panel-title .chat-sub {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.icon-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.panel .messages {
+  gap: 8px;
+  padding: 14px 12px;
+}
+
+.panel .row {
+  max-width: 86%;
+}
+
+.panel .card {
+  min-width: 0;
+}
+
+.panel .progress {
+  padding: 0 14px 6px;
+}
+
+.panel .composer {
+  margin: 0 10px 10px;
+}

@@ -47,8 +47,8 @@ python -m concierge recommend   # which model Elaina would use, and why
 python -m concierge setup       # download the model and rebuild Elaina
 python -m concierge chat        # talk with Elaina
 python -m concierge measure TAG # real graphics memory a model uses
-python -m concierge.ui          # chat with Elaina in a desktop window
-python -m concierge.ui --fake   # the same window with a scripted Elaina, no model needed
+python -m concierge.ui          # Elaina as a round bubble at the side of the screen
+python -m concierge.ui --fake   # the same with a scripted Elaina, no model needed
 pytest                          # run the tests
 ```
 
@@ -120,7 +120,7 @@ concierge/
   events.py       the contract between engine and UI (see CLAUDE.md)
   engine.py       the real engine the UI talks to
   fake_engine.py  scripted engine for building the UI without a model
-  ui/             the desktop chat window (window.py and its web/ page)
+  ui/             the bubble overlay, chat panel and full window (window.py, web/)
 tests/            pytest suite, no Ollama needed
 ```
 

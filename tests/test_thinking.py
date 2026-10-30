@@ -6,7 +6,7 @@ from concierge.agents.builder import AgentBuilder
 from concierge.cli import TerminalScreen
 from concierge.events import ElainaText, IdeaCard, Question, Thinking
 from concierge.fake_engine import FakeEngine
-from concierge.ui.window import ChatBridge
+from concierge.ui.window import ChatBridge, ChatHub
 
 
 class ThinkingModel:
@@ -72,7 +72,7 @@ def test_fake_engine_streams_thinking_when_asked():
 
 def test_window_passes_the_think_button_through():
     pushed = []
-    bridge = ChatBridge(FakeEngine(delay=0))
+    bridge = ChatBridge(ChatHub(FakeEngine(delay=0)))
     bridge._attach(type("W", (), {"run_js": lambda self, js: pushed.append(js)})())
     bridge.send("hello", True)
     types = [json.loads(js[len("app.onEvent("):-1])["type"] for js in pushed]
