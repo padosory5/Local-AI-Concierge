@@ -10,6 +10,7 @@ model writes and rewrites instructions; code decides everything else.
 
 from __future__ import annotations
 
+from pathlib import Path
 import re
 
 from ..elaina import KEEP_ALIVE
@@ -34,6 +35,9 @@ STAY_WORDS = re.compile(r"\bstay|until i unhighlight|disappear|vanish|keep it (u
 SHORT_WORDS = re.compile(r"few seconds|after a (few|couple)|go away (by itself|on its own)|quickly", re.IGNORECASE)
 # An instruction that describes when or where instead of what to do with the
 # text ("When I highlight a sentence it should display it above").
+# What an agent can be tried with on its page.
+SAMPLE_TEXT = "The committee reached a quorum, so the motion carried."
+SAMPLE_QUESTION = "What are these files about?"
 MECHANICS = re.compile(r"highlight|display|above|bubble|\bwhen i\b|\bwhenever\b|clipboard|하이라이트", re.IGNORECASE)
 
 # Worked examples, because small models follow examples far better than rules.
@@ -44,6 +48,28 @@ _EXAMPLES = """Examples:
 {"name": "Word explainer", "instruction": "Explain what this English word or phrase means in simple Korean, in one or two sentences, with one short example sentence.", "example": "serendipity"}
 "fix the grammar of what I write" ->
 {"name": "Grammar fixer", "instruction": "Correct the grammar and spelling of the text. Keep its meaning and tone.", "example": "me and him goes to the store yesterday"}"""
+
+
+def describe(agent) -> dict:
+    """What an agent's page shows, in the user's words: what it does, how it's
+    set up, and something to try it with."""
+    slots = agent.slots
+    if agent.blueprint == "documents_qa":
+        files = len(agent.contents)
+        return {"does": "Answers questions about your files, and shows which file each answer came from.",
+                "facts": [["Reads", Path(slots.get("folder", "")).name or "Your files"],
+                          ["Knows", f"{files} file{'' if files == 1 else 's'}"],
+                          ["How it answers", "In the chat"], ["Runs on", "This computer"]],
+                "sample": SAMPLE_QUESTION}
+    when = slots.get("when", WHILE_ON)
+    facts = [["When it works", when]]
+    if when == WHILE_ON:
+        facts += [["How it answers", slots.get("show", "A bubble above the text")],
+                  ["How long it stays", slots.get("keep", "Until you unhighlight the text")]]
+    else:
+        facts.append(["How it answers", "In the chat"])
+    facts.append(["Runs on", "This computer"])
+    return {"does": slots.get("instruction", ""), "facts": facts, "sample": SAMPLE_TEXT}
 
 
 def run_instruction(ollama: Ollama, model: str, instruction: str, text: str,

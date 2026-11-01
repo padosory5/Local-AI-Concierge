@@ -1,18 +1,25 @@
 import json
+import re
 
 from concierge.events import ElainaText
 from concierge.fake_engine import FakeEngine
 from concierge.ui.window import (
-    BUBBLE_SIZE,
     EDGE_GAP,
+    FULL_MIN_SIZE,
+    GLASS_ABOVE,
+    GLASS_CHAT_HEIGHT,
+    GLASS_MIN_HEIGHT,
+    GLASS_SIZE,
     UNEXPECTED_ERROR,
-    BubbleBridge,
+    WEB_DIR,
     ChatBridge,
     ChatHub,
-    PanelBridge,
-    panel_size,
-    place_menu,
-    place_panel,
+    GlassBridge,
+    TodayBridge,
+    centered,
+    full_size,
+    glass_height,
+    place_glass,
 )
 
 SCREEN = (0, 0, 1920, 1032)  # a 1080p screen without the taskbar
@@ -145,39 +152,100 @@ def test_pages_see_only_their_calls():
                   "new_chat", "open_chat", "delete_chat", "delete_agent", "toggle_agent"}
     hub = ChatHub(FakeEngine())
     assert public(ChatBridge(hub)) == chat_calls
-    assert public(PanelBridge(hub, None)) == chat_calls | {"open_app", "hide_panel"}
-    assert public(BubbleBridge(None)) == {"toggle_panel", "menu", "moved", "open_app", "quit"}
+    jobs = {"today", "answer", "undo_sorting"}
+    assert public(TodayBridge(hub, None)) == chat_calls | jobs | {"quit_app", "agent_details"}
+    assert public(GlassBridge(hub, None)) == chat_calls | jobs | {"open_app", "hide_glass", "fit_glass"}
 
 
-def test_panel_is_a_tall_quarter_of_the_screen():
-    width, height = panel_size(SCREEN)
-    assert width == 1920 // 4
-    assert height > width
+def page_ids(name):
+    return set(re.findall(r'\bid="([\w-]+)"', (WEB_DIR / name).read_text(encoding="utf-8")))
 
 
-def test_panel_stays_on_small_screens():
-    width, height = panel_size((0, 0, 1280, 680))
-    assert width >= 340 and height <= 680
+def test_the_full_window_has_every_part_of_the_chat():
+    # app.js draws into these; a missing one breaks the chat.
+    assert {"messages", "empty", "input", "send", "new-chat", "composer", "think", "progress", "progress-text",
+            "model-line", "chats"} <= page_ids("today.html")
 
 
-def test_panel_opens_beside_the_bubble_toward_the_middle():
-    size = panel_size(SCREEN)
-    right_bubble = (1920 - BUBBLE_SIZE - EDGE_GAP, 900)
-    x, y = place_panel(right_bubble, size, SCREEN)
-    assert x + size[0] <= right_bubble[0]  # to its left
-    assert y + size[1] == right_bubble[1] + BUBBLE_SIZE  # bottoms lined up
-
-    left_bubble = (EDGE_GAP, 900)
-    x, _ = place_panel(left_bubble, size, SCREEN)
-    assert x >= left_bubble[0] + BUBBLE_SIZE  # to its right
+def test_the_full_window_loads_only_local_files_that_exist_and_app_js_last():
+    page = (WEB_DIR / "today.html").read_text(encoding="utf-8")
+    files = re.findall(r'(?:src|href)="([^"]+)"', page)
+    assert files and all((WEB_DIR / file).is_file() for file in files)
+    # today.js must be listening before app.js can draw the first event.
+    assert [f for f in files if f.endswith(".js")][-1] == "app.js"
 
 
-def test_panel_never_leaves_the_screen():
-    size = panel_size(SCREEN)
-    x, y = place_panel((1800, 10), size, SCREEN)  # bubble near the top
-    assert y >= EDGE_GAP and x >= EDGE_GAP
+def test_the_see_through_window_loads_only_local_files_that_exist():
+    page = (WEB_DIR / "glass.html").read_text(encoding="utf-8")
+    files = re.findall(r'(?:src|href)="([^"]+)"', page)
+    assert files and all((WEB_DIR / file).is_file() for file in files)
 
 
-def test_menu_grows_toward_the_middle():
-    assert place_menu((1840, 600), SCREEN) == "left down"
-    assert place_menu((20, 1000), SCREEN) == "right up"
+def test_fonts_ship_with_the_app():
+    # It must work with no internet, so nothing may come from a website.
+    for page in ("today.css", "glass.css"):
+        css = (WEB_DIR / page).read_text(encoding="utf-8")
+        fonts = re.findall(r'url\("([^"]+)"\)', css)
+        assert fonts and all((WEB_DIR / font).is_file() for font in fonts)
+        assert "http" not in css
+
+
+def test_see_through_window_sits_in_the_corner_above_the_circle():
+    x, y = place_glass(GLASS_SIZE, SCREEN)
+    assert x + GLASS_SIZE[0] == 1920 - EDGE_GAP
+    assert y + GLASS_SIZE[1] == 1032 - GLASS_ABOVE
+
+
+def test_an_agents_page_gets_what_the_agent_really_does():
+    hub = ChatHub(FakeEngine(delay=0))
+    translator = hub.details("Korean translator")
+    assert translator["does"] == "Translate the text into Korean."
+    assert dict(translator["facts"])["How long it stays"] == "Until you unhighlight the text"
+    documents = hub.details("Contracts helper")
+    assert dict(documents["facts"]) ["Knows"] == "3 files"
+
+
+def test_an_engine_without_details_just_gives_nothing():
+    class Plain(FakeEngine):
+        details = None
+
+    assert ChatHub(Plain(delay=0)).details("Anything") == {}
+
+
+def test_the_app_opens_big_on_any_screen():
+    assert full_size(SCREEN) == (1728, 929)
+    big = full_size((0, 0, 3840, 2100))
+    assert big[0] > 3000
+    # A small laptop still gets a window it can show, and it stays on screen.
+    small = (0, 0, 900, 600)
+    width, height = full_size(small)
+    assert (width, height) == (FULL_MIN_SIZE[0], FULL_MIN_SIZE[1])
+    assert width <= 900 and height <= 600
+
+
+def test_the_app_opens_in_the_middle_of_the_screen():
+    size = full_size(SCREEN)
+    x, y = centered(size, SCREEN)
+    assert x == (1920 - size[0]) // 2 and y == (1032 - size[1]) // 2
+
+
+def test_the_card_is_as_tall_as_the_page_asks_within_limits():
+    assert glass_height(240, False, SCREEN) == 240
+    assert glass_height(430, True, SCREEN) == 430
+    assert glass_height(10, False, SCREEN) == GLASS_MIN_HEIGHT
+    assert glass_height(9999, True, SCREEN) == GLASS_CHAT_HEIGHT
+
+
+def test_the_card_always_fits_on_a_short_screen():
+    short = (0, 0, 1280, 500)
+    assert glass_height(9999, True, short) == 500 - GLASS_ABOVE - EDGE_GAP
+
+
+def test_the_card_has_every_part_it_draws_into():
+    assert {"card", "status", "thread", "ask", "text", "send", "summary", "open", "hide", "mark"} <= page_ids("glass.html")
+
+
+def test_see_through_window_stays_on_a_screen_to_the_side():
+    left_screen = (-1920, 0, 1920, 1032)
+    x, _ = place_glass(GLASS_SIZE, left_screen)
+    assert x + GLASS_SIZE[0] == -EDGE_GAP

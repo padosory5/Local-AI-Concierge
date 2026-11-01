@@ -13,6 +13,9 @@ What to type to see each flow:
     "translate ...", "screenshot ..." or "idea"
                            an IdeaCard: Elaina's verdict on a helper idea
     "error"                an Error event
+    "turn on the highlight explainer" or "install Grammar Fixer"
+                           adds a ready-made agent (agents/starters.yaml),
+                           and switches it on if asked
 
 Conversations are kept in memory (same ChatBook as the real engine), so New
 chat, reopening and deleting chats work too, and so does deleting an agent.
@@ -23,7 +26,11 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 
+from .agents.recipe import CUSTOM, WHILE_ON, describe
+from .agents.starters import asks_for, load_starters
+from .agents.store import Agent
 from .conversations import ChatBook
+from .engine import WANTS_ON
 from .events import (
     AgentCard,
     IdeaCard,
@@ -109,6 +116,15 @@ class FakeEngine:
             yield self._agent_list()
         yield from self.book.record("", flip())
 
+    def details(self, name: str) -> dict:
+        starter = next((s for s in load_starters() if s.name == name), None)
+        if starter:
+            return describe(Agent(name, CUSTOM, {"instruction": starter.instruction, "when": starter.when}))
+        if name in self.switchable:
+            return describe(Agent(name, CUSTOM, {"instruction": "Translate the text into Korean."}))
+        return describe(Agent(name, "documents_qa", {"folder": "C:/Users/you/Documents/Contracts"},
+                              contents=["lease.pdf", "offer.docx", "notes.txt"]))
+
     def _agent_list(self) -> AgentList:
         return AgentList(list(self.agents), sorted(self.switchable & set(self.agents)),
                          sorted(self.on & set(self.agents)))
@@ -137,6 +153,19 @@ class FakeEngine:
             self.draft["folder"] = text.strip()
             yield from self._say("Got it. Should it read every file there, or only some kinds?")
             yield Question("file_types", "Which files should it read?", ["PDF only", "Word only", "Everything"])
+        elif starter := asks_for(text):
+            if starter.name not in self.agents:
+                self.agents.append(starter.name)
+                if starter.when == WHILE_ON:
+                    self.switchable.add(starter.name)
+            if starter.when != WHILE_ON:
+                yield from self._say(f"{starter.name} is ready. Start your message with its name to use it.")
+            elif WANTS_ON.search(text):
+                self.on.add(starter.name)
+                yield from self._say(f"{starter.name} is on. Highlight text in any program.")
+            else:
+                yield from self._say(f"{starter.name} is ready. Use its switch to turn it on.")
+            yield self._agent_list()
         elif any(word in lowered for word in ("translate", "shortcut", "screenshot", "idea")):
             yield IdeaCard(
                 "idea", "Highlight translator",
