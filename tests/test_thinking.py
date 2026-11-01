@@ -1,6 +1,7 @@
 import json
 
 from concierge import elaina
+from concierge.agents import store
 from concierge.agents.blueprint import load_blueprints
 from concierge.agents.builder import AgentBuilder
 from concierge.cli import TerminalScreen
@@ -47,7 +48,10 @@ def test_a_model_without_thinking_says_it_cannot():
     assert not elaina.ElainaChat(Plain()).can_think
 
 
-def test_composing_shows_the_instruction_it_wrote():
+def test_composing_shows_the_instruction_it_wrote(tmp_path, monkeypatch):
+    # In a folder of its own: a translator saved on this computer would make this a duplicate.
+    monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
+
     class Writer(ThinkingModel):
         def chat_json(self, model, messages, schema, think=None, keep_alive=None):
             return {"name": "Korean translator", "instruction": "Translate the text into Korean.",

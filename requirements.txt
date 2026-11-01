@@ -9,3 +9,6 @@ python-docx>=1.1
 pynput>=1.7
 pywin32>=306; sys_platform == "win32"
 uiautomation>=2.0; sys_platform == "win32"
+# The small icon by the clock (concierge/ui/tray.py).
+pystray>=0.19
+Pillow>=10

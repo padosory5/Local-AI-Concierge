@@ -63,7 +63,7 @@ def test_compose_a_switch_on_agent_from_parts():
     events = list(b.choose(card.id, "Create it"))
     result = next(e for e in events if isinstance(e, Result))
     assert result.text == 'Test: "serendipity"\ndone: serendipity'
-    assert "Click it in the sidebar to switch it on" in events[-3].text
+    assert "Switch it on in your helpers list" in events[-3].text
     assert isinstance(events[-1], AgentList)
     saved = store.find_agent("Word explainer")
     assert saved.blueprint == CUSTOM and saved.slots["when"] == WHILE_ON

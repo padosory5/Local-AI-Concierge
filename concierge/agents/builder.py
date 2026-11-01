@@ -153,7 +153,7 @@ class AgentBuilder:
             self.draft = None
             settings = "; ".join(f"{label.lower()}: {value.lower()}" for label, value in already)
             yield from say(f"{agent.name} already works that way ({settings}). If it doesn't seem to, "
-                           "switch it off and on again in the sidebar.")
+                           "switch it off and on again in your helpers list.")
         else:
             yield from self._cannot_change(agent.name)
 
@@ -241,7 +241,7 @@ class AgentBuilder:
             name = draft.duplicate_of
             self.draft = None
             if draft.blueprint.switchable:
-                yield from say(f"Okay, keep using {name}. Click it in the sidebar to switch it on.")
+                yield from say(f"Okay, keep using {name}. Switch it on in your helpers list.")
             else:
                 yield from say(f'Okay, keep using {name}. Ask it anything, like "{name}: what does it say about...".')
         elif id == DUPLICATE and choice.startswith("Change "):
@@ -612,7 +612,7 @@ class AgentBuilder:
             except OllamaError:
                 pass  # The agent is saved; a failed test drive should not undo that.
         if agent.slots.get("when") == WHILE_ON:
-            yield from say(f"{agent.name} is ready. Click it in the sidebar to switch it on, then highlight "
+            yield from say(f"{agent.name} is ready. Switch it on in your helpers list, then highlight "
                            f'text in any program. You can also say "turn on {agent.name}".')
         else:
             yield from say(f'{agent.name} is ready. To use it, start your message with its name, like '

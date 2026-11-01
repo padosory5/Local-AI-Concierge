@@ -5,10 +5,9 @@
 // Text from the engine is always set with textContent, never as HTML, so
 // whatever the model writes is shown as plain text.
 //
-// Two pages use this script: the full app (index.html) and the compact panel
-// (panel.html), which has no sidebar or "about" box, so those parts are
-// drawn only when the page has them. Both pages show the same conversation:
-// Python sends every event to both (see ChatHub in window.py).
+// The full window (today.html) uses this script. The see-through window
+// (glass.html) has its own, and Python sends every event to both, so both show
+// the same conversation (see ChatHub in window.py).
 
 window.app = (() => {
   const $ = (id) => document.getElementById(id);
@@ -225,9 +224,10 @@ window.app = (() => {
       currentChat = e.current;
       if (!$("chats")) return;
       const items = e.chats.map((chat) => {
-        const open = itemButton("item-main", chat.title, () => {
+        const open = itemButton("item-main", "", () => {
           if (chat.id !== currentChat) run(() => api.open_chat(chat.id), { showDots: false });
         });
+        open.append(el("span", "item-title", chat.title), el("span", "item-when", whenWas(chat.updated)));
         open.title = `${chat.title}\nLast message ${new Date(chat.updated).toLocaleString()}`;
         const remove = itemButton("item-delete", "✕", () => confirmDelete(remove, chat.id));
         remove.setAttribute("aria-label", `Delete chat: ${chat.title}`);
@@ -250,6 +250,15 @@ window.app = (() => {
       messages.scrollTop = messages.scrollHeight;
     },
   };
+
+  // "12:43", "Yesterday" or "Oct 30": enough to find a chat by.
+  function whenWas(moment) {
+    const then = new Date(moment);
+    const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(then).setHours(0, 0, 0, 0)) / 86400000);
+    if (days <= 0) return then.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (days === 1) return "Yesterday";
+    return then.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
 
   function itemButton(className, text, onClick) {
     const button = el("button", className, text);
@@ -310,6 +319,8 @@ window.app = (() => {
     const handler = draw[event.type];
     if (handler) handler(event);
     else console.warn("No drawing for event", event);
+    // The full window's other views read the same events (today.js).
+    window.dispatchEvent(new CustomEvent("engine-event", { detail: event }));
   }
 
   // ------------------------------------------------------------- calling
@@ -366,6 +377,7 @@ window.app = (() => {
   function shown() {
     messages.scrollTop = messages.scrollHeight;
     input.focus();
+    window.dispatchEvent(new CustomEvent("page-shown"));
   }
 
   function submit() {
@@ -381,6 +393,34 @@ window.app = (() => {
     input.style.height = "auto";
     input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
     sendButton.disabled = busy || !input.value.trim();
+  }
+
+  // The full window acts through the chat, so Elaina's replies and
+  // questions land in one place. Each returns false while she is busy.
+
+  function say(text) {
+    if (!api || busy) return false;
+    message("user", text);
+    run(() => api.send(text, thinkMode));
+    return true;
+  }
+
+  function prefill(text) {
+    input.value = text;
+    grow();
+    input.focus();
+  }
+
+  function toggleAgent(name) {
+    if (!api || busy) return false;
+    run(() => api.toggle_agent(name), { showDots: false });
+    return true;
+  }
+
+  function deleteAgent(name) {
+    if (!api || busy) return false;
+    run(() => api.delete_agent(name));
+    return true;
   }
 
   $("composer").addEventListener("submit", (e) => {
@@ -419,15 +459,6 @@ window.app = (() => {
     input.focus();
   });
 
-  // The panel's header buttons; Esc hides the panel like its "–" button.
-  if ($("open-app")) $("open-app").addEventListener("click", () => api && api.open_app());
-  if ($("hide-panel")) {
-    $("hide-panel").addEventListener("click", () => api && api.hide_panel());
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && api) api.hide_panel();
-    });
-  }
-
   // ------------------------------------------------------------- startup
 
   function start() {
@@ -441,5 +472,5 @@ window.app = (() => {
   if (window.pywebview && window.pywebview.api && window.pywebview.api.startup) start();
   else window.addEventListener("pywebviewready", start);
 
-  return { onEvent, mirror, shown };
+  return { onEvent, mirror, shown, say, prefill, toggleAgent, deleteAgent };
 })();

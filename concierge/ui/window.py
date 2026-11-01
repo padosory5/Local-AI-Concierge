@@ -1,16 +1,17 @@
-"""Elaina on the desktop: a small round bubble at the side of the screen.
+"""Elaina on the desktop: a full window when she's wanted, a small circle when she isn't.
 
-    click the bubble          a compact chat panel opens next to it
-    right-click the bubble    a menu: Open app (the full window) or Quit
-    minimize the full app     it folds back into the bubble
+    the app opens             the full window, on Help me
+    minimize or close it      it folds into a small circle in the corner
+    click the circle          a small see-through window with her agents' work
+                              and her messages; Open there brings the full one back
 
-The panel and the full app are two pages showing one conversation. Both talk
-to the same engine through ChatHub, which sends every event to both, so
-switching between them never loses a message or a half-answered question.
+The full window and the see-through one are two pages showing one conversation.
+Both talk to the same engine through ChatHub, which sends every event to both.
 The pages only draw; they never decide anything (see CLAUDE.md).
 
     python -m concierge.ui          with the real Elaina
-    python -m concierge.ui --fake   with FakeEngine, no model needed
+    python -m concierge.ui --fake   with FakeEngine and practice suggestions, no
+                                    model needed and no files moved
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import argparse
 import json
 import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 
@@ -26,6 +28,7 @@ from .. import events
 from ..engine import ElainaEngine
 from ..events import Engine, Error
 from ..fake_engine import FakeEngine
+from ..quick.tidy import TidyWatch
 
 WEB_DIR = Path(__file__).parent / "web"
 TITLE = "Elaina"
@@ -34,16 +37,17 @@ TITLE = "Elaina"
 UNEXPECTED_ERROR = "Something went wrong on my side. Please try again, or restart the app."
 
 # All sizes are in logical pixels, the ones Windows display scaling multiplies.
-BUBBLE_SIZE = 52  # the bubble's window, cut to a circle
-MENU_SIZE = (196, 96)  # the bubble's window while its right-click menu is open
-EDGE_GAP = 16  # between the bubble or panel and the edge of the screen
-# The panel is a tall, phone-shaped chat about a quarter of the screen wide.
-PANEL_WIDTH_SHARE = 0.25
-PANEL_MIN_WIDTH = 340
-PANEL_MAX_WIDTH = 520
-PANEL_RATIO = 1.6  # height divided by width
-PANEL_MAX_HEIGHT_SHARE = 0.8  # never taller than this share of the screen
-FULL_SIZE = (980, 720)
+EDGE_GAP = 16  # between the see-through window and the edge of the screen
+GLASS_SIZE = (380, 130)  # quiet, its height follows what it has to say
+GLASS_MIN_HEIGHT = 110
+GLASS_CHAT_HEIGHT = 560  # the tallest it gets while talking
+GLASS_GROW_STEPS, GLASS_GROW_SECONDS = 12, 0.012
+GLASS_ABOVE = 84  # its bottom stays above minimized Elaina
+GLASS_ALPHA = 253  # 0 to 255: nearly solid, because text behind it made it hard to read
+GLASS_FADE_STEPS, GLASS_FADE_SECONDS = 10, 0.012
+GLASS_LOAD_SECONDS = 20  # at most, while the app starts
+FULL_SHARE = 0.9  # of the screen when the app opens, so it has the user's attention
+FULL_MIN_SIZE = (860, 560)
 # The newest of these is kept so a page that loads later can catch up.
 REMEMBERED = ("SystemInfo", "AgentList", "ChatList")
 
@@ -54,7 +58,7 @@ Area = tuple[int, int, int, int]  # x, y, width, height of the usable screen
 
 
 class ChatHub:
-    """One engine shared by every chat page (the panel and the full app).
+    """One engine shared by every page (the full window and the see-through one).
 
     Every event goes to every page, and the other pages are told when one of
     them starts or finishes a call, so they all show the same conversation.
@@ -99,6 +103,11 @@ class ChatHub:
             finally:
                 for page in others:
                     page._call("mirror", {"state": "end"})
+
+    def details(self, name: str) -> dict:
+        """What an agent's page shows. It only reads, so it doesn't wait for a reply."""
+        ask = getattr(self._engine, "details", None)
+        return ask(name) if ask else {}
 
     def reset(self) -> None:
         with self._lock:
@@ -179,83 +188,75 @@ class ChatBridge:
             self._window.run_js(f"app.{function}({json.dumps(data)})")
 
 
-class PanelBridge(ChatBridge):
-    """The compact panel's page: the chat, plus its two header buttons."""
+class WatchBridge(ChatBridge):
+    """A page that also shows what Elaina noticed and what her jobs are doing."""
 
     def __init__(self, hub: ChatHub, overlay: Overlay):
         super().__init__(hub)
         self._overlay = overlay
 
-    def open_app(self) -> None:
-        self._overlay.open_app()
+    def today(self) -> dict:
+        watch = self._overlay.watch
+        return watch.today() if watch else {}
 
-    def hide_panel(self) -> None:
-        self._overlay.hide_panel()
+    def answer(self, which: str, yes: bool) -> None:
+        if self._overlay.watch:
+            self._overlay.watch.answer(which, bool(yes))
+
+    def undo_sorting(self) -> None:
+        if self._overlay.watch:
+            self._overlay.watch.undo()
 
 
-class BubbleBridge:
-    """What the bubble's page can call."""
+class TodayBridge(WatchBridge):
+    """The full window's page."""
 
-    def __init__(self, overlay: Overlay):
-        self._overlay = overlay
+    def agent_details(self, name: str) -> dict:
+        return self._hub.details(name)
 
-    def toggle_panel(self) -> None:
-        self._overlay.toggle_panel()
-
-    def menu(self, open: bool) -> None:
-        self._overlay.set_menu(bool(open))
-
-    def moved(self) -> None:
-        self._overlay.bubble_moved()
-
-    def open_app(self) -> None:
-        self._overlay.open_app()
-
-    def quit(self) -> None:
+    def quit_app(self) -> None:
         self._overlay.quit()
+
+
+class GlassBridge(WatchBridge):
+    """The see-through window's page."""
+
+    def open_app(self) -> None:
+        self._overlay.open_app()
+
+    def hide_glass(self) -> None:
+        self._overlay.hide_glass()
+
+    def fit_glass(self, height: int, talking: bool = False) -> None:
+        self._overlay.fit_glass(height, talking)
 
 
 # ---------------------------------------------------------------- placing
 
 
-def bubble_home(work: Area) -> tuple[int, int]:
-    """Where the bubble starts: at the right edge, low enough that the panel
-    fits above it with the bottoms lined up."""
-    x, y, width, height = work
-    return x + width - BUBBLE_SIZE - EDGE_GAP, y + round(height * 0.75)
-
-
-def panel_size(work: Area) -> tuple[int, int]:
+def full_size(work: Area) -> tuple[int, int]:
+    """Most of the screen, however big it is, and never smaller than the window can be."""
     _, _, width, height = work
-    panel_width = round(min(max(width * PANEL_WIDTH_SHARE, PANEL_MIN_WIDTH), PANEL_MAX_WIDTH))
-    return panel_width, round(min(panel_width * PANEL_RATIO, height * PANEL_MAX_HEIGHT_SHARE))
+    return (min(width, max(round(width * FULL_SHARE), FULL_MIN_SIZE[0])),
+            min(height, max(round(height * FULL_SHARE), FULL_MIN_SIZE[1])))
 
 
-def place_panel(bubble: tuple[int, int], size: tuple[int, int], work: Area) -> tuple[int, int]:
-    """Beside the bubble, on the side of the screen with more room, with the
-    bottoms lined up, and always fully on the screen."""
-    bubble_x, bubble_y = bubble
+def centered(size: tuple[int, int], work: Area) -> tuple[int, int]:
+    x, y, width, height = work
+    return x + (width - size[0]) // 2, y + (height - size[1]) // 2
+
+
+def glass_height(height: int, talking: bool, work: Area) -> int:
+    """Always fits on the screen, under the circle's reach."""
+    room = work[3] - GLASS_ABOVE - EDGE_GAP
+    return min(max(int(height), GLASS_MIN_HEIGHT), GLASS_CHAT_HEIGHT, room)
+
+
+def place_glass(size: tuple[int, int], work: Area) -> tuple[int, int]:
+    """In the bottom right corner, just above minimized Elaina."""
+    x, y, screen_width, screen_height = work
     width, height = size
-    x0, y0, screen_width, screen_height = work
-    gap = EDGE_GAP // 2
-    if bubble_x + BUBBLE_SIZE / 2 > x0 + screen_width / 2:
-        x = bubble_x - gap - width
-    else:
-        x = bubble_x + BUBBLE_SIZE + gap
-    y = bubble_y + BUBBLE_SIZE - height
-    x = min(max(x, x0 + EDGE_GAP), x0 + screen_width - width - EDGE_GAP)
-    y = min(max(y, y0 + EDGE_GAP), y0 + screen_height - height - EDGE_GAP)
-    return int(x), int(y)
-
-
-def place_menu(bubble: tuple[int, int], work: Area) -> str:
-    """Which way the bubble's window grows for its menu ("left down",
-    "right up", ...): toward the middle of the screen, so it stays on it."""
-    bubble_x, bubble_y = bubble
-    x0, y0, screen_width, screen_height = work
-    side = "left" if bubble_x + BUBBLE_SIZE / 2 > x0 + screen_width / 2 else "right"
-    up = bubble_y + MENU_SIZE[1] > y0 + screen_height
-    return f"{side} {'up' if up else 'down'}"
+    return x + screen_width - width - EDGE_GAP, y + screen_height - height - GLASS_ABOVE
 
 
 def work_area() -> Area:
@@ -276,172 +277,170 @@ def work_area() -> Area:
 
 
 class Overlay:
-    """The bubble, the chat panel and the full app, and moving between them."""
+    """The full window, minimized Elaina and the see-through window, and moving between them."""
 
-    def __init__(self, engine: Engine, debug: bool = False):
+    def __init__(self, engine: Engine, watch: TidyWatch | None = None, debug: bool = False):
         self.hub = ChatHub(engine)
+        self.watch = watch
         self.debug = debug
-        self._bubble = self._panel = self._full = None
+        self._tray = self._mini = None
+        self._full = self._glass = None
         self._work: Area = (0, 0, 0, 0)
-        self._spot = (0, 0)  # the bubble's place on screen while its menu is closed
-        self._grow = None  # how the bubble's window grew for its menu, while it is open
-        self._panel_open = False
+        self._full_open = True
+        self._glass_open = False
+        self._glass_size = GLASS_SIZE
         self._quitting = False
         # Clicks arrive on several threads; one window change at a time.
         self._lock = threading.RLock()
 
     def open(self) -> None:
-        """Show the bubble and block until the user quits."""
+        """Open the full window and block until the user quits."""
         import webview
 
         self._work = work_area()
-        self._spot = bubble_home(self._work)
-        panel_width, panel_height = panel_size(self._work)
-
-        self._bubble = webview.create_window(
-            TITLE,
-            str(WEB_DIR / "bubble.html"),
-            js_api=BubbleBridge(self),
-            width=BUBBLE_SIZE,
-            height=BUBBLE_SIZE,
-            x=self._spot[0],
-            y=self._spot[1],
-            min_size=(BUBBLE_SIZE, BUBBLE_SIZE),
-            resizable=False,
-            frameless=True,
-            easy_drag=False,  # only the circle drags (see bubble.html)
-            on_top=True,
-            shadow=False,
-            background_color="#6B57D1",  # the circle's colour, before the page loads
-        )
-        panel_bridge = PanelBridge(self.hub, self)
-        self._panel = webview.create_window(
-            f"{TITLE} chat",
-            str(WEB_DIR / "panel.html"),
-            js_api=panel_bridge,
-            width=panel_width,
-            height=panel_height,
-            min_size=(PANEL_MIN_WIDTH, 300),
-            hidden=True,
-            resizable=False,
-            frameless=True,
-            easy_drag=False,  # only the header drags
-            on_top=True,
-            text_select=True,  # People copy Elaina's answers.
-        )
-        full_bridge = ChatBridge(self.hub)
+        width, height = full_size(self._work)
+        x, y = centered((width, height), self._work)
+        full_bridge = TodayBridge(self.hub, self)
         self._full = webview.create_window(
             TITLE,
-            str(WEB_DIR / "index.html"),
+            str(WEB_DIR / "today.html"),
             js_api=full_bridge,
-            width=FULL_SIZE[0],
-            height=FULL_SIZE[1],
-            min_size=(720, 520),
-            hidden=True,
-            background_color="#F7F7F5",
+            width=width,
+            height=height,
+            x=x,
+            y=y,
+            min_size=FULL_MIN_SIZE,
+            background_color="#000000",  # the page's black, before it loads
             text_select=True,
         )
-        panel_bridge._attach(self._panel)
+        glass_bridge = GlassBridge(self.hub, self)
+        self._glass = webview.create_window(
+            f"{TITLE} messages",
+            str(WEB_DIR / "glass.html"),
+            js_api=glass_bridge,
+            width=GLASS_SIZE[0],
+            height=GLASS_SIZE[1],
+            min_size=(GLASS_SIZE[0], GLASS_MIN_HEIGHT),  # or Windows keeps it taller than its words
+            hidden=True,
+            resizable=False,
+            frameless=True,
+            easy_drag=False,
+            on_top=True,
+            background_color="#0A090C",
+        )
         full_bridge._attach(self._full)
+        glass_bridge._attach(self._glass)
 
-        bubble_size = (BUBBLE_SIZE, BUBBLE_SIZE)
-        self._bubble.events.before_show += _prepare(self._bubble, bubble_size, "circle")
-        # Sized again once shown: Windows widens small windows as they are created.
-        self._bubble.events.shown += lambda: _shape(self._bubble, "circle", bubble_size, resize=True)
-        self._panel.events.before_show += _prepare(self._panel, (panel_width, panel_height), "rounded")
+        self._full.events.before_show += _dark_title(self._full)
         self._full.events.minimized += self.fold_up
         self._full.events.closing += self._closing(self.fold_up)
-        self._panel.events.closing += self._closing(self.hide_panel)
-        self._bubble.events.closing += self._closing(self.quit)  # Alt+F4 on the bubble
+        self._glass.events.closing += self._closing(self.hide_glass)
 
         try:
-            webview.start(debug=self.debug)
+            webview.start(self._ready, debug=self.debug)
         finally:
             self.hub.close()
+            if self._tray:
+                self._tray.stop()
+            if self._mini:
+                self._mini.close()
+            if self.watch:
+                self.watch.stop()
 
-    # These run on the page's thread when the user clicks something.
+    def _ready(self) -> None:
+        """The windows exist: she can start noticing things."""
+        from .mini import Mini
+        from .tray import Tray
 
-    def toggle_panel(self) -> None:
+        # A hidden window only has its handle, and stops changing, once its page is in.
+        self._glass.events.loaded.wait(GLASS_LOAD_SECONDS)
+        _prepare_glass(self._glass, self._glass_size)
+        self._mini = Mini(self.toggle_glass)
+        self._tray = Tray(self.open_app, self.quit, self.watch)
+        self._tray.start()
+        if self.watch:
+            self.watch.changed = self._watch_changed
+            # While the full window is open she has the user's attention anyway.
+            self.watch.held = lambda: self._full_open
+            self.watch.start()
+
+    def _watch_changed(self) -> None:
+        from .mini import ASKING, IDLE, WORKING
+
+        if self._quitting:
+            return
+        self._tray.refresh()
+        working = self.watch.today()["working"]
+        self._mini.set_state(WORKING if working else ASKING if self.watch.asking else IDLE)
+        self._full.run_js("window.today && today.refresh()")
+        self._glass.run_js("window.app && app.refresh()")
+
+    # These run on the page's, the circle's or the icon's thread when the user clicks something.
+
+    def toggle_glass(self) -> None:
         with self._lock:
-            if self._panel_open:
-                self.hide_panel()
-            else:
-                self.set_menu(False)
-                size = panel_size(self._work)
-                _shape(self._panel, "rounded", size, resize=True)
-                self._panel.move(*place_panel(self._spot, size, self._work))
-                self._panel.show()
-                self._panel_open = True
-                self._panel.run_js("window.app && app.shown()")
-
-    def hide_panel(self) -> None:
-        with self._lock:
-            if self._panel_open:
-                self._panel.hide()
-                self._panel_open = False
-
-    def set_menu(self, open: bool) -> None:
-        """Grow the bubble's window to make room for its menu, or shrink it back.
-
-        It grows from the corner that keeps the circle where it is, so the
-        circle never jumps.
-        """
-        from webview.window import FixPoint
-
-        with self._lock:
-            if open == (self._grow is not None):
+            if self._glass_open:
+                self.hide_glass()
                 return
-            if open:
-                self._grow = place_menu(self._spot, self._work)
-                self._bubble.run_js(f"bubble.setMenu({json.dumps(self._grow)})")
-            side, vertical = self._grow.split()
-            fix = (FixPoint.EAST if side == "left" else FixPoint.WEST) | (
-                FixPoint.SOUTH if vertical == "up" else FixPoint.NORTH
-            )
-            size = MENU_SIZE if open else (BUBBLE_SIZE, BUBBLE_SIZE)
-            self._bubble.resize(*size, fix_point=fix)
-            _shape(self._bubble, "card" if open else "circle", size)
-            if not open:
-                self._grow = None
-                self._bubble.run_js("bubble.setMenu(null)")
+            _set_bounds(self._glass, (*place_glass(self._glass_size, self._work), *self._glass_size))
+            self._glass.show()
+            self._glass_open = True
+            self._glass.run_js("window.app && app.shown()")
+            _fade(self._glass, 0, GLASS_ALPHA)
 
-    def bubble_moved(self) -> None:
-        """The user dragged the bubble somewhere else; the panel follows it."""
+    def fit_glass(self, height: int, talking: bool = False) -> None:
+        """It's exactly as tall as the page asks, rising smoothly out of the
+        corner when the user is talking."""
         with self._lock:
-            if self._grow is not None:
+            start = self._glass_size[1]
+            end = glass_height(height, talking, self._work)
+            self._glass_size = (GLASS_SIZE[0], end)
+            if self._quitting or self._glass.native is None or start == end:
                 return
-            self._spot = (self._bubble.x, self._bubble.y)
-            if self._panel_open:
-                size = panel_size(self._work)
-                self._panel.move(*place_panel(self._spot, size, self._work))
+            steps = GLASS_GROW_STEPS if self._glass_open and talking else 1
+            for step in range(1, steps + 1):
+                now = round(start + (end - start) * step / steps)
+                _set_bounds(self._glass, (*place_glass((GLASS_SIZE[0], now), self._work), GLASS_SIZE[0], now))
+                if steps > 1:
+                    time.sleep(GLASS_GROW_SECONDS)
+
+    def hide_glass(self) -> None:
+        with self._lock:
+            if self._glass_open:
+                _fade(self._glass, GLASS_ALPHA, 0)
+                self._glass.hide()
+                self._glass_open = False
 
     def open_app(self) -> None:
         with self._lock:
-            self.set_menu(False)
-            self.hide_panel()
-            self._bubble.hide()
+            self.hide_glass()
+            if self._mini:
+                self._mini.hide()
+            self._full_open = True
             self._full.show()
             self._full.restore()  # in case it was minimized when it folded up
             self._full.run_js("window.app && app.shown()")
 
     def fold_up(self) -> None:
-        """The full app was minimized or closed: back to the bubble."""
+        """The full window was minimized or closed: she folds into the circle."""
         with self._lock:
             if self._quitting:
                 return
             self._full.hide()
-            self._bubble.show()
+            self._full_open = False
+            if self._mini:
+                self._mini.show()
 
     def quit(self) -> None:
         with self._lock:
             if self._quitting:
                 return
             self._quitting = True
-        for window in (self._full, self._panel, self._bubble):
+        for window in (self._full, self._glass):
             window.destroy()
 
     def _closing(self, instead):
-        """Closing a window hides it instead (or quits, for the bubble). The
+        """Closing a window hides it instead. The
         handler runs on the window's own thread, which must not wait on the
         work it asks for, so that work runs on a thread of its own."""
 
@@ -454,64 +453,89 @@ class Overlay:
         return handler
 
 
-def _prepare(window, size: tuple[int, int], shape: str):
-    """Ready the bubble or the panel just before it first shows, when its
-    handle exists: keep it out of the taskbar and Alt+Tab, like other
-    overlays, and give it its shape."""
+def _prepare_glass(window, size: tuple[int, int]) -> None:
+    """Ready the see-through window while it is still hidden, so it never
+    flashes up solid: keep it out of the taskbar and Alt+Tab, like other
+    overlays, and let Windows blend it with whatever is behind it."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    gwl_exstyle, ws_ex_toolwindow, ws_ex_appwindow, ws_ex_layered = -20, 0x80, 0x40000, 0x80000
+    user32 = ctypes.windll.user32
+    hwnd = window.native.Handle.ToInt32()
+    style = user32.GetWindowLongW(hwnd, gwl_exstyle)
+    user32.SetWindowLongW(hwnd, gwl_exstyle, (style | ws_ex_toolwindow | ws_ex_layered) & ~ws_ex_appwindow)
+    _see_through(hwnd, 0)
+    _rounded(window, size)
+
+
+def _dark_title(window):
+    """A title bar that matches the page's dark side list. Windows 11 only;
+    older versions ignore this and keep their own colour."""
 
     def handler():
         if sys.platform != "win32":
             return
         import ctypes
 
-        gwl_exstyle, ws_ex_toolwindow, ws_ex_appwindow = -20, 0x80, 0x40000
-        user32 = ctypes.windll.user32
-        hwnd = window.native.Handle.ToInt32()
-        style = user32.GetWindowLongW(hwnd, gwl_exstyle)
-        user32.SetWindowLongW(hwnd, gwl_exstyle, (style | ws_ex_toolwindow) & ~ws_ex_appwindow)
-        _shape(window, shape, size, resize=True)
+        dwmwa_caption_color, caption = 35, ctypes.c_int(0x0C090A)  # #0a090c, written blue first
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            window.native.Handle.ToInt32(), dwmwa_caption_color, ctypes.byref(caption), ctypes.sizeof(caption)
+        )
 
     return handler
 
 
-def _shape(window, shape: str, size: tuple[int, int], resize: bool = False) -> None:
-    """Cut a window to its shape on Windows: "circle" (the bubble), "card"
-    (the bubble with its menu open: a rounded card whose corners match the
-    circle) or "rounded" (the panel, rounded by Windows 11 itself, smoothly
-    and with a shadow).
+def _see_through(hwnd: int, alpha: int) -> None:
+    import ctypes
 
-    pywebview's see-through windows still show a solid box behind the page on
-    Windows, so the window itself is cut instead. resize first sets the size
-    exactly (logical pixels), without showing or moving the window.
-    """
+    lwa_alpha = 2
+    ctypes.windll.user32.SetLayeredWindowAttributes(hwnd, 0, alpha, lwa_alpha)
+
+
+def _fade(window, start: int, end: int) -> None:
+    """Fade a see-through window in or out, instead of it popping up."""
+    if sys.platform != "win32":
+        return
+    hwnd = window.native.Handle.ToInt32()
+    for step in range(1, GLASS_FADE_STEPS + 1):
+        _see_through(hwnd, round(start + (end - start) * step / GLASS_FADE_STEPS))
+        time.sleep(GLASS_FADE_SECONDS)
+
+
+def _set_bounds(window, bounds: tuple[int, int, int, int]) -> None:
+    """Move and size a window (logical pixels) in one step, so its edges never
+    jump, as they would with a resize and then a move."""
     if sys.platform != "win32":
         return
     import ctypes
-    from ctypes import wintypes
 
-    user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+    user32 = ctypes.windll.user32
     hwnd = window.native.Handle.ToInt32()
     scale = user32.GetDpiForWindow(hwnd) / 96  # the same scale pywebview uses
-    width, height = round(size[0] * scale), round(size[1] * scale)
-    if resize:
-        swp_nomove, swp_nozorder, swp_noactivate = 0x2, 0x4, 0x10
-        user32.SetWindowPos(hwnd, None, 0, 0, width, height, swp_nomove | swp_nozorder | swp_noactivate)
+    x, y, width, height = (round(value * scale) for value in bounds)
+    swp_nozorder, swp_noactivate = 0x4, 0x10
+    user32.SetWindowPos(hwnd, None, x, y, width, height, swp_nozorder | swp_noactivate)
 
-    if shape == "rounded":
-        dwmwa_window_corner_preference, dwmwcp_round = 33, ctypes.c_int(2)
-        ctypes.windll.dwmapi.DwmSetWindowAttribute(
-            hwnd, dwmwa_window_corner_preference, ctypes.byref(dwmwcp_round), ctypes.sizeof(dwmwcp_round)
-        )
+
+def _rounded(window, size: tuple[int, int]) -> None:
+    """Set the window's exact size (logical pixels), without showing or moving
+    it, and let Windows 11 round its corners, smoothly and with a shadow."""
+    if sys.platform != "win32":
         return
-    gdi32.CreateEllipticRgn.restype = wintypes.HRGN
-    gdi32.CreateRoundRectRgn.restype = wintypes.HRGN
-    user32.SetWindowRgn.argtypes = [wintypes.HWND, wintypes.HRGN, wintypes.BOOL]
-    if shape == "circle":
-        region = gdi32.CreateEllipticRgn(0, 0, width + 1, height + 1)
-    else:
-        corner = round(BUBBLE_SIZE * scale)
-        region = gdi32.CreateRoundRectRgn(0, 0, width + 1, height + 1, corner, corner)
-    user32.SetWindowRgn(hwnd, region, True)  # Windows owns the region from here on
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    hwnd = window.native.Handle.ToInt32()
+    scale = user32.GetDpiForWindow(hwnd) / 96  # the same scale pywebview uses
+    swp_nomove, swp_nozorder, swp_noactivate = 0x2, 0x4, 0x10
+    user32.SetWindowPos(hwnd, None, 0, 0, round(size[0] * scale), round(size[1] * scale),
+                        swp_nomove | swp_nozorder | swp_noactivate)
+    dwmwa_window_corner_preference, dwmwcp_round = 33, ctypes.c_int(2)
+    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+        hwnd, dwmwa_window_corner_preference, ctypes.byref(dwmwcp_round), ctypes.sizeof(dwmwcp_round)
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -520,5 +544,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--debug", action="store_true", help="open the pages' developer tools")
     args = parser.parse_args(argv)
 
-    Overlay(FakeEngine() if args.fake else ElainaEngine(), debug=args.debug).open()
+    engine = FakeEngine() if args.fake else ElainaEngine()
+    Overlay(engine, TidyWatch(practice=args.fake), debug=args.debug).open()
     return 0

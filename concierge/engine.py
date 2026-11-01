@@ -18,13 +18,14 @@ from .agents.blueprint import load_blueprints
 from .agents.builder import AgentBuilder, say
 from .agents.planner import IDEA, IDEA_CHANGE, MAKE_IT, IdeaPlanner, describe_ideas
 from .agents.router import names_an_agent, refers_to, route, wants_change
+from .agents.starters import Starter, asks_for, install
 from .catalog import find_model, recommend
 from .conversations import ChatBook
 from .events import (AgentList, ElainaDone, ElainaText, Error, Event, IdeaCard, Question, Result, SystemInfo,
                      Thinking)
 from .ollama import Ollama, OllamaError
 from .quick.agents import QuickAgents
-from .agents.recipe import (BUBBLE, CLIPBOARD, CUSTOM, MECHANICS, WHILE_ON, is_switchable, migrate,
+from .agents.recipe import (BUBBLE, CLIPBOARD, CUSTOM, MECHANICS, WHILE_ON, describe, is_switchable, migrate,
                             needs_language, run_instruction, target_language, with_language)
 from .quick.translate import language_in
 
@@ -170,6 +171,9 @@ class ElainaEngine:
                 yield Thinking(f"This switches {named.name} {'off' if WANTS_OFF.search(text) else 'on'}.")
                 yield from self._toggle(named.name, on=not WANTS_OFF.search(text))
                 return
+            if starter := asks_for(text):
+                yield from self._add_starter(starter, switch_on=bool(WANTS_ON.search(text)))
+                return
             if WANTS_DELETE.search(text) and agents:
                 named = names_an_agent(text, agents)
                 yield from self._confirm_delete(named.name) if named else self._ask_which_to_delete(agents)
@@ -273,8 +277,30 @@ class ElainaEngine:
         else:
             yield from self.builder.start(blueprint, request)
 
+    def _add_starter(self, starter: Starter, switch_on: bool) -> Iterator[Event]:
+        """A ready-made agent: added at once, and switched on if the user said so."""
+        agent = store.find_agent(starter.name)
+        if agent is None:
+            yield Thinking(f"{starter.name} is ready-made, so there's nothing to set up.")
+            agent = install(starter)
+        if not self._switchable(agent):
+            yield from say(f'{agent.name} is ready. To use it, start your message with its name, like '
+                           f'"{agent.name}: your text here".')
+        elif switch_on:
+            yield from self._toggle(agent.name, on=True)
+            return
+        else:
+            yield from say(f'{agent.name} is ready. Say "turn on {agent.name}" or use its switch, then '
+                           "highlight text in any program.")
+        yield self._agent_list()
+
     def _switchable(self, agent: store.Agent) -> bool:
         return is_switchable(agent, self.blueprints)
+
+    def details(self, name: str) -> dict:
+        """What an agent's page shows. Empty if there's no such agent."""
+        agent = store.find_agent(name)
+        return describe(agent) if agent else {}
 
     def _agent_list(self) -> AgentList:
         agents = store.list_agents()
@@ -306,7 +332,7 @@ class ElainaEngine:
                    "Both": "and the result appears above it and is copied"}.get(
                        agent.slots.get("show"), "and the result appears right above it")
             yield from say(f"{agent.name} is on. Highlight text in any program {how}. "
-                           "Click it again to switch it off.")
+                           f'Say "turn off {agent.name}" or use its switch to stop it.')
         else:
             yield from say(f"{agent.name} is off.")
         yield self._agent_list()
@@ -369,7 +395,7 @@ class ElainaEngine:
         elif self.quick:
             self.quick.refresh(store.list_agents())
         state = "It's on: highlight text in any program to try it." if switch_on or (
-            self.quick and self.quick.is_on(name)) else "Switch it on in the sidebar to try it."
+            self.quick and self.quick.is_on(name)) else "Switch it on in your helpers list to try it."
         yield from say(f"Fixed. {state}")
         yield self._agent_list()
 

@@ -7,11 +7,10 @@ are not technical: plain words, no jargon, nothing complicated.
 
 Two people work on this, each on their own branch:
 - **Engine** (`concierge/`): hardware check, model choice, Elaina, agents.
-- **UI** (`concierge/ui/`): a round "AC" bubble at the side of the screen.
-  Clicking it opens a compact chat panel; right-click, Open app shows the full
-  window, and minimizing that folds it back into the bubble. Just a chat with
-  Elaina and her agents. The panel and the full app share one conversation
-  (`ChatHub` sends every event to both).
+- **UI** (`concierge/ui/`): the app opens as a full window. Minimizing it folds
+  Elaina into a small circle in the corner, above the taskbar; clicking the
+  circle opens a small see-through window with her agents' work and messages.
+  Both windows share one conversation (`ChatHub` sends every event to both).
 
 ## The rule between UI and engine
 
@@ -97,8 +96,8 @@ instructions. Elaina only fills the template; she never writes code.
   bubble above the text, copied, or both. Highlights are read through UI
   Automation, or by pressing Ctrl+C and restoring the clipboard, never in
   terminals. By default the bubble stays until the text is no longer
-  highlighted. Windows only, and only while Elaina's window (or the terminal
-  app) is open.
+  highlighted. Windows only, and only while Elaina (or the terminal app) is
+  running.
 - Chat agents: "Grammar Fixer: me and him goes" runs the instruction on the
   rest of the message and answers in the chat.
 - `documents_qa` ("Ask my documents") is the one agent with a blueprint of its
@@ -142,6 +141,80 @@ change it, or drop it. Saved ideas are kept in
 are listed. When you build a block, set its `status` to `ready` in
 `capabilities.yaml`.
 
+## Minimized Elaina
+
+Elaina helps inside the user's work: no split screen and no chat at the side.
+Minimized, she is a small circle (`concierge/ui/mini.py`) that shows her state
+without words: print dots drifting while she waits, a line going round while a
+job runs, rings opening out of her while she has a question. She steps out of
+the way during games, videos and slideshows, and hides while the full window is
+open. Its pictures are drawn once with soft edges and shown one after another.
+
+Clicking her opens a card that grows out of her (`glass.html`, `glass.js`): any
+question waiting for an answer, what her agents are doing, finished jobs, and a
+line to ask her something. Quiet, it is only as tall as what it has to say. When
+the user talks it becomes a small chat, the same conversation as the full window:
+oldest at the top, newest by the box, her reply streaming in, with her questions'
+buttons working there too. It rises in a few calm steps as the conversation grows
+(`STEPS` in `glass.js`) and never shrinks during one. Messages are added, never
+redrawn, so nothing flickers. It is nearly solid (`GLASS_ALPHA`), because text
+showing through made it hard to read.
+
+`concierge/quick/tidy.py` is what she notices herself. `TidyWatch` looks at two
+things: 30 or more loose files in Downloads, and a lecture in the window in
+front (`quick/watching.py`, from the window's title only, two looks in a row).
+It waits until the user stops typing, the full window is closed and no job is
+running, then asks one short question with Yes and No in `quick/note.py`, next
+to the circle. Questions take turns. "No" keeps her quiet about it for a while,
+and the same question waits in both windows until it's answered.
+
+When a job the user said yes to starts, a soft lilac light runs once around the
+screen they are working on (`quick/glow.py`, Engine side like the highlight
+bubble, so `events.py` did not change), and a thin line stays at the right edge
+while it runs. When it is done, the same light runs in green. A job that fails
+shows no green. Clicks and typing pass through the light, and during games,
+videos and slideshows there is none.
+
+Sorting is plain code with no model: it moves files into folders by kind, never
+deletes or overwrites, and Undo puts them back. Summarizing a video is **not
+built**: Yes only says so, plainly, with no light. `python -m concierge.ui
+--fake` is a practice run where both questions come soon after minimizing, the
+jobs only wait, and no files are looked at or moved.
+
+## The full window
+
+`today.html` opens with the app. It starts on Help me: a rolling list of what
+the user can make an agent for (`TOPICS` in `today.js`), and one line to write
+on. Each line only sends plain words to Elaina, as if typed, so she still
+decides everything. Picking one, or typing, turns the window into an ordinary
+chat. New chat comes back to Help me. The side list has New chat, Today,
+Sessions, Agents (with a switch right on the row) and Add more (the ready-made
+agents the user doesn't have yet), with Settings at the bottom. Today says what
+is running, what she noticed and what was done today.
+
+An agent's page shows what it does and how it's set up, from `recipe.describe`
+through `Engine.details(name)` and `TodayBridge.agent_details`, outside
+`events.py` because it's only read when the page opens. What's typed on that
+page goes to that agent.
+
+`app.js` draws the chat and passes every event on as an `engine-event`;
+`today.js` draws the rest from those events, and acts through `app.say`,
+`app.prefill`, `app.toggleAgent` and `app.deleteAgent`. What the windows show
+about her jobs comes from `TidyWatch.today()` through `WatchBridge`, outside
+`events.py`, because those jobs aren't part of a conversation. Fonts are in
+`web/fonts/`, because the app must work with no internet.
+
+The earlier five-screen workspace (`workspace.html`, `workspace.css`,
+`workspace/`) and `index.html` are no longer opened.
+
+## Ready-made agents
+
+`concierge/agents/starters.yaml` holds tested recipes (Highlight Explainer,
+Grammar Fixer, Quick Summarizer). "Turn on the highlight explainer" or "install
+Grammar Fixer" adds one straight away and switches it on if asked
+(`starters.asks_for`, `ElainaEngine._add_starter`), decided in code with no
+model involved. After that it is an ordinary agent made from parts.
+
 ## UI technology
 
 The UI technology is the UI developer's choice. A UI not written in Python
@@ -158,8 +231,8 @@ py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 python -m concierge          # terminal version: hardware, model, setup, chat
-python -m concierge.ui       # the bubble overlay with the real Elaina
-python -m concierge.ui --fake # the bubble overlay with FakeEngine, no model needed
+python -m concierge.ui       # the app with the real Elaina
+python -m concierge.ui --fake # FakeEngine and practice suggestions, no model needed, no files moved
 pytest                       # all tests; none need Ollama
 python -m concierge.agents.eval_router   # router accuracy with the real model (must stay 100%)
 ```
@@ -199,14 +272,22 @@ variables inside a function do not need listing.
 | `concierge/quick/agents.py` | Engine | `BUBBLE`, `CLIPBOARD`, `BOTH`, `UNTIL_UNHIGHLIGHT`, `FEW_SECONDS`, `CHECK_SECONDS`, `CHECK_FOR_SECONDS`, `QuickAgents` |
 | `concierge/quick/bubble.py` | Engine | `GAP`, `MAX_WIDTH`, `COLORS`, `GWL_EXSTYLE`, `WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW`, `WS_EX_TOPMOST`, `show_seconds`, `Bubble` |
 | `concierge/quick/selection.py` | Engine | `DRAG_PIXELS`, `DOUBLE_CLICK_SECONDS`, `MIN_CHARS`, `MAX_CHARS`, `NO_COPY_APPS`, `Rect`, `CF_UNICODETEXT`, `foreground_app`, `SelectionWatcher`, `read_selection`, `highlighted_text`, `save_clipboard`, `restore_clipboard`, `set_clipboard_text` |
+| `concierge/quick/glow.py` | Engine | `LILAC`, `GREEN`, `THICKNESS_SHARE`, `RIM_SHARE`, `BRIGHTEST`, `RUN_SECONDS`, `HOLD_SECONDS`, `FADE_SECONDS`, `FRAME_SECONDS`, `LINE_SHARE`, `LINE_BREATH_SECONDS`, `WS_POPUP`, `LIGHT_STYLE`, `light_at`, `pixel`, `reached`, `eased`, `full_screen_in_use`, `work_screen`, `real_pixels`, `Layer`, `pump`, `Glow` |
+| `concierge/quick/note.py` | Engine | `COLORS`, `CIRCLE_ROOM`, `BOTTOM_GAP`, `SHOW_SECONDS`, `CHECK_MS`, `ARRIVE_STEPS`, `ARRIVE_MS`, `ARRIVE_PIXELS`, `SOLID`, `ask` |
+| `concierge/quick/watching.py` | Engine | `LECTURE_WORDS`, `VIDEO_SITES`, `BROWSERS`, `PLAYERS`, `looks_like_lecture`, `lecture_on_screen` |
+| `concierge/quick/tidy.py` | Engine | `MIN_FILES`, `SETTLE_SECONDS`, `FIRST_LOOK_SECONDS`, `LOOK_SECONDS`, `SNOOZE_DAYS`, `IGNORED_DAYS`, `QUIET_SECONDS`, `MIN_JOB_SECONDS`, `PRACTICE_FIRST_LOOK_SECONDS`, `PRACTICE_JOB_SECONDS`, `VIDEO_LOOK_SECONDS`, `PRACTICE_VIDEO_SECONDS`, `QUESTION_GAP_SECONDS`, `YES`, `NOT_NOW`, `SORT`, `VIDEO`, `VIDEO_QUESTION`, `NO_VIDEO_SUMMARY`, `PRACTICE_LECTURE`, `DONE_KEPT`, `SHELVES`, `OTHER_SHELF`, `UNFINISHED`, `SYSTEM_FILES`, `downloads_dir`, `log_path`, `shelf_for`, `loose_files`, `free_name`, `sort_folder`, `can_undo`, `undo_sort`, `user_is_quiet`, `TidyWatch` |
 | `concierge/quick/translate.py` | Engine | `LANGUAGES`, `language_in`, `looks_like` |
 | `concierge/agents/builder.py` | Engine | `PLACES`, `CANCEL_WORDS`, `YES_WORDS`, `BLOCKED`, `SKIP_WHILE_SEARCHING`, `CARD`, `CHANGE`, `PICK_FOLDER`, `DUPLICATE`, `REPLACE`, `MAKE_ANOTHER`, `CREATE_IT`, `SAVE_CHANGES`, `RENAME`, `TARGET_LANGUAGE`, `LANGUAGE_CHOICES`, `custom_card`, `Draft`, `AgentBuilder`, `say`, `place_dirs`, `find_folders`, `agent_for_folder`, `is_blocked`, `describe_files` |
 | `concierge/agents/planner.py` | Engine | `BLOCKS_PATH`, `OTHER`, `MAX_STEPS`, `IDEA`, `IDEA_CHANGE`, `KEY_COMBO`, `ASKED_FOR_KEY`, `settle_triggers`, `MAKE_IT`, `SAVE_IDEA`, `CHANGE_IDEA`, `DROP_IDEA`, `HELPER_ROLES`, `ROLE_WORDS`, `Block`, `PlanStep`, `Assessment`, `IdeaDraft`, `IdeaPlanner`, `load_blocks`, `assess`, `clean_detail`, `ideas_path`, `list_ideas`, `save_idea`, `describe_ideas`; building blocks in `agents/capabilities.yaml` |
-| `concierge/agents/recipe.py` | Engine | `CUSTOM`, `WHILE_ON`, `IN_CHAT`, `MAX_INSTRUCTION`, `HIGHLIGHT_WORDS`, `CHAT_WORDS`, `SHOW_WORDS`, `COPY_WORDS`, `STAY_WORDS`, `SHORT_WORDS`, `MECHANICS`, `run_instruction`, `target_language`, `settings_from_words`, `needs_language`, `with_language`, `write_recipe`, `rewrite_instruction`, `is_switchable`, `migrate` |
+| `concierge/agents/recipe.py` | Engine | `CUSTOM`, `WHILE_ON`, `IN_CHAT`, `MAX_INSTRUCTION`, `HIGHLIGHT_WORDS`, `CHAT_WORDS`, `SHOW_WORDS`, `COPY_WORDS`, `STAY_WORDS`, `SHORT_WORDS`, `SAMPLE_TEXT`, `SAMPLE_QUESTION`, `MECHANICS`, `describe`, `run_instruction`, `target_language`, `settings_from_words`, `needs_language`, `with_language`, `write_recipe`, `rewrite_instruction`, `is_switchable`, `migrate` |
 | `concierge/agents/files.py` | Engine | `TEXT_TYPES`, `SUPPORTED`, `MAX_FILES`, `MAX_FILE_MB`, `PASSAGE_CHARS`, `PASSAGE_OVERLAP`, `Passage`, `ScanResult`, `scan`, `read_pages`, `split`, `passages_of`, `tokens`, `SearchIndex`, `folder_signature` |
 | `concierge/agents/router.py` | Engine | `IDEA_OPTION`, `WANTS_CHANGE`, `WANTS_NEW`, `Route`, `route`, `wants_change`, `refers_to`, `names_an_agent`; test cases in `agents/router_cases.yaml` |
+| `concierge/agents/starters.py` | Engine | `STARTERS_PATH`, `WANTS_ADD`, `MAX_WORDS`, `Starter`, `load_starters`, `asks_for`, `install`; recipes in `agents/starters.yaml` |
 | `concierge/agents/runner.py` | Engine | `TOP_PASSAGES`, `MAX_CONTENTS`, `STOPWORDS`, `run`, `matching_words`, `clean_answer`, `refresh_index`, `best_sentence` |
 | `concierge/agents/store.py` | Engine | `Agent`, `agents_dir`, `slugify`, `list_agents`, `find_agent`, `name_taken`, `save`, `load_index`, `delete` |
 | `concierge/agents/eval_router.py` | Engine | `CASES`, `main`; command `python -m concierge.agents.eval_router` |
-| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `BUBBLE_SIZE`, `MENU_SIZE`, `EDGE_GAP`, `PANEL_WIDTH_SHARE`, `PANEL_MIN_WIDTH`, `PANEL_MAX_WIDTH`, `PANEL_RATIO`, `PANEL_MAX_HEIGHT_SHARE`, `FULL_SIZE`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a chat page calls its `startup`, `send`, `choose`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `PanelBridge` (adds `open_app`, `hide_panel`), `BubbleBridge` (`toggle_panel`, `menu`, `moved`, `open_app`, `quit`), `Overlay`, `bubble_home`, `panel_size`, `place_panel`, `place_menu`, `work_area`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
-| `concierge/ui/web/` | UI | `index.html` (full app), `panel.html` (compact chat), `bubble.html` (the round bubble and its menu), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`) and `bubble.setMenu(grow)` |
+| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `GLASS_SIZE`, `GLASS_MIN_HEIGHT`, `GLASS_CHAT_HEIGHT`, `GLASS_GROW_STEPS`, `GLASS_GROW_SECONDS`, `GLASS_ABOVE`, `GLASS_ALPHA`, `GLASS_FADE_STEPS`, `GLASS_FADE_SECONDS`, `GLASS_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a page calls its `startup`, `send`, `choose`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `answer`, `undo_sorting`), `TodayBridge` (adds `agent_details`, `quit_app`), `GlassBridge` (adds `open_app`, `hide_glass`, `fit_glass`), `Overlay`, `full_size`, `centered`, `glass_height`, `place_glass`, `work_area`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
+| `concierge/ui/mini.py` | UI | `MINI_SIZE`, `EDGE_GAP`, `DISC_SHARE`, `FRAMES`, `FRAME_SECONDS`, `RESTING`, `BRIGHT`, `FADE_STEP`, `FULL_SCREEN_CHECK_SECONDS`, `IDLE`, `WORKING`, `ASKING`, `LILAC`, `WHITE`, `is_click`, `premultiplied`, `draw_frames`, `Mini` |
+| `concierge/ui/tray.py` | UI | `ICON_SIZE`, `INK`, `DOTS`, `tray_picture`, `Tray` |
+| `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`), `glass.html`, `glass.css`, `glass.js` (the card from minimized Elaina, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `workspace.html`, `workspace.css`, `index.html` (earlier windows, not opened), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent` and `app.deleteAgent` (called by today.js); window event `engine-event` |
+| `concierge/ui/web/workspace/` | UI | Not opened. `mock.js` (`ws.mock`), `parts.js` (`ws.parts`), `store.js` (`ws.store`), `activity.js` (`ws.activity`), `home.js` (`ws.home`), `discover.js` (`ws.discover`), `library.js` (`ws.library`, `ws.agentPage`), `studio.js` (`ws.studio`), `add_agent.js` (`ws.addAgent`), `main.js` (`ws.go`, `ws.refresh`, `ws.toast`, `ws.dock`, `ws.ask`, `ws.actions`) |

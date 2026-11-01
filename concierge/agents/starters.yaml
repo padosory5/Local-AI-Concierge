@@ -1,0 +1,23 @@
+# Ready-made agents: tested recipes a user can add with one click, or by saying
+# so ("turn on the highlight explainer"). Nothing to set up and no model needed
+# to create them, so the first agent always works. Each one becomes an ordinary
+# agent made from parts (blueprints/custom.yaml) that the user can change by
+# talking, like any other.
+#
+#   words   what a message may call it, in lower case
+
+starters:
+  - name: Highlight Explainer
+    words: [highlight explainer, explainer]
+    instruction: Explain this text in simple, everyday words, in two or three short sentences.
+    when: While it's switched on
+
+  - name: Grammar Fixer
+    words: [grammar fixer, grammar checker]
+    instruction: Rewrite the text with correct grammar and spelling, so it sounds natural. Keep its meaning and tone.
+    when: When you ask in the chat
+
+  - name: Quick Summarizer
+    words: [quick summarizer, summarizer]
+    instruction: Summarize the text in three short bullet points.
+    when: When you ask in the chat
