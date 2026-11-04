@@ -4,6 +4,8 @@ import threading
 import time
 from ctypes import wintypes
 
+import pytest
+
 from concierge.agents.recipe import CUSTOM, IN_CHAT, WHILE_ON, describe
 from concierge.agents.store import Agent
 from concierge.quick import glow
@@ -13,6 +15,12 @@ from concierge.quick.watching import looks_like_lecture
 from concierge.ui.mini import ASKING, IDLE, WORKING, draw_frames, is_click
 
 LONG_AGO = time.time() - SETTLE_SECONDS * 10
+
+
+@pytest.fixture(autouse=True)
+def noticing_allowed(monkeypatch):
+    """Most tests are about what she does once the user said she may notice things."""
+    monkeypatch.setattr(TidyWatch, "_read_settings", lambda self: {"noticing": True})
 
 
 def make(folder, name, text="x"):
@@ -370,3 +378,98 @@ def test_the_light_runs_both_ways_round_and_meets_in_the_far_corner():
     assert set(start.values()) == {0}
     assert middle == {"right": 1440, "bottom": 2000, "top": 560, "left": 0}
     assert end == {"right": 1440, "bottom": 2560, "top": 2560, "left": 1440}
+
+
+def test_she_notices_nothing_until_the_user_says_yes(tmp_path, monkeypatch):
+    monkeypatch.setattr(TidyWatch, "_read_settings", lambda self: {})
+    fill(tmp_path, MIN_FILES)
+    asked = []
+    watch = TidyWatch(tmp_path, tmp_path / "log" / "sorts.json", Lights(), ask=lambda text, cancel: asked.append(text),
+                      quiet=lambda: True)
+    watch.look()
+    assert asked == [] and watch.today()["noticing"] is None and watch.today()["noticed"] is None
+
+
+def test_the_users_answer_about_noticing_is_kept(tmp_path, monkeypatch):
+    monkeypatch.undo()
+    log = tmp_path / "log" / "sorts.json"
+    TidyWatch(tmp_path, log, Lights(), quiet=lambda: True).set_noticing(False)
+    assert TidyWatch(tmp_path, log, Lights(), quiet=lambda: True).noticing is False
+
+
+def test_every_answer_is_counted_on_this_computer(tmp_path):
+    fill(tmp_path, MIN_FILES)
+    watch = watch_for(tmp_path, NOT_NOW)
+    watch.look()
+    watch.answer(SORT, True)
+    assert watch.answers()[SORT] == {"yes": 1, "no": 1, "ignored": 0}
+    assert json.loads((tmp_path / "log" / "questions.json").read_text())[SORT]["no"] == 1
+
+
+def test_an_unanswered_question_counts_as_ignored(tmp_path):
+    fill(tmp_path, MIN_FILES)
+    watch = watch_for(tmp_path, None)
+    watch.look()
+    assert watch.answers()[SORT]["ignored"] == 1
+
+
+def test_the_question_comes_with_where_everything_would_go(tmp_path):
+    fill(tmp_path, MIN_FILES)
+    make(tmp_path, "photo.jpg")
+    plan = watch_for(tmp_path, None).today()["noticed"]["plan"]
+    assert plan == [{"shelf": "Documents", "count": MIN_FILES}, {"shelf": "Pictures", "count": 1}]
+
+
+def test_each_sort_can_be_undone_on_its_own_for_a_week(tmp_path):
+    log = tmp_path / "log" / "sorts.json"
+    make(tmp_path, "a.pdf")
+    sort_folder(tmp_path, log)
+    first = json.loads(log.read_text())[0]["id"]
+    make(tmp_path, "b.jpg")
+    sort_folder(tmp_path, log)
+    assert undo_sort(log, first) == 1
+    assert (tmp_path / "a.pdf").exists() and (tmp_path / "Pictures" / "b.jpg").exists()
+    assert can_undo(log) and not can_undo(log, first)
+
+
+def test_a_sort_older_than_a_week_cant_be_undone(tmp_path):
+    log = tmp_path / "log" / "sorts.json"
+    make(tmp_path, "a.pdf")
+    sort_folder(tmp_path, log)
+    sorts = json.loads(log.read_text())
+    sorts[0]["when"] -= 8 * 86400
+    log.write_text(json.dumps(sorts))
+    assert not can_undo(log) and undo_sort(log) == 0
+
+
+def test_a_sort_saved_by_the_earlier_version_can_still_be_undone(tmp_path):
+    log = tmp_path / "log" / "sorts.json"
+    log.parent.mkdir()
+    moved = tmp_path / "Documents" / "a.pdf"
+    moved.parent.mkdir()
+    moved.write_text("x")
+    log.write_text(json.dumps([{"from": str(tmp_path / "a.pdf"), "to": str(moved)}]))
+    assert undo_sort(log) == 1 and (tmp_path / "a.pdf").exists()
+
+
+def test_today_says_where_the_files_went_and_offers_undo(tmp_path):
+    fill(tmp_path, 2)
+    lights = Lights()
+    watch = watch_for(tmp_path, YES, lights)
+    watch.sort_now()
+    assert lights.done.wait(10)
+    for _ in range(50):
+        if watch.today()["working"] is None:
+            break
+        time.sleep(0.05)
+    job = watch.today()["done"][0]
+    assert job["details"] == "Documents 2" and job["undo"] is True and job["sort"]
+
+
+def test_files_kept_only_in_the_cloud_are_never_moved(tmp_path, monkeypatch):
+    from concierge.quick import tidy
+
+    real = os.stat(make(tmp_path, "online.pdf"))
+    fake = type("Info", (), {"st_mtime": real.st_mtime, "st_mode": real.st_mode, "st_file_attributes": 0x400000})()
+    monkeypatch.setattr(tidy.Path, "stat", lambda self, **kw: fake)
+    assert loose_files(tmp_path) == []

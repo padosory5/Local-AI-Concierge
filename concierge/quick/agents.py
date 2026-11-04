@@ -141,6 +141,9 @@ class QuickAgents:
             result = "I couldn't do that: Ollama isn't running."
         if serial != self._serial or not result:
             return  # the user has highlighted something newer since
+        from .. import activity
+
+        activity.record(activity.TRANSLATED if language else activity.EXPLAINED)
         if show in (CLIPBOARD, BOTH):
             self._set_clipboard(result)
         if bubble and show in (BUBBLE, BOTH):

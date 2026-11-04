@@ -17,6 +17,7 @@ import requests
 # about two seconds for the fallback.
 DEFAULT_URL = "http://127.0.0.1:11434"
 DOWNLOAD_PAGE = "https://ollama.com/download"
+UNREACHABLE = "I can't reach Ollama, the program that runs my model. Open the Ollama app, or restart me."
 
 
 class OllamaError(RuntimeError):
@@ -84,6 +85,16 @@ class Ollama:
 
     def list_models(self) -> list[str]:
         return [m["name"] for m in self._get("/api/tags").get("models", [])]
+
+    def models(self) -> list[dict]:
+        """Every installed model, with its size on disk and details."""
+        return self._get("/api/tags").get("models", [])
+
+    def delete(self, name: str) -> None:
+        try:
+            self._check(requests.delete(f"{self.base_url}/api/delete", json={"model": name}, timeout=30))
+        except requests.RequestException as exc:
+            raise OllamaError(UNREACHABLE) from exc
 
     def has_model(self, name: str) -> bool:
         wanted = name if ":" in name else f"{name}:latest"
@@ -206,22 +217,35 @@ class Ollama:
 
     # --------------------------------------------------------- transport
 
+    # Ollama can stop at any time (closed from the tray, or still starting). That is
+    # an OllamaError like any other, so every window shows it in plain words
+    # instead of failing on a connection error it doesn't know.
+
     def _get(self, path: str) -> dict:
-        return self._check(requests.get(f"{self.base_url}{path}", timeout=10))
+        try:
+            return self._check(requests.get(f"{self.base_url}{path}", timeout=10))
+        except requests.RequestException as exc:
+            raise OllamaError(UNREACHABLE) from exc
 
     def _post(self, path: str, body: dict) -> dict:
-        return self._check(requests.post(f"{self.base_url}{path}", json=body, timeout=120))
+        try:
+            return self._check(requests.post(f"{self.base_url}{path}", json=body, timeout=120))
+        except requests.RequestException as exc:
+            raise OllamaError(UNREACHABLE) from exc
 
     def _stream(self, path: str, body: dict, timeout: float = 60) -> Iterator[dict]:
-        with requests.post(f"{self.base_url}{path}", json=body, stream=True, timeout=timeout) as resp:
-            self._check(resp, read_body=False)
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                event = json.loads(line)
-                if "error" in event:
-                    raise OllamaError(event["error"])
-                yield event
+        try:
+            with requests.post(f"{self.base_url}{path}", json=body, stream=True, timeout=timeout) as resp:
+                self._check(resp, read_body=False)
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    event = json.loads(line)
+                    if "error" in event:
+                        raise OllamaError(event["error"])
+                    yield event
+        except requests.RequestException as exc:
+            raise OllamaError(UNREACHABLE) from exc
 
     @staticmethod
     def _check(resp: requests.Response, read_body: bool = True) -> dict:

@@ -40,6 +40,44 @@ def test_think_through_streams_thoughts_then_the_reply():
     assert chat.history[-1] == {"role": "assistant", "content": "Hi! Good to see you."}
 
 
+def test_a_model_that_thinks_and_never_answers_is_asked_to_just_answer():
+    class Lost(ThinkingModel):
+        def chat_parts(self, model, messages, think=None, options=None, keep_alive=None):
+            yield "thought", "Hmm. "
+
+        def chat(self, model, messages, think=None, options=None, keep_alive=None):
+            assert think is False  # no more thinking this time
+            yield "Saturday at noon."
+
+    chat = elaina.ElainaChat(Lost())
+    chat.attach("notes.txt says the picnic is on Saturday at noon.", [])
+    said = "".join(piece for kind, piece in chat.think_through("When is it?") if kind == "text")
+    assert said == "Saturday at noon."
+    # The file stays in her memory, because the question was answered after all.
+    assert "notes.txt" in chat.history[0]["content"]
+
+
+def test_thinking_that_runs_on_is_stopped_before_it_fills_the_model():
+    stopped = []
+
+    class Rambling(ThinkingModel):
+        def chat_parts(self, model, messages, think=None, options=None, keep_alive=None):
+            try:
+                while True:
+                    yield "thought", "and another thing " * 100
+            finally:
+                stopped.append(True)  # the model really stops, it isn't left running
+
+        def chat(self, model, messages, think=None, options=None, keep_alive=None):
+            yield "Here is my answer."
+
+    parts = list(elaina.ElainaChat(Rambling()).think_through("hello"))
+    thought = sum(len(piece) for kind, piece in parts if kind == "thought")
+    assert thought < elaina.MAX_THOUGHT_CHARS * 2
+    assert parts[-1] == ("text", "Here is my answer.")
+    assert stopped == [True]
+
+
 def test_a_model_without_thinking_says_it_cannot():
     class Plain(ThinkingModel):
         def capabilities(self, name):

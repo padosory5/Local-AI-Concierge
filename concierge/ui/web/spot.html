@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Elaina</title>
+  <link rel="stylesheet" href="spot.css">
+</head>
+<!-- The Spot: a small card that opens where the user is working, when they tap
+     Ctrl twice. spot.js draws it; Python reads the highlight, runs the job and
+     puts the answer back (SpotBridge in window.py). -->
+<body>
+  <main id="card" class="card">
+    <header class="top">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="name">Elaina</span>
+      <span id="where" class="where"></span>
+      <span class="key">Esc</span>
+    </header>
+    <p id="picked" class="picked" hidden></p>
+    <div id="actions" class="actions"></div>
+    <div id="answer" class="answer" hidden></div>
+    <div id="after" class="after" hidden>
+      <button id="primary" class="solid" type="button"></button>
+      <button id="second" class="quiet" type="button"></button>
+      <button id="third" class="quiet" type="button"></button>
+      <span id="took" class="took"></span>
+    </div>
+    <form id="ask-form" class="ask">
+      <input id="ask" autocomplete="off" placeholder="Or tell me what to do with it..." aria-label="Tell Elaina what to do">
+    </form>
+  </main>
+  <script src="spot.js"></script>
+</body>
+</html>

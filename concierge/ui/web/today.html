@@ -14,43 +14,68 @@
   <nav class="side" aria-label="Main">
     <div class="side-brand">
       <canvas id="mark" width="52" height="52" aria-hidden="true"></canvas>
-      Elaina
+      <span class="side-word">Elaina</span>
+      <button id="side-toggle" class="side-toggle" type="button" data-icon="panel"
+              aria-label="Open or close the side list" title="Open or close the side list"></button>
     </div>
-    <button id="start" class="new-chat" type="button" data-icon="plus">New chat</button>
-    <button class="side-item" type="button" data-view="today" data-icon="today">
-      Today<span id="today-count" class="count" hidden></span>
+    <button id="start" class="new-chat" type="button" data-icon="plus" title="New chat"><span class="side-word">New chat</span></button>
+    <button class="side-item" type="button" data-view="today" data-icon="today" title="Today">
+      <span class="side-word">Today</span><span id="today-count" class="count" hidden></span>
     </button>
+    <button class="side-item" type="button" data-view="help" data-icon="spark" title="Help me">
+      <span class="side-word">Help me</span>
+    </button>
+    <button class="side-item" type="button" data-view="chat" data-icon="chat" title="Chat">
+      <span class="side-word">Chat</span>
+    </button>
+    <button class="side-item" type="button" data-view="room" data-icon="room" title="Elaina's room">
+      <span class="side-word">Elaina's room</span>
+    </button>
+    <button id="sessions-open" class="side-item only-rail" type="button" data-icon="chat" title="Sessions"></button>
 
-    <div class="side-label">Sessions</div>
-    <ul id="chats" class="chats"><li class="muted">No sessions yet</li></ul>
-
-    <div class="side-label">Agents</div>
-    <div id="helpers" class="helpers"></div>
-    <div id="suggested-label" class="side-label quiet-label" hidden>Add more</div>
-    <div id="suggested" class="helpers"></div>
+    <div class="side-sessions">
+      <label class="side-search">
+        <span class="search-mark" data-icon="search" aria-hidden="true"></span>
+        <input id="chat-search" type="search" placeholder="Search sessions" aria-label="Search sessions">
+      </label>
+      <div id="pinned-label" class="side-label" hidden>Pinned</div>
+      <ul id="pinned" class="chats" hidden></ul>
+      <div class="side-label">Sessions</div>
+      <ul id="chats" class="chats"><li class="muted">No sessions yet</li></ul>
+    </div>
 
     <div class="side-foot">
-      <button class="side-item" type="button" data-view="settings" data-icon="gear">Settings</button>
-      <div id="side-model" class="side-model"></div>
+      <div id="side-model" class="side-model side-word"></div>
     </div>
   </nav>
 
   <main class="stage">
     <canvas id="corner" width="1040" height="680" aria-hidden="true"></canvas>
     <button id="working" class="working" type="button" hidden></button>
+    <!-- Elaina's room: everything about her, one tab each. Shown over those views only. -->
+    <nav id="room-tabs" class="room-tabs" aria-label="Elaina's room" hidden>
+      <button type="button" data-room="agents">Agents<span id="agents-on" class="count quiet-count" hidden></span></button>
+      <button type="button" data-room="models">Models</button>
+      <button type="button" data-room="reservations">Reservations<span id="bookings-count" class="count quiet-count" hidden></span></button>
+      <button type="button" data-room="privacy">What I see</button>
+      <button type="button" data-room="settings">Settings</button>
+    </nav>
 
     <div class="views">
+      <section id="view-welcome" class="view welcome" aria-label="Welcome" hidden></section>
       <section id="view-help" class="view help" aria-label="What should we make?">
         <div class="help-row">
           <div class="help-lead">Help me</div>
-          <div id="wheel" class="wheel" role="listbox" aria-label="What you can make an agent for"></div>
+          <div id="wheel" class="wheel" role="listbox" aria-label="What Elaina can do for you"></div>
+          <aside id="demo" class="demo" aria-live="polite"></aside>
         </div>
+        <div id="roles" class="roles"></div>
       </section>
 
       <section id="view-chat" class="view chat-view" aria-label="Chat with Elaina" hidden>
         <button id="new-chat" type="button" hidden>New chat</button>
         <div id="messages" class="messages" aria-live="polite">
-          <div id="empty" class="empty" hidden></div>
+          <div id="empty" class="empty" hidden>Ask me anything. I'm on this computer, so it stays here.</div>
         </div>
         <div id="progress" class="progress" hidden>
           <span class="spinner" aria-hidden="true"></span>
@@ -59,13 +84,46 @@
       </section>
 
       <section id="view-today" class="view" aria-label="Today" hidden></section>
+      <section id="view-agents" class="view discover-page" aria-label="Agents" hidden></section>
+      <section id="view-models" class="view discover-page" aria-label="Models" hidden></section>
       <section id="view-helper" class="view agent-page" aria-label="Agent" hidden></section>
+
+      <section id="view-reservations" class="view" aria-label="Reservations" hidden>
+        <h1>Reservations</h1>
+        <p class="sub">Book an agent for later. It runs while Elaina is open, even when she's minimized.</p>
+        <form id="book" class="book">
+          <label class="book-what">What
+            <select id="book-what"></select>
+          </label>
+          <label id="book-text-row" class="book-text" hidden>What should it do?
+            <input id="book-text" type="text" placeholder="Summarize today's notes" autocomplete="off">
+          </label>
+          <label>When
+            <input id="book-when" type="datetime-local">
+          </label>
+          <label>Repeat
+            <select id="book-repeat">
+              <option value="once">Just once</option>
+              <option value="daily">Every day</option>
+              <option value="weekly">Every week</option>
+            </select>
+          </label>
+          <button class="solid-button" type="submit">Reserve</button>
+        </form>
+        <p id="book-error" class="book-error" hidden></p>
+        <h2>Booked</h2>
+        <div id="book-list"></div>
+      </section>
+
+      <section id="view-privacy" class="view" aria-label="What I see" hidden></section>
 
       <section id="view-settings" class="view" aria-label="Settings" hidden>
         <h1>Settings</h1>
-        <p class="sub">Everything stays on this computer.</p>
+        <p id="privacy" class="sub">Everything stays on this computer.</p>
         <h2>Elaina</h2>
         <div id="model-line" class="plain">Checking your computer...</div>
+        <div class="actions"><button id="manage-models" class="line-button" type="button">Models and keys</button>
+          <button id="open-privacy" class="line-button" type="button">What I see</button></div>
         <h2>This computer</h2>
         <ul id="hardware" class="plain-list"></ul>
         <div class="actions"><button id="quit" class="line-button" type="button">Quit Elaina</button></div>
@@ -73,17 +131,34 @@
     </div>
 
     <form id="composer" class="composer">
+      <div id="attached" class="attached" hidden></div>
       <textarea id="input" rows="1" placeholder="or just tell me in your own words" aria-label="Message Elaina"></textarea>
-      <button id="think" class="think-toggle" type="button" aria-pressed="false"
-              title="Elaina shows her full thinking before answering. Much slower (about 20 seconds).">Think</button>
-      <button id="send" type="submit" aria-label="Send" disabled>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v8H6M10 8.5 5.5 13l4.5 4.5"/></svg>
-      </button>
+      <div class="composer-tools">
+        <button id="add" class="tool add" type="button" aria-label="Add files, folders or pictures"
+                aria-expanded="false" title="Add files, folders or pictures" data-icon="plus"></button>
+        <button id="model" class="tool model-pill" type="button" aria-expanded="false" title="Choose who answers">
+          <span id="model-name">This computer</span>
+        </button>
+        <button id="think" class="think-toggle" type="button" aria-pressed="false"
+                title="Elaina shows her thinking while she works it out. Takes about 10 seconds longer.">Think</button>
+        <button id="send" type="submit" aria-label="Send" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v8H6M10 8.5 5.5 13l4.5 4.5"/></svg>
+        </button>
+      </div>
+      <div id="add-menu" class="pop add-menu" hidden>
+        <button type="button" data-add="files" data-icon="file">Files</button>
+        <button type="button" data-add="folder" data-icon="folder">Folder</button>
+        <button type="button" data-add="images" data-icon="picture">Pictures</button>
+        <button type="button" data-add="screenshot" data-icon="screen">Screenshot</button>
+      </div>
+      <div id="model-menu" class="pop model-menu" hidden></div>
     </form>
   </main>
 
   <!-- today.js first: app.js may start drawing the moment it runs. -->
   <script src="today.js"></script>
+  <script src="discover.js"></script>
+  <script src="models.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

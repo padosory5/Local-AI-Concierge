@@ -10,20 +10,26 @@ be set up (`python -m concierge setup`).
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Iterator
+from dataclasses import asdict
+from pathlib import Path
 
-from . import elaina, hardware
-from .agents import runner, store
+from . import activity, elaina, hardware, safety
+from .agents import community, runner, store
 from .agents.blueprint import load_blueprints
 from .agents.builder import AgentBuilder, say
 from .agents.planner import IDEA, IDEA_CHANGE, MAKE_IT, IdeaPlanner, describe_ideas
 from .agents.router import names_an_agent, refers_to, route, wants_change
 from .agents.starters import Starter, asks_for, install
+from .attachments import NOTHING_SAID, Attached, read_attachments
 from .catalog import find_model, recommend
 from .conversations import ChatBook
 from .events import (AgentList, ElainaDone, ElainaText, Error, Event, IdeaCard, Question, Result, SystemInfo,
                      Thinking)
+from .models import ModelMenu
 from .ollama import Ollama, OllamaError
+from .quick import spot
 from .quick.agents import QuickAgents
 from .agents.recipe import (BUBBLE, CLIPBOARD, CUSTOM, MECHANICS, WHILE_ON, describe, is_switchable, migrate,
                             needs_language, run_instruction, target_language, with_language)
@@ -46,6 +52,19 @@ TROUBLE = re.compile(
 DELETE_AGENT, PICK_AGENT_TO_DELETE = "delete_agent", "pick_agent_to_delete"
 FIX_AGENT, FIX_IT, LEAVE_IT = "fix_agent", "Fix it", "Leave it"
 DELETE_IT, KEEP_IT = "Delete it", "Keep it"
+# What each Spot button counts as on Today.
+SPOT_KINDS = {"polish": activity.POLISHED, "shorter": activity.POLISHED, "explain": activity.EXPLAINED,
+              "error": activity.EXPLAINED, "code": activity.EXPLAINED, "problems": activity.EXPLAINED,
+              "translate": activity.TRANSLATED, "summarize": activity.SUMMED_UP}
+# The jobs timed in the first two minutes: real jobs she does every day, small enough to be quick.
+MEASURED_JOBS = (
+    ("to explain a word you highlight", "Explain this word in simple, everyday words, in one sentence.", "serendipity"),
+    ("to polish a messy message", "Rewrite the text so it reads clearly and politely. Keep its meaning.",
+     "hey can u send me that report asap, its late and the boss keeps asking"),
+    ("to translate a paragraph", "Translate the text into {language}.",
+     "The library opens at nine on weekdays and at ten on weekends. Books can be borrowed for three weeks, "
+     "and you can renew them online if nobody else is waiting for them."),
+)
 
 
 class ElainaEngine:
@@ -61,6 +80,9 @@ class ElainaEngine:
         self.deleting: str | None = None  # agent waiting for "Delete it" / "Keep it"
         # A diagnosis waiting for "Fix it": (agent name, settings to change, switch it on)
         self.fixing: tuple[str, dict, bool] | None = None
+        self.talker_name = ""  # the model writing her answers, if it isn't her own
+        self.menu = ModelMenu(self.ollama, self._hardware)
+        self.menu.changed = self._use_chosen_model
 
     # ----------------------------------------------------------- contract
 
@@ -82,6 +104,7 @@ class ElainaEngine:
                 yield Error("Elaina is not set up yet. Run: python -m concierge setup")
                 return
             self.chat = elaina.ElainaChat(self.ollama)
+            self._use_chosen_model()
         except OllamaError as exc:
             yield Error(str(exc))
             return
@@ -143,6 +166,119 @@ class ElainaEngine:
         self.book.new()
         self._clear_conversation_state()
 
+    # Outside the contract, like details(): the full window's model menu, + button
+    # and reservations call these through ChatHub.
+
+    def send_files(self, text: str, paths: list[str], think: bool = False) -> Iterator[Event]:
+        """A message with things added to it. They are the point of the message,
+        so it goes straight to Elaina instead of through the router."""
+        if self.chat is None:
+            yield Error("Elaina is not running. Restart the app after setting her up.")
+            return
+        attached = read_attachments(paths)
+        said = "\n".join(filter(None, [text, f"Attached: {', '.join(attached.names)}"]))
+        yield from self._full_lists(self.book.record(said, self._with_attachments(text, attached, think)))
+
+    def set_agent(self, name: str, on: bool) -> Iterator[Event]:
+        yield from self.book.record("", self._toggle(name, on=on))
+
+    def recipes(self) -> dict:
+        """The agents to discover, and which of them the user already has."""
+        have = {agent.name.lower() for agent in store.list_agents()}
+        return {"categories": list(community.CATEGORIES),
+                "recipes": [{**asdict(recipe), "added": recipe.name.lower() in have} for recipe in community.recipes()]}
+
+    def add_recipe(self, id: str) -> Iterator[Event]:
+        recipe = community.find(id)
+        if recipe is None:
+            yield Error("I can't find that agent any more.")
+            return
+        community.install(recipe)
+        yield self._agent_list()
+
+    def _helpers(self) -> list[tuple[str, str]]:
+        """The user's own agents that work on text when asked, for the Spot's buttons."""
+        return [(agent.name, agent.slots.get("instruction", "")) for agent in store.list_agents()
+                if agent.blueprint == CUSTOM and not self._switchable(agent) and agent.slots.get("instruction")]
+
+    def spot_actions(self, text: str, editable: bool) -> list[dict]:
+        return spot.actions_for(text, editable, self._helpers())
+
+    def spot_run(self, action: str, text: str, ask: str = "") -> dict:
+        """One Spot job, always on her own model: the Spot reads from any program."""
+        try:
+            instruction, words = spot.job(action, ask, text, self._helpers())
+        except ValueError:
+            return {"error": "I don't know that one."}
+        if not words:
+            return {"error": "Highlight something first, or tell me what to write."}
+        try:
+            result = run_instruction(self.ollama, elaina.ELAINA_MODEL, instruction, words, self._quick_think())
+        except OllamaError as exc:
+            return {"error": str(exc)}
+        activity.record(SPOT_KINDS.get(action.split(":")[0], activity.HELPED))
+        return {"text": result}
+
+    def switch_agent(self, name: str, on: bool) -> Iterator[Event]:
+        """A switch on Help me: adds the ready-made agent if it isn't there yet and
+        turns it on or off, with nothing said in the chat."""
+        agent = store.find_agent(name)
+        if agent is None and on and (recipe := community.find(store.slugify(name))):
+            community.install(recipe)
+            agent = store.find_agent(name)
+        if agent and self.quick and self._switchable(agent):
+            self.quick.switch(agent, on)
+        yield self._agent_list()
+
+    def activity(self) -> dict[str, int]:
+        return activity.this_week()
+
+    def measure(self) -> dict:
+        """What this computer can do, timed on it just now, for the first two minutes.
+        Every number is measured; nothing is guessed."""
+        report = hardware.detect()
+        gpu = report.best_gpu()
+        device = f"{gpu.name} · {gpu.vram_total_gb:.0f} GB" if gpu and gpu.vram_total_gb else report.cpu_name
+        home = spot.home_language()
+        other = "English" if home != "English" else "Korean"
+        try:
+            think = self._quick_think()
+            self.ollama.refresh(elaina.ELAINA_MODEL, elaina.KEEP_ALIVE)  # loading her isn't part of a job
+            results = []
+            for what, instruction, sample in MEASURED_JOBS:
+                began = time.monotonic()
+                said = run_instruction(self.ollama, elaina.ELAINA_MODEL, instruction.format(language=other),
+                                       sample, think)
+                seconds = time.monotonic() - began
+                results.append({"what": what, "seconds": round(seconds, 1), "words": len(said.split())})
+        except OllamaError as exc:
+            return {"device": device, "error": str(exc)}
+        # All three jobs together, so one quick answer can't make the speed look odd.
+        seconds = sum(job["seconds"] for job in results)
+        return {"device": device, "results": results,
+                "words_per_second": round(sum(job["words"] for job in results) / seconds) if seconds else None}
+
+    def _quick_think(self) -> bool | None:
+        """Thinking off for small jobs, the same as in the chat. Asked of the model itself when
+        the page calls before startup has finished, because a thinking model left to its
+        default thinks first, and a word took 13 seconds to explain instead of a fraction of one."""
+        if self.chat:
+            return self.chat.think
+        return False if "thinking" in self.ollama.capabilities(elaina.ELAINA_MODEL) else None
+
+    def post_agent(self, name: str, about: str, category: str, by: str = "") -> dict:
+        """The page that posts an agent, for the window to open. Nothing is sent from here."""
+        agent = store.find_agent(name)
+        if agent is None:
+            return {"error": "Please pick one of your agents."}
+        try:
+            address = community.post_address(agent, about, category, by)
+        except community.PostError as exc:
+            return {"error": str(exc)}
+        if not community.can_post():
+            return {"error": "Posting isn't open yet, because the shared place for agents hasn't been set up."}
+        return {"address": address}
+
     def close(self) -> None:
         self.book.save()
         if self.quick:
@@ -155,6 +291,11 @@ class ElainaEngine:
     def _handle(self, text: str, think: bool = False) -> Iterator[Event]:
         self.deleting = None  # an unanswered "Delete X?" is dropped by moving on
         self.fixing = None
+        if safety.crisis(text):
+            # Before anything else, setups included: this is no moment for a form.
+            yield Thinking("This sounds serious, so I'm answering with care, not guessing.")
+            yield from say(safety.crisis_reply(text))
+            return
         try:
             # An agent setup or an idea in progress gets the message first; if
             # the user moved on, it hands the message back for normal routing.
@@ -209,18 +350,69 @@ class ElainaEngine:
             elif where.kind == "run_agent":
                 yield Thinking(f"This is a job for {where.agent}.")
                 yield from self._run_agent(where.agent, where.request, text)
-            elif think and self.chat.can_think:
-                for kind, piece in self.chat.think_through(text):
-                    yield Thinking(piece, "thought") if kind == "thought" else ElainaText(piece)
-                yield ElainaDone()
             else:
-                if think:
+                yield Thinking(f"This is just a chat, so I'll ask {self.talker_name}." if self.talker_name
+                               else "This is just a chat, so I'll answer it myself.")
+                if think and not self.chat.can_think and not self.talker_name:
                     yield Thinking("This model can't show its thinking, so here is my answer.")
-                for chunk in self.chat.send(text):
-                    yield ElainaText(chunk)
-                yield ElainaDone()
+                yield from self._reply(text, think)
         except OllamaError as exc:
             yield Error(str(exc))
+
+    def _reply(self, text: str, think: bool) -> Iterator[Event]:
+        if think and self.chat.can_think:
+            for kind, piece in self.chat.think_through(text):
+                yield Thinking(piece, "thought") if kind == "thought" else ElainaText(piece)
+        else:
+            for chunk in self.chat.send(text):
+                yield ElainaText(chunk)
+        if note := safety.caution(text):
+            yield ElainaText(f"\n\n{note}")
+        activity.record(activity.ANSWERED)
+        yield ElainaDone()
+
+    def _with_attachments(self, text: str, attached: Attached, think: bool) -> Iterator[Event]:
+        self.deleting = None
+        self.fixing = None
+        try:
+            for name in attached.unread:
+                yield Thinking(f"I couldn't read {name}.")
+            if attached.folders:
+                yield Thinking("A folder is what a documents agent is for, so I'll set one up.")
+                yield from self.builder.start_for_folder("documents_qa", Path(attached.folders[0]), text)
+                return
+            images = attached.images
+            if images and not self.chat.can_see:
+                images = []
+                yield Thinking("The model I'm using can't look at pictures.")
+                if not attached.context:
+                    yield from say("The model I'm using can't look at pictures. Pick one that can from the model "
+                                   "menu, then send it again.")
+                    return
+            if not attached.context and not images:
+                yield from say("I couldn't read that. I can read PDF, Word and text files, and pictures.")
+                return
+            read = [name for name in attached.names if name not in attached.unread]
+            yield Thinking(f"Read {', '.join(read)}.")
+            self.chat.attach(attached.context, images)
+            yield from self._reply(text or NOTHING_SAID, think)
+        except OllamaError as exc:
+            yield Error(str(exc))
+
+    def _use_chosen_model(self) -> None:
+        """Only her answers move to the model picked in the menu. Deciding what a
+        message is for stays with her own small model, and so do agents that read
+        every highlight: those see whatever the user selects, in any program, so
+        that must never leave the computer without them asking each time."""
+        chosen = self.menu.chosen()
+        self.talker_name = chosen["name"] if chosen else ""
+        if self.chat is None:
+            return
+        try:
+            system = self.ollama.show(elaina.ELAINA_MODEL).get("system", "") if chosen else ""
+        except OllamaError:
+            system = ""
+        self.chat.talker = self.menu.talker(system) or self.ollama
 
     def _handle_choice(self, id: str, choice: str) -> Iterator[Event]:
         if id == PICK_AGENT_TO_DELETE:
@@ -420,8 +612,9 @@ class ElainaEngine:
             return
         if agent.blueprint == CUSTOM:
             # Asked in the chat ("Word explainer: serendipity"): do its job here.
-            result = run_instruction(self.ollama, elaina.ELAINA_MODEL, agent.slots.get("instruction", ""),
+            result = run_instruction(self.chat.talker, elaina.ELAINA_MODEL, agent.slots.get("instruction", ""),
                                      request, self.chat.think)
+            activity.record(activity.HELPED)
             self.chat.remember(text, f"({agent.name} answered) {result}")
             yield Result(agent.name, result)
             return

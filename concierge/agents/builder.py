@@ -91,6 +91,13 @@ class AgentBuilder:
         else:
             yield from self._next()
 
+    def start_for_folder(self, blueprint_id: str, folder: Path, request: str) -> Iterator[Event]:
+        """The user already showed which folder, with the + button."""
+        bp = self.blueprints[blueprint_id]
+        self.draft = Draft(bp, request=request)
+        yield from say(f"I can make you an agent for that: {bp.name}. {bp.pitch.strip()}")
+        yield from self._use_folder(folder)
+
     def compose(self, request: str, blocks: list[str]) -> Iterator[Event]:
         """Make an agent from an idea's parts, with no kind of agent behind it:
         the shared template (custom.yaml) filled in from the parts, and an

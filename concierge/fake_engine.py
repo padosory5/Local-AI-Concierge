@@ -25,12 +25,19 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
+from dataclasses import asdict
 
+from . import hardware
+from .agents import community
 from .agents.recipe import CUSTOM, WHILE_ON, describe
 from .agents.starters import asks_for, load_starters
 from .agents.store import Agent
+from .agents.store import slugify as store_slug
+from .attachments import read_attachments
+from .quick import spot
 from .conversations import ChatBook
 from .engine import WANTS_ON
+from .models import ModelMenu
 from .events import (
     AgentCard,
     IdeaCard,
@@ -48,6 +55,58 @@ from .events import (
 )
 
 
+class PracticeOllama:
+    """Stands in for Ollama in the model menu, so nothing is really fetched or deleted."""
+
+    def __init__(self):
+        self.installed = [{"name": "qwen3.5:4b", "size": 3_324_000_000, "details": {"parameter_size": "4.2B"}},
+                          {"name": "gemma4:latest", "size": 6_583_000_000, "details": {"parameter_size": "7.5B"}}]
+
+    def models(self) -> list[dict]:
+        return list(self.installed)
+
+    def capabilities(self, name: str) -> list[str]:
+        return ["completion"]
+
+    def pull(self, tag: str, on_progress) -> None:
+        for percent in range(0, 101, 5):
+            time.sleep(0.15)
+            on_progress("pulling", percent, 100)
+        self.installed.append({"name": tag, "size": 2_400_000_000, "details": {}})
+
+    def delete(self, tag: str) -> None:
+        self.installed = [model for model in self.installed if model["name"] != tag]
+
+
+class PracticeKeys:
+    """Practice keys: kept in memory, never in the password store."""
+
+    def __init__(self):
+        self.keys: dict[str, str] = {}
+
+    def saved_key(self, provider: str) -> str:
+        return self.keys.get(provider, "")
+
+    def save_key(self, provider: str, key: str) -> None:
+        self.keys[provider] = key
+
+    def forget_key(self, provider: str) -> None:
+        self.keys.pop(provider, None)
+
+    def key_refused(self, company, key: str) -> bool:
+        return False  # never sent anywhere
+
+
+def practice_models(words: str = "", sort: str = "downloads", kind: str = "") -> list[dict]:
+    """A few pretend Hugging Face models, so the page works with no internet."""
+    made = [("Tiny-Chat-3B", 2.1, 910_000, 420), ("Writer-7B", 4.8, 640_000, 380), ("Coder-9B", 5.9, 510_000, 890),
+            ("Vision-8B", 5.2, 300_000, 260), ("Giant-90B", 58.0, 120_000, 95), ("Reader-4B", 2.9, 90_000, 70)]
+    return [{"id": f"practice/{name}-GGUF", "author": "practice", "name": name, "downloads": downloads, "likes": likes,
+             "tag": f"hf.co/practice/{name}-GGUF:Q4_K_M", "size_gb": size, "family": "practice", "license": "mit",
+             "vision": name.startswith("Vision")}
+            for name, size, downloads, likes in made if words.lower() in name.lower()]
+
+
 class FakeEngine:
     def __init__(self, delay: float = 0.03):
         # Seconds between streamed pieces and progress steps; 0 for tests.
@@ -59,6 +118,12 @@ class FakeEngine:
         self.waiting_for: str | None = None  # which typed answer we expect next
         self.deleting: str | None = None
         self.book = ChatBook(None)
+        self.settings: dict = {"base_model": "qwen3.5:4b"}  # practice only: nothing touches the real ones
+        self.menu = ModelMenu(PracticeOllama(), lambda: (hardware.detect(), 3.0), load=lambda: dict(self.settings),
+                              save=self._keep_settings, keys=PracticeKeys(), browse=practice_models)
+
+    def _keep_settings(self, settings: dict) -> None:
+        self.settings = settings
 
     # ---------------------------------------------------------- contract
 
@@ -115,6 +180,60 @@ class FakeEngine:
             yield from self._say(f"{name} is {state}.")
             yield self._agent_list()
         yield from self.book.record("", flip())
+
+    def send_files(self, text: str, paths: list[str], think: bool = False) -> Iterator[Event]:
+        attached = read_attachments(paths)
+        said = "\n".join(filter(None, [text, f"Attached: {', '.join(attached.names)}"]))
+        yield from self.book.record(said, self._say(f"Practice: I would read {', '.join(attached.names)} now."))
+
+    def set_agent(self, name: str, on: bool) -> Iterator[Event]:
+        if (name in self.on) != on:
+            yield from self.toggle_agent(name)
+
+    def recipes(self) -> dict:
+        have = {name.lower() for name in self.agents}
+        return {"categories": list(community.CATEGORIES),
+                "recipes": [{**asdict(recipe), "added": recipe.name.lower() in have}
+                            for recipe in community.recipes(online=False)]}
+
+    def add_recipe(self, id: str) -> Iterator[Event]:
+        recipe = community.find(id, online=False)
+        if recipe and recipe.name not in self.agents:
+            self.agents.append(recipe.name)
+            if recipe.when == WHILE_ON:
+                self.switchable.add(recipe.name)
+        yield self._agent_list()
+
+    def post_agent(self, name: str, about: str, category: str, by: str = "") -> dict:
+        return {"error": "This is the practice app, so nothing is posted."}
+
+    def switch_agent(self, name: str, on: bool) -> Iterator[Event]:
+        recipe = community.find(store_slug(name), online=False)
+        if on and name not in self.agents and recipe:
+            self.agents.append(name)
+            if recipe.when == WHILE_ON:
+                self.switchable.add(name)
+        if name in self.switchable:
+            self.on = self.on | {name} if on else self.on - {name}
+        yield self._agent_list()
+
+    def activity(self) -> dict[str, int]:
+        return {"explained": 34, "polished": 5, "translated": 12, "sorted": 120, "answered": 9}
+
+    def measure(self) -> dict:
+        time.sleep(self.delay * 40)
+        return {"device": "Practice graphics card · 8 GB", "words_per_second": 45,
+                "results": [{"what": "to explain a word you highlight", "seconds": 0.6, "words": 14},
+                            {"what": "to polish a messy message", "seconds": 0.9, "words": 22},
+                            {"what": "to translate a paragraph", "seconds": 1.7, "words": 40}]}
+
+    def spot_actions(self, text: str, editable: bool) -> list[dict]:
+        return spot.actions_for(text, editable, [("Grammar Fixer", "Fix the grammar.")])
+
+    def spot_run(self, action: str, text: str, ask: str = "") -> dict:
+        time.sleep(self.delay * 10)
+        words = ask or dict((item["id"], item["words"]) for item in spot.actions_for(text, True)).get(action, action)
+        return {"text": f"Practice: the answer to \"{words}\" would appear here."}
 
     def details(self, name: str) -> dict:
         starter = next((s for s in load_starters() if s.name == name), None)

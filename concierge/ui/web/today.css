@@ -16,7 +16,10 @@
 :root {
   --bg: #000000;
   --panel: #121014;
-  --sidebar: #0a090c;
+  --sidebar: #000000;
+  --side: 288px;
+  --column: 820px; /* how wide the chat gets, so the two sides of it stay close */
+  --page: 900px;
   --raised: #1c1920;
   --text: #fbfafc;
   --muted: #8f8496;
@@ -34,7 +37,7 @@
   --serif: "Instrument Serif", "Batang", "Malgun Gothic", serif;
   color-scheme: dark;
   font-family: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
-  font-size: 14.5px;
+  font-size: clamp(16px, 14px + 0.2vw, 17.5px);
 }
 
 [hidden] {
@@ -43,7 +46,7 @@
 
 body.quiet {
   display: grid;
-  grid-template-columns: 268px minmax(0, 1fr);
+  grid-template-columns: var(--side) minmax(0, 1fr);
   height: 100vh;
   margin: 0;
   overflow: hidden;
@@ -69,8 +72,7 @@ button:focus-visible {
 /* The default scrollbars are bright on Windows. */
 .view,
 .messages,
-.helpers,
-.chats {
+.pop {
   scrollbar-color: #3a3340 transparent;
   scrollbar-width: thin;
 }
@@ -92,9 +94,8 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 14px 12px 10px;
+  padding: 30px 14px 12px;
   background: var(--sidebar);
-  border-right: 1px solid var(--border);
 }
 
 .side-brand {
@@ -102,10 +103,30 @@ button:focus-visible {
   flex: none;
   align-items: center;
   gap: 10px;
-  padding: 2px 6px 13px;
+  padding: 2px 6px 16px;
   font-family: var(--serif);
-  font-size: 23px;
+  font-size: 1.65rem;
   font-style: italic;
+}
+
+.side-toggle {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.side-toggle:hover {
+  background: #151318;
+  color: var(--text);
 }
 
 #mark {
@@ -120,9 +141,9 @@ button:focus-visible {
   flex: none;
   align-items: center;
   gap: 10px;
-  min-height: 38px;
-  margin-bottom: 4px;
-  padding: 0 11px;
+  min-height: 42px;
+  margin-bottom: 6px;
+  padding: 0 12px;
   border: 1px solid #2c2732;
   border-radius: 10px;
   background: var(--panel);
@@ -141,16 +162,21 @@ button:focus-visible {
   flex: none;
   align-items: center;
   gap: 10px;
+  position: relative;
   width: 100%;
-  min-height: 34px;
-  padding: 0 11px;
+  min-height: 40px;
+  padding: 0 12px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   background: none;
   color: var(--accent);
   text-align: left;
   cursor: pointer;
   transition: background 0.14s ease;
+}
+
+.only-rail {
+  display: none;
 }
 
 .side-item:hover {
@@ -162,54 +188,104 @@ button:focus-visible {
   color: var(--text);
 }
 
+.quiet-count {
+  background: var(--raised);
+  color: var(--accent);
+}
+
 .count {
   min-width: 18px;
   margin-left: auto;
   padding: 0 6px;
   border-radius: 9px;
-  background: var(--accent);
-  color: #000;
-  font-size: 11.5px;
+  font-size: 0.75rem;
   font-weight: 600;
   line-height: 18px;
   text-align: center;
 }
 
+.count:not(.quiet-count) {
+  background: var(--accent);
+  color: #000;
+}
+
 .side-label {
   flex: none;
-  margin: 15px 11px 4px;
-  font-size: 12px;
+  flex: none;
+  margin: 16px 12px 5px;
+  font-size: 0.82rem;
   color: var(--faint);
 }
 
-.quiet-label {
-  margin-top: 10px;
+.side-sessions {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 14px;
+  overflow-y: auto;
+  scrollbar-color: #3a3340 transparent;
+  scrollbar-width: thin;
 }
 
-.helpers,
+.side-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--faint);
+}
+
+.side-search:focus-within {
+  border-color: #3a3340;
+}
+
+.search-mark {
+  display: grid;
+}
+
+.search-mark .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.side-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+}
+
+.side-search input::placeholder {
+  color: var(--faint);
+}
+
 .side .chats {
   display: flex;
-  flex: 0 1 auto;
+  flex: none;
   flex-direction: column;
   gap: 1px;
   min-height: 0;
   margin: 0;
   padding: 0;
-  overflow-y: auto;
+  overflow: visible;
   list-style: none;
-}
-
-/* Sessions never push the agents out of sight. */
-.side .chats {
-  flex: 0 0 auto;
-  max-height: 27vh;
 }
 
 .side .chats li {
   position: relative;
   display: flex;
+  flex: none;
   align-items: center;
-  border-radius: 8px;
+  border-radius: 9px;
 }
 
 .side .chats li.current {
@@ -231,8 +307,8 @@ button:focus-visible {
   align-items: baseline;
   gap: 8px;
   min-width: 0;
-  min-height: 32px;
-  padding: 6px 4px 6px 11px;
+  min-height: 38px;
+  padding: 6px 4px 6px 12px;
   border: 0;
   background: none;
   color: var(--accent);
@@ -253,78 +329,40 @@ button:focus-visible {
 
 .item-when {
   flex: none;
-  font-size: 11.5px;
+  font-size: 0.8rem;
   color: var(--faint);
 }
 
-.side .chats .item-delete {
+.side .chats .item-delete,
+.side .chats .item-pin {
   display: none;
+  flex: none;
+  padding: 3px 5px;
   border: 0;
+  border-radius: 6px;
   background: none;
   color: var(--faint);
+  cursor: pointer;
 }
 
-.side .chats li:hover .item-delete {
+.side .chats .item-pin .icon {
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+
+.side .chats .item-pin:hover,
+.side .chats .item-pin.on {
+  color: var(--accent);
+}
+
+.side .chats li:hover .item-delete,
+.side .chats li:hover .item-pin {
   display: block;
 }
 
 .side .chats li:hover .item-when {
   display: none;
-}
-
-.agent-row {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  padding-right: 10px;
-  border-radius: 8px;
-  transition: background 0.14s ease;
-}
-
-.agent-row:hover {
-  background: #151318;
-}
-
-.agent-row.now {
-  background: var(--raised);
-}
-
-.agent-row .open {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 6px 0 6px 11px;
-  border: 0;
-  background: none;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.agent-row .words {
-  min-width: 0;
-}
-
-.agent-row .name {
-  display: block;
-  overflow: hidden;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-row .state {
-  display: block;
-  font-size: 12px;
-  line-height: 1.3;
-  color: var(--faint);
-}
-
-.agent-row.on .state {
-  color: var(--accent);
 }
 
 /* A small dot in front of each agent, lit when it's on. */
@@ -375,36 +413,6 @@ button:focus-visible {
   background: #000;
 }
 
-.suggest {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 30px;
-  padding: 0 11px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--muted);
-  text-align: left;
-  cursor: pointer;
-}
-
-.suggest:hover {
-  background: #151318;
-  color: var(--text);
-}
-
-.suggest .plus {
-  flex: none;
-  width: 7px;
-  font-size: 15px;
-  line-height: 1;
-  text-align: center;
-  color: var(--faint);
-}
-
 .side-foot {
   flex: none;
   margin-top: auto;
@@ -413,9 +421,10 @@ button:focus-visible {
 }
 
 .side-model {
-  padding: 2px 11px 0;
+  display: block;
+  padding: 2px 12px 0;
   overflow: hidden;
-  font-size: 11.5px;
+  font-size: 0.8rem;
   line-height: 1.4;
   color: var(--faint);
   text-overflow: ellipsis;
@@ -424,8 +433,69 @@ button:focus-visible {
 
 /* The main area */
 
+/* A narrow window folds the list to icons, so half a screen stays readable.
+   Opened there, the list lies over the page and the page doesn't move. */
+
+body.rail {
+  --side: 66px;
+}
+
+body.rail:not(.side-over) .side-word,
+body.rail:not(.side-over) .side-sessions {
+  display: none;
+}
+
+body.rail .only-rail {
+  display: flex;
+}
+
+body.rail.side-over .only-rail {
+  display: none;
+}
+
+body.rail:not(.side-over) .side {
+  padding-inline: 11px;
+}
+
+body.rail:not(.side-over) .side-brand {
+  flex-direction: column;
+  padding: 2px 0 12px;
+}
+
+body.rail:not(.side-over) .side-toggle {
+  margin-left: 0;
+}
+
+body.rail:not(.side-over) .new-chat,
+body.rail:not(.side-over) .side-item {
+  justify-content: center;
+  padding: 0;
+}
+
+body.rail:not(.side-over) .count {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 15px;
+  padding: 0 3px;
+  font-size: 0.65rem;
+  line-height: 15px;
+}
+
+body.side-over .side {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  width: 288px;
+  background: #0b0a0d;
+  box-shadow: 18px 0 40px rgba(0, 0, 0, 0.6);
+}
+
 .stage {
   position: relative;
+  grid-column: 2;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -453,7 +523,7 @@ button:focus-visible {
   border: 0;
   background: none;
   color: var(--accent);
-  font-size: 13.5px;
+  font-size: 0.9rem;
   cursor: pointer;
 }
 
@@ -483,7 +553,7 @@ button:focus-visible {
 .view {
   flex: 1;
   min-width: 0;
-  padding: 26px 40px 12px;
+  padding: 52px max(44px, calc((100% - var(--page)) / 2)) 12px;
   overflow-y: auto;
   animation: arrive 0.32s ease both;
 }
@@ -496,7 +566,7 @@ button:focus-visible {
 }
 
 .view > h1 {
-  font-size: 24px;
+  font-size: 1.8rem;
   font-weight: 600;
 }
 
@@ -506,8 +576,8 @@ button:focus-visible {
 }
 
 .view h2 {
-  margin: 26px 0 6px;
-  font-size: 12.5px;
+  margin: 30px 0 8px;
+  font-size: 0.88rem;
   font-weight: 500;
   color: var(--faint);
 }
@@ -516,8 +586,9 @@ button:focus-visible {
 
 .help {
   display: flex;
-  align-items: center;
-  padding: 0 40px 0 56px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 5vh 40px 0 56px;
   overflow: hidden;
   container-type: size; /* so the words below can size themselves to this space */
 }
@@ -525,7 +596,7 @@ button:focus-visible {
 /* Everything here is measured from --size, which follows both the width and the
    height of the space it has, so it fills any window the same way. */
 .help-row {
-  --size: clamp(24px, min(5.5cqw, 11.5cqh), 160px);
+  --size: clamp(24px, min(4.4cqw, 10cqh), 130px);
   display: flex;
   flex: 1;
   align-items: center;
@@ -588,13 +659,273 @@ button:focus-visible {
   color: var(--accent);
 }
 
-.wheel-note::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.wheel-note.soon {
+  color: var(--faint);
+}
+
+.wheel-add {
+  padding: 3px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  background: none;
+  cursor: pointer;
+}
+
+.wheel-add:hover {
   background: var(--accent);
-  box-shadow: 0 0 12px var(--accent);
+  color: #000;
+}
+
+/* A dot in front of every line, lit when its job is on. */
+.wheel-dot {
+  flex: none;
+  align-self: center;
+  width: 0.13em;
+  height: 0.13em;
+  min-width: 7px;
+  min-height: 7px;
+  margin-right: 0.12em;
+  border-radius: 50%;
+  background: #4a4150;
+}
+
+.wheel-row.lit .wheel-dot {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.moment-switch {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  border-radius: 13px;
+  background: #2c2732;
+  cursor: pointer;
+}
+
+.moment-switch::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: left 0.14s ease;
+}
+
+.moment-switch.on {
+  background: var(--accent);
+}
+
+.moment-switch.on::after {
+  left: 23px;
+  background: #000;
+}
+
+/* The small moving example beside the list. */
+.demo {
+  flex: none;
+  width: min(400px, 30cqw);
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", sans-serif;
+  font-size: 15px;
+}
+
+.demo-box {
+  padding: 14px;
+  border: 1px solid #2c2732;
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.demo-page {
+  min-height: 176px;
+  padding: 16px 18px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #fbfafc;
+  color: #222;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.demo-page p {
+  margin: 0;
+}
+
+.demo-page mark {
+  background: transparent;
+  color: inherit;
+  animation: demo-mark 5s infinite;
+}
+
+@keyframes demo-mark {
+  0%, 12% { background: transparent; }
+  20%, 90% { background: #b4d3fb; }
+  100% { background: transparent; }
+}
+
+.demo-bubble,
+.demo-spot {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #0f0d12;
+  color: #fbfafc;
+  font-size: 13.5px;
+  line-height: 1.45;
+  white-space: pre-line;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+  animation: demo-in 5s infinite;
+}
+
+.demo-who {
+  display: block;
+  margin-bottom: 2px;
+  color: #8f8496;
+  font-size: 11.5px;
+}
+
+@keyframes demo-in {
+  0%, 28% { opacity: 0; transform: translateY(6px); }
+  36%, 90% { opacity: 1; transform: none; }
+  100% { opacity: 0; }
+}
+
+.demo-spot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.demo-keys b {
+  margin-right: 4px;
+  padding: 1px 6px;
+  border: 1px solid #3a3340;
+  border-radius: 5px;
+  color: #8f8496;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.demo-chip {
+  padding: 3px 9px;
+  border: 1px solid #2c2732;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.demo-chip.now {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #000;
+}
+
+.demo-answer {
+  flex-basis: 100%;
+  margin-top: 4px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: #18151c;
+  font-size: 12.5px;
+}
+
+.demo-files {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #eef0f4;
+  font-size: 13.5px;
+}
+
+.demo-files.after {
+  background: #ece4f1;
+  animation: demo-in 5s infinite;
+}
+
+.demo-arrow {
+  color: #888;
+  text-align: center;
+  animation: demo-in 5s infinite;
+}
+
+.demo-undo,
+.demo-source {
+  margin-top: 8px;
+  color: #6b5a78;
+  font-size: 12.5px;
+  animation: demo-in 5s infinite;
+}
+
+.demo-soon {
+  color: #888;
+  font-style: italic;
+}
+
+.demo-does {
+  margin: 12px 2px 0;
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+/* Who are you? Under the list. */
+.roles {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 14px;
+  font-size: 0.92rem;
+}
+
+.roles-lead {
+  margin-right: 6px;
+  color: var(--muted);
+}
+
+.role-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.role-chip:hover {
+  border-color: #3a3340;
+}
+
+.role-chip.now {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.role-plan {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 6px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.role-plan span {
+  flex: 1;
+  min-width: 240px;
 }
 
 /* The rows rise into place when the screen opens... */
@@ -611,6 +942,30 @@ button:focus-visible {
 .wheel.leaving .wheel-row.center {
   opacity: 0 !important;
   transition: opacity 0.3s ease 0.1s;
+}
+
+/* On half a screen there's no room for two columns, so the wheel goes under
+   "Help me", and both can be bigger for it. */
+@container (max-width: 760px) {
+  .help-row {
+    --size: clamp(32px, min(9cqw, 9cqh), 90px);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2em;
+  }
+
+  .wheel {
+    flex: none;
+    width: 100%;
+    height: 7em; /* the far lines need it, or they run into "Help me" */
+  }
+}
+
+/* No room for the example beside the list: it goes, and the list keeps the room. */
+@container (max-width: 1000px) {
+  .demo {
+    display: none;
+  }
 }
 
 /* Rows of Today */
@@ -630,13 +985,13 @@ button:focus-visible {
 .line time {
   flex: none;
   width: 72px;
-  font-size: 13px;
+  font-size: 0.88rem;
   color: var(--faint);
 }
 
 .line .aside {
   margin-left: auto;
-  font-size: 13px;
+  font-size: 0.88rem;
   color: var(--muted);
 }
 
@@ -688,12 +1043,65 @@ button:focus-visible {
   margin-left: auto;
 }
 
+.noticed.consent .say-no {
+  margin-left: 0;
+}
+
+.noticed.consent .quiet-button:first-of-type {
+  margin-left: auto;
+}
+
+.ask-words {
+  display: grid;
+  gap: 3px;
+}
+
+.ask-words span,
+.line-details {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.line-details {
+  display: block;
+}
+
+.line .what {
+  padding: 8px 0;
+}
+
+.see-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0 40px;
+}
+
+.see {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #17141a;
+  line-height: 1.45;
+}
+
+.see .dot {
+  margin-top: 8px;
+}
+
+.see-why {
+  display: block;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .quiet-button {
   padding: 4px 2px;
   border: 0;
   background: none;
   color: var(--accent);
-  font-size: 13px;
+  font-size: 0.88rem;
   font-weight: 500;
   cursor: pointer;
 }
@@ -708,7 +1116,7 @@ button:focus-visible {
   border-radius: 8px;
   background: var(--accent);
   color: #000;
-  font-size: 13px;
+  font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -723,7 +1131,7 @@ button:focus-visible {
   border-radius: 8px;
   background: none;
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -760,8 +1168,7 @@ button:focus-visible {
 /* An agent's page */
 
 .agent-page {
-  max-width: 900px;
-  padding-top: 30px;
+  padding-top: 52px;
 }
 
 .agent-head {
@@ -792,7 +1199,7 @@ button:focus-visible {
   margin: 0;
   overflow: hidden;
   font-family: var(--serif);
-  font-size: 42px;
+  font-size: 2.7rem;
   font-weight: 400;
   line-height: 1.1;
   text-overflow: ellipsis;
@@ -813,7 +1220,7 @@ button:focus-visible {
 
 .agent-does {
   margin: 20px 0 18px;
-  font-size: 17px;
+  font-size: 1.15rem;
   line-height: 1.45;
   color: var(--text);
 }
@@ -832,7 +1239,7 @@ button:focus-visible {
 }
 
 .fact .label {
-  font-size: 12px;
+  font-size: 0.82rem;
   color: var(--faint);
 }
 
@@ -866,20 +1273,20 @@ button:focus-visible {
   flex: 1;
   min-width: 0;
   font-family: var(--serif);
-  font-size: 21px;
+  font-size: 1.4rem;
   font-style: italic;
 }
 
 .try .go {
   flex: none;
-  font-size: 13px;
+  font-size: 0.88rem;
   font-weight: 600;
 }
 
 .agent-page .hint {
   margin: 7px 0 0;
   padding: 0;
-  font-size: 13px;
+  font-size: 0.88rem;
   color: var(--faint);
 }
 
@@ -936,21 +1343,727 @@ button:focus-visible {
   background: #000;
 }
 
-/* The chat: an ordinary chat window, once the user has chosen */
+/* The Agents page */
+
+.sub + .agent-line {
+  margin-top: 16px;
+  border-top: 1px solid #17141a;
+}
+
+.agent-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 66px;
+  border-bottom: 1px solid #17141a;
+}
+
+.agent-line .open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-line .open.still {
+  cursor: default;
+}
+
+.agent-line .words {
+  min-width: 0;
+}
+
+.agent-line .name {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.agent-line .open:not(.still):hover .name {
+  color: var(--accent);
+}
+
+.agent-line .does {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-line .state {
+  flex: none;
+  font-size: 0.85rem;
+  color: var(--faint);
+}
+
+.agent-line.on .state {
+  color: var(--accent);
+}
+
+/* The Discover pages: search, filters, one big card, then rows of small ones.
+   Agents and Models share all of this. */
+
+.discover-page {
+  --page: 1040px;
+  padding-top: 42px;
+  padding-bottom: 44px;
+}
+
+.disc-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.tabs {
+  display: flex;
+  gap: 24px;
+}
+
+.tab {
+  padding: 3px 0 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-size: 1.05rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.now {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.tab-count {
+  margin-left: 6px;
+  font-size: 0.78rem;
+  color: var(--faint);
+}
+
+.disc-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 54px;
+  padding: 0 17px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.disc-search:focus-within {
+  border-color: #3a3340;
+}
+
+.disc-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 1.06rem;
+}
+
+.disc-search input::placeholder {
+  color: var(--muted);
+}
+
+.disc-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.segments {
+  display: flex;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--panel);
+}
+
+.segment {
+  padding: 6px 13px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segment.now {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: none;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.filter:hover {
+  border-color: #3a3340;
+}
+
+.filter.now {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #000;
+}
+
+.disc-heading {
+  margin: 32px 0 16px;
+  font-family: var(--serif);
+  font-size: 2.5rem;
+  font-weight: 400;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 46%);
+  min-height: 280px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.hero-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 26px 30px;
+}
+
+.hero-by {
+  color: var(--muted);
+}
+
+.view h2.hero-name {
+  margin: auto 0 8px;
+  padding-top: 18px;
+  overflow-wrap: anywhere;
+  font-family: var(--serif);
+  font-size: 2.9rem;
+  font-weight: 400;
+  line-height: 1.05;
+  color: var(--text);
+}
+
+.hero-about {
+  color: var(--accent);
+  line-height: 1.45;
+}
+
+.hero-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.hero-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hero-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.hero-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 13px;
+}
+
+.hero-step {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.hero-step:hover {
+  background: var(--raised);
+}
+
+.hero-dots {
+  display: flex;
+  gap: 7px;
+}
+
+.hero-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: #3a3340;
+  transition: width 0.2s ease;
+}
+
+.hero-dots span.now {
+  width: 24px;
+  background: var(--accent);
+}
+
+.disc-section {
+  margin-top: 36px;
+}
+
+.disc-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 15px;
+}
+
+.view h2.disc-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 2rem;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.disc-note {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.see-all {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.see-all:hover {
+  color: var(--text);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 16px;
+}
+
+.disc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 196px;
+  padding: 17px 20px 18px;
+  border-radius: 14px;
+  background: var(--panel);
+  transition: background 0.14s ease;
+}
+
+.disc-card:hover {
+  background: #17141b;
+}
+
+.disc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+}
+
+.disc-by {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disc-open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.disc-name {
+  overflow-wrap: anywhere;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.disc-about {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.disc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.disc-tag {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.disc-tag.strong {
+  background: #2a2430;
+  color: var(--accent);
+}
+
+.disc-tag.warn {
+  color: var(--error-text);
+}
+
+.plus-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.plus-button:hover {
+  background: var(--raised);
+}
+
+.added {
+  flex: none;
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.added.warn {
+  color: var(--error-text);
+}
+
+.getting {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+
+.getting-words {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.recipe .agent-head .hero-art {
+  flex: none;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: var(--panel);
+}
+
+.book-error.fine {
+  color: var(--accent);
+}
+
+.add-custom {
+  margin-top: 30px;
+}
+
+.model-lines:not(:empty) {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 2px 22px;
+  padding: 0 0 10px;
+}
+
+.model-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.agent-line .item-delete {
+  flex: none;
+  opacity: 1;
+  cursor: pointer;
+}
+
+/* Reservations */
+
+.book {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  align-items: end;
+  margin-top: 24px;
+  padding: 18px;
+  border-radius: 13px;
+  background: var(--panel);
+}
+
+.book label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* or a date box pushes past its side of the form */
+  gap: 6px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.book select,
+.book input,
+.cloud-key {
+  width: 100%;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid #2c2732;
+  border-radius: 9px;
+  outline: none;
+  background: #0b0a0d;
+  color: var(--text);
+  font: inherit;
+}
+
+.book select:focus,
+.book input:focus,
+.cloud-key:focus {
+  border-color: var(--accent);
+}
+
+.book .book-what,
+.book .book-text {
+  grid-column: 1 / -1;
+}
+
+.book .solid-button {
+  height: 42px;
+}
+
+.book-error {
+  margin-top: 8px;
+  color: var(--error-text);
+}
+
+.booking {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 54px;
+  border-bottom: 1px solid #17141a;
+}
+
+.booking time {
+  flex: none;
+  width: 11em;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.booking .what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.booking .aside {
+  flex: none;
+  font-size: 0.88rem;
+  color: var(--faint);
+}
+
+.booking.off .what,
+.booking.off time {
+  opacity: 0.6;
+}
+
+.booking .item-delete {
+  opacity: 1;
+  cursor: pointer;
+}
+
+/* Cloud models in Settings */
+
+.hint-line {
+  max-width: 640px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.cloud-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 60px;
+  padding: 8px 0;
+}
+
+.cloud-item {
+  border-bottom: 1px solid #17141a;
+}
+
+.cloud-name {
+  flex: none;
+  width: 11em;
+  font-weight: 500;
+}
+
+.cloud-company {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--faint);
+}
+
+.cloud-row .cloud-key {
+  flex: 1;
+  width: auto;
+  min-width: 150px;
+}
+
+.cloud-saved {
+  flex: 1;
+  color: var(--accent);
+}
+
+.cloud-note:not(:empty) {
+  padding-bottom: 8px;
+  color: var(--error-text);
+  font-size: 0.88rem;
+}
+
+/* The chat: an ordinary chat window, once the user has chosen. Everything sits in
+   one centred column, so messages don't drift apart on a wide window. */
 
 .chat-view {
   display: flex;
   flex-direction: column;
-  padding: 18px 40px 0;
+  padding: 26px 0 0;
   overflow: hidden;
 }
 
 .messages {
   flex: 1;
   min-height: 0;
-  padding: 8px 0;
+  gap: 22px;
+  padding: 8px max(28px, calc((100% - var(--column)) / 2));
   overflow-y: auto;
   background: none;
+}
+
+.progress {
+  width: min(100% - 56px, var(--column));
+  margin-inline: auto;
+  padding: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.row {
+  max-width: 88%;
+  animation: arrive 0.26s ease both;
+}
+
+.row:has(.thinking),
+.row:has(.card),
+.row:has(.result) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.bubble {
+  line-height: 1.6;
 }
 
 .bubble.elaina {
@@ -958,14 +2071,116 @@ button:focus-visible {
   border: 0;
   background: none;
   box-shadow: none;
+  white-space: normal;
 }
 
 .bubble.user {
-  border-radius: 12px;
+  padding: 10px 15px;
+  border-radius: 14px;
 }
 
-.row {
-  animation: arrive 0.26s ease both;
+.bubble p {
+  margin: 0 0 0.7em;
+}
+
+.bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.bubble ul,
+.bubble ol {
+  margin: 0.2em 0 0.8em;
+  padding-left: 1.4em;
+}
+
+.bubble li {
+  margin: 0.2em 0;
+}
+
+.bubble h4 {
+  margin: 0.9em 0 0.3em;
+  font-size: 1.08rem;
+  font-weight: 600;
+}
+
+.bubble code,
+.bubble pre {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.bubble code {
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+  background: var(--raised);
+}
+
+.bubble pre {
+  margin: 0.4em 0 0.9em;
+  padding: 11px 13px;
+  overflow-x: auto;
+  border-radius: 9px;
+  background: var(--panel);
+  white-space: pre;
+}
+
+.meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 1.5em;
+  margin-top: 5px;
+  font-size: 0.8rem;
+  color: var(--faint);
+}
+
+.meta-copy {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: inherit;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+
+.row:hover .meta-copy,
+.meta-copy:focus-visible {
+  opacity: 1;
+}
+
+.meta-copy:hover {
+  color: var(--text);
+}
+
+.sent-files {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.sent-file,
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 4px 10px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--accent);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thinking {
+  max-width: none;
+  font-size: 0.92rem;
 }
 
 .card,
@@ -975,16 +2190,46 @@ button:focus-visible {
   box-shadow: none;
 }
 
-/* One box. In the chat it's an ordinary rounded box; on Help me it's a single
-   line to write on, the end of the sentence. */
+.card-label,
+.result-agent,
+.sources,
+.idea-note {
+  font-size: 0.82rem;
+}
+
+.card-name {
+  font-size: 1.12rem;
+}
+
+.card-kind {
+  font-size: 0.9rem;
+}
+
+.result-text {
+  line-height: 1.6;
+}
+
+/* One box, with everything on a line beside the words: + on the left, the model,
+   Think and send on the right. On Help me it's a single line to write on, the end of
+   the sentence. The Discover pages don't have it, because they're for looking around. */
+
+body[data-view="agents"] .composer,
+body[data-view="models"] .composer,
+body[data-view="welcome"] .composer {
+  display: none;
+}
 
 .composer {
+  position: relative;
   flex: none;
-  align-items: center;
-  margin: 10px 40px 22px;
-  padding: 7px 8px 7px 18px;
+  flex-flow: row wrap;
+  align-items: flex-end;
+  gap: 4px;
+  width: min(100% - 56px, var(--column));
+  margin: 10px auto 26px;
+  padding: 8px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 15px;
   background: var(--panel);
   box-shadow: none;
   transition: border-color 0.2s ease;
@@ -996,31 +2241,112 @@ button:focus-visible {
 
 .composer textarea,
 .composer textarea:focus-visible {
+  flex: 1;
+  align-self: center;
+  width: auto;
+  min-width: 0;
+  padding: 5px 4px;
+  overflow: hidden;
   border: 0;
   outline: none;
   background: none;
   color: var(--text);
-  font-size: 15px;
+  font-size: 1.04rem;
 }
 
 .composer textarea::placeholder {
   color: var(--muted);
 }
 
+.composer-tools {
+  display: contents;
+}
+
+.composer button.tool,
+.composer button.think-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  align-self: flex-end;
+  gap: 6px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.composer button.tool:hover:not(:disabled),
+.composer button.think-toggle:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.composer button.add {
+  order: -1;
+  justify-content: center;
+  width: 34px;
+  padding: 0;
+  color: var(--accent);
+}
+
+.composer button.add .icon {
+  stroke-width: 10;
+}
+
+.model-pill span {
+  max-width: 13em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-pill::after {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: -3px 2px 0;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.composer button.model-pill.cloud {
+  color: var(--accent);
+}
+
+.composer button.think-toggle {
+  color: var(--faint);
+}
+
+.composer button.think-toggle.on {
+  border: 0;
+  background: none;
+  color: var(--accent);
+}
+
 .composer button#send {
   display: grid;
   flex: none;
   place-items: center;
+  align-self: flex-end;
   width: 34px;
   height: 34px;
   padding: 0;
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--accent);
   color: #000;
 }
 
 .composer button#send:disabled {
-  display: none;
+  background: var(--raised);
+  color: var(--faint);
+  opacity: 1;
 }
 
 #send svg {
@@ -1033,14 +2359,167 @@ button:focus-visible {
   stroke-linejoin: round;
 }
 
-.composer button.think-toggle {
+/* What's waiting to go with the message */
+
+.attached {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  order: -2;
+  gap: 6px;
+  padding: 2px 6px 6px;
+}
+
+.chip-remove {
+  padding: 0;
   border: 0;
   background: none;
   color: var(--faint);
+  line-height: 1;
 }
 
-.composer button.think-toggle.on {
+.composer button.chip-remove,
+.composer button.chip-remove:hover:not(:disabled) {
+  align-self: center;
+  padding: 0 0 0 2px;
+  background: none;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* The + menu and the model menu rise out of the box. */
+
+.pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 8px;
+  z-index: 20;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid #2c2732;
+  border-radius: 13px;
+  background: #0f0d12;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.65);
+  animation: arrive 0.16s ease both;
+}
+
+.model-menu {
+  right: 44px;
+  left: auto;
+  display: flex;
+  flex-direction: column;
+  width: min(380px, 100vw - 120px);
+  max-height: min(66vh, 540px);
+  padding-top: 12px;
+}
+
+.model-menu .tabs {
+  flex: none;
+  gap: 18px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.composer .pop .tabs button.tab,
+.composer .pop .tabs button.tab:hover:not(:disabled) {
+  display: inline-block;
+  width: auto;
+  min-height: 0;
+  padding: 2px 0 7px;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.composer .pop .tabs button.tab.now,
+.composer .pop .tabs button.tab.now:hover:not(:disabled) {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.pick-list {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  scrollbar-color: #3a3340 transparent;
+  scrollbar-width: thin;
+}
+
+.pick-foot {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+
+.composer .pop .pick-foot button.pick-link {
+  flex: 1;
+  justify-content: center;
+  width: auto;
+  min-height: 34px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.composer .pop button {
+  display: flex;
+  align-items: center;
+  align-self: auto;
+  gap: 11px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--text);
+  font-weight: 400;
+  text-align: left;
+}
+
+.composer .pop button:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.pick-label {
+  padding: 11px 10px 3px;
+  font-size: 0.8rem;
+  color: var(--faint);
+}
+
+.pick-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pick-note {
+  flex: none;
+  font-size: 0.82rem;
+  color: var(--faint);
+}
+
+.pick-none {
+  padding: 4px 10px 8px;
+}
+
+.composer .pop button.now .pick-name {
   color: var(--accent);
+  font-weight: 600;
+}
+
+.composer .pop button.pick-more {
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 body[data-view="help"] .composer {
@@ -1051,6 +2530,10 @@ body[data-view="help"] .composer {
   border-bottom: 1px solid #5a5060;
   border-radius: 0;
   background: none;
+}
+
+body[data-view="help"] .composer button.add {
+  margin-left: -8px;
 }
 
 body[data-view="help"] .composer:focus-within {
@@ -1082,9 +2565,245 @@ body[data-view="help"] .composer button#send:disabled {
   opacity: 0.55;
 }
 
+@media (max-width: 760px) {
+  .view {
+    padding-inline: 26px;
+  }
+
+  .help {
+    padding-inline: 26px;
+  }
+
+  body[data-view="help"] .composer {
+    width: calc(100% - 52px);
+    margin: 0 26px 28px;
+  }
+
+  .booking {
+    flex-wrap: wrap;
+    padding: 8px 0;
+  }
+
+  .agent-line .state {
+    display: none;
+  }
+
+  .model-pill span {
+    max-width: 7em;
+  }
+
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero-art {
+    display: none;
+  }
+
+  .disc-bar {
+    flex-wrap: wrap;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;
     transition: none !important;
   }
+}
+
+#view-privacy .noticed {
+  margin-top: 22px;
+}
+
+/* Elaina's room: one tab for each thing about her */
+.room-tabs {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 26px;
+  padding: 34px max(44px, calc((100% - var(--page)) / 2)) 0;
+}
+
+/* The tabs start where the page under them starts, and Agents and Models are wider. */
+body[data-view="agents"] .room-tabs,
+body[data-view="models"] .room-tabs {
+  --page: 1040px;
+}
+
+.room-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0 7px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-size: 1.02rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.room-tabs button:hover {
+  color: var(--text);
+}
+
+.room-tabs button.now {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.room-tabs ~ .views .view:not(.help):not(.chat-view) {
+  padding-top: 30px;
+}
+
+/* Today: what she did this week */
+.week-words {
+  max-width: 1000px;
+  margin: 12px 0 0;
+  font-family: var(--serif);
+  font-size: clamp(30px, 2.7vw, 46px);
+  line-height: 1.18;
+}
+
+.week-words em {
+  color: var(--accent);
+  font-style: italic;
+}
+
+.week-words.quiet {
+  color: var(--muted);
+  font-size: clamp(24px, 2vw, 32px);
+}
+
+.week-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); /* one card stays card-sized */
+  gap: 14px;
+  max-width: var(--page);
+  margin: 24px 0 14px;
+}
+
+.week-card {
+  padding: 18px 20px;
+  border-radius: 13px;
+  background: var(--panel);
+}
+
+.week-card b {
+  display: block;
+  font-family: var(--serif);
+  font-size: 2.6rem;
+  font-weight: 400;
+  line-height: 1.05;
+}
+
+.week-card span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+/* The first two minutes */
+.welcome {
+  padding-top: 64px;
+}
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 34px;
+  margin-bottom: 34px;
+  color: var(--faint);
+  font-size: 0.95rem;
+}
+
+.steps b {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--raised);
+  font-size: 0.8rem;
+}
+
+.steps .now {
+  color: var(--text);
+}
+
+.steps .now b {
+  background: var(--accent);
+  color: #000;
+}
+
+.welcome-title {
+  margin: 0 0 10px;
+  font-family: var(--serif);
+  font-size: clamp(40px, 4vw, 66px);
+  font-weight: 400;
+  line-height: 1.05;
+}
+
+.promise {
+  margin-top: 22px;
+  color: var(--accent);
+}
+
+.big-keys {
+  display: flex;
+  gap: 14px;
+  margin: 30px 0 16px;
+}
+
+.big-keys span {
+  padding: 14px 24px;
+  border: 1px solid #3a3340;
+  border-bottom-width: 5px;
+  border-radius: 12px;
+  font-size: 1.7rem;
+  font-weight: 600;
+}
+
+.role-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.role-card {
+  display: grid;
+  align-content: start; /* a short card keeps its words at the top, like its neighbours */
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.role-card:hover {
+  border-color: var(--accent);
+}
+
+.role-card b {
+  font-size: 1.1rem;
+}
+
+.role-card span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+/* Set up for someone else: bigger words everywhere. */
+:root:has(body.simple) {
+  font-size: clamp(19px, 17px + 0.2vw, 21px);
 }
