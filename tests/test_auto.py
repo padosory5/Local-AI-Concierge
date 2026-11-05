@@ -158,6 +158,7 @@ def real_engine_with_auto(monkeypatch, plan_talker):
     engine.chat.ollama, engine.chat.model, engine.chat.talker = own, "elaina", own
     engine.chat.history, engine.chat._context, engine.chat._images, engine.chat.about = [], "", [], ""
     engine.chat.think = None
+    engine.chat.kind, engine.chat._asked = "", ""  # how to answer (voice.py) goes with each question
     engine.auto_cloud, engine.auto_last, engine.auto_kind = plan_talker, "", ""
     engine.talker_name = "Claude Sonnet 5.5"
 
@@ -232,7 +233,8 @@ def test_ask_again_replaces_her_answer_with_the_plans(monkeypatch):
     engine, _ = real_engine_with_auto(monkeypatch, plan)
     list(engine._reply("what's the capital of Japan?", False))
     events = list(engine.ask_again())
-    assert plan.asked == ["what's the capital of Japan?"]
+    # The question goes with the note on how to answer (voice.guide), so only its start is checked.
+    assert len(plan.asked) == 1 and plan.asked[0].startswith("what's the capital of Japan?")
     assert engine.chat.history[-1] == {"role": "assistant", "content": "From your plan."}
     assert len(engine.chat.history) == 2
     assert auto.counts()["quick_fact"]["asked_again"] == 1

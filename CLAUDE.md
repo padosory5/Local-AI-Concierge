@@ -229,6 +229,31 @@ model never improvises there. Answers about health or money get a plain note to
 check with a person. Ollama stopping halfway is `OllamaError(UNREACHABLE)`, shown
 in plain words like any other problem.
 
+## Elaina's way of answering
+
+Every answer reads the same whichever model writes it: hers, Claude or GPT through
+the user's plan, or one with a key (`concierge/voice.py`). The answer comes first in
+one or two plain sentences, then a few short points only if they help, at most one
+tip, and no greeting, headings, tables or closing offer. Two halves, because a
+model's habits win over a polite request. Code picks the kind of question
+(`kind_of`: fact, chat, explain, decide, how-to, code, plan) and its word and point
+budget (`BUDGETS`), and `guide` goes with that one question only, so her memory of
+the chat keeps just the words. Then `tidy` shapes every reply as it streams: it
+drops "Great question!", turns headings into bold lines, tables into short lines,
+takes out horizontal lines and quote marks and closes up gaps, never touching code.
+`without_closing_filler` drops a closing offer, and a question tacked on after a whole
+answer (`ANSWERED_SENTENCES`); a question she needs to ask stays. Every model treats
+"up to six points" as six, so the caps are low. The budgets were set against the same
+seven questions asked of her own model, GPT through Codex and Claude through Claude
+Code.
+
+Under her newest answer, Shorter and More detail (`FOLLOW_UPS`) skip the router and
+set the answer's kind in code. Keys are drawn as keys (`keys` in `app.js`). A photo of a
+place she names goes beside its line (`pictures.py`: Wikipedia pages with map
+coordinates whose title is the name she wrote). Nothing is looked up until the user says
+yes once, under the first plan that names places or on What I see, and each lookup is
+counted there.
+
 ## The full window
 
 `today.html` opens with the app. The side list has New chat, Today, Help me,
@@ -266,7 +291,9 @@ through `Engine.details(name)` and `TodayBridge.agent_details`, outside
 page goes to that agent.
 
 `app.js` draws the chat and passes every event on as an `engine-event`;
-`today.js` draws the rest from those events, and acts through `app.say`,
+`today.js` chooses the view, keeps what every page reads (`today.ui.state()`) and
+draws Today and the side list from those events; `help.js`, `about.js` and `room.js`
+draw their pages from it. The window acts through `app.say`,
 `app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`,
 `app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe`. What the windows show
 about her jobs comes from `TidyWatch.today()` through `WatchBridge`, outside
@@ -358,7 +385,8 @@ Ollama's own count) plus the least the plan's app has ever read for one answer
 (`least_read`, measured from real answers, so nothing is added before there is one),
 in `usage.saved_estimate`. Those add up per day (`usage.record_saved`), and the
 Accounts page shows a blue Saved this week bar under the plan's own bars
-(`savedMeter` in `models.js`): what share of this week's tokens stayed here.
+(`savedMeter` in `models.js`): what share of this week's tokens stayed here. Today's
+week sentence adds the same total, "and saved about 12,400 tokens" (`Engine.activity`).
 
 ## Auto
 
@@ -437,6 +465,10 @@ their own message, because they're too big to keep. A model that can't see pictu
 says so; it never pretends. A folder starts a documents agent for it. What couldn't
 be read is named in her thinking.
 
+A long paste (1,500 characters or 20 lines) becomes a "Pasted text" card above the
+box, the way other AI apps do it (`paste_text`, `pasted_file`), and goes to her like
+any added file. Clicking the card puts the words back in the box.
+
 ## Getting to know the user
 
 Elaina can learn who someone is from their past chats with ChatGPT and Claude
@@ -512,9 +544,6 @@ came due while it was closed is never run late: a one-time booking shows as miss
 and a repeating one waits for its next time, because moving files hours later could
 surprise someone. Bookings are saved in the data folder, or in memory with `--fake`.
 
-The earlier five-screen workspace (`workspace.html`, `workspace.css`,
-`workspace/`) and `index.html` are no longer opened.
-
 ## Ready-made agents
 
 `concierge/agents/starters.yaml` holds tested recipes (Highlight Explainer,
@@ -570,8 +599,10 @@ variables inside a function do not need listing.
 | `concierge/hardware.py` | Engine | `GB`, `MIN_USABLE_VRAM_GB`, `GPU`, `HardwareReport`, `detect`, `parse_nvidia_smi`, `describe` |
 | `concierge/catalog.py` | Engine | `CATALOG_PATH`, `GPU_SHARE`, `APPLE_SHARE`, `CPU_SHARE`, `CPU_MAX_GB`, `GPU_HEADROOM_GB`, `RAM_HEADROOM_GB`, `DISK_HEADROOM_GB`, `CPU_HELPER_SHARE`, `ModelEntry`, `HelperModel`, `Recommendation`, `load_catalog`, `load_helpers`, `helper_room`, `pick_helper`, `find_model`, `memory_budget`, `recommend`; models in `models.yaml` (`models`, `helpers`) |
 | `concierge/activity.py` | Engine | `ANSWERED`, `EXPLAINED`, `TRANSLATED`, `POLISHED`, `SUMMED_UP`, `HELPED`, `SORTED`, `READ`, `KEPT_DAYS`, `WEEK_DAYS`, `record`, `this_week` |
+| `concierge/voice.py` | Engine | `BUDGETS`, `KIND_WORDS`, `SHORTER_SHARE`, `STYLE`, `POINTS`, `NO_POINTS`, `EXTRA`, `OPENER`, `QUOTE`, `HEADING`, `RULE`, `TABLE_ROW`, `TABLE_LINE`, `SAFE_START`, `FIRST_SENTENCE`, `kind_of`, `guide`, `tidy` |
+| `concierge/pictures.py` | Engine | `API`, `USER_AGENT`, `TIMEOUT`, `MAX_PICTURES`, `MAX_LOOKUPS`, `PICTURE_PIXELS`, `NO_PICTURES`, `BOLD`, `PART`, `BETWEEN`, `PLACE_WORDS`, `names_in`, `same_place`, `place`, `worth_asking`, `for_answer` |
 | `concierge/safety.py` | Engine | `CRISIS`, `HEALTH`, `MONEY`, `CRISIS_REPLY`, `CRISIS_REPLY_KO`, `HEALTH_NOTE`, `MONEY_NOTE`, `crisis`, `crisis_reply`, `caution` |
-| `concierge/elaina.py` | Engine | `ELAINA_MODEL`, `PERSONA_PATH`, `NUM_CTX`, `HISTORY_CHARS`, `MAX_THOUGHT_CHARS`, `UNLOAD_ON_EXIT`, `KEEP_ALIVE`, `HEARTBEAT_SECONDS`, `CLOSING_FILLER`, `without_closing_filler`, `system_prompt`, `configure`, `needs_configure`, `ElainaChat`, `data_dir`, `load_state`, `save_state` |
+| `concierge/elaina.py` | Engine | `ELAINA_MODEL`, `PERSONA_PATH`, `NUM_CTX`, `HISTORY_CHARS`, `MAX_THOUGHT_CHARS`, `UNLOAD_ON_EXIT`, `KEEP_ALIVE`, `HEARTBEAT_SECONDS`, `CLOSING_FILLER`, `ANSWERED_SENTENCES`, `without_closing_filler`, `system_prompt`, `configure`, `needs_configure`, `ElainaChat` (`kind`), `data_dir`, `load_state`, `save_state` |
 | `concierge/ollama.py` | Engine | `DEFAULT_URL`, `DOWNLOAD_PAGE`, `UNREACHABLE`, `OllamaError`, `Ollama` (`last_tokens`: read and written by the last chat) |
 | `concierge/conversations.py` | Engine | `TITLE_CHARS`, `Conversation`, `ChatBook`, `title_from` |
 | `concierge/models.py` | Engine | `LOCAL`, `CUSTOM`, `LOOPBACK`, `GB`, `FITS`, `SLOW`, `NO_DISK`, `LocalModel`, `ModelMenu` (Auto adds `auto_target`, `plan_used`; the meter `usage`), `nice_name` |
@@ -587,7 +618,7 @@ variables inside a function do not need listing.
 | `concierge/portrait.py` | Engine | `KINDS`, `KIND_MEANINGS`, `ABOUT`, `MAX_SORTED`, `SORT_BATCH`, `SORT_PREVIEW_CHARS`, `MAX_SNIPPETS`, `SNIPPET_CHARS`, `FACT_BATCH`, `MAX_FACTS`, `FACTS_PER_LINE`, `QUOTE_MIN_CHARS`, `FACT_MAX_CHARS`, `SELF_WORDS`, `SENSITIVE`, `SUBJECT`, `ASKING`, `PARTS_OF_DAY`, `SCRIPTS`, `ENGLISH_WORDS`, `portrait_path`, `load`, `forget`, `understand`, `add_computer`, `keep`, `about_you`, `busiest_part_of_day`, `languages_used`, `language_of`, `sort_kinds`, `find_facts`, `confirmed`, `self_snippets`, `checked`, `merge` |
 | `concierge/reservations.py` | Engine | `SORT`, `RUN`, `TURN_ON`, `TURN_OFF`, `ONCE`, `DAILY`, `WEEKLY`, `CHECK_SECONDS`, `STEPS`, `ReservationError`, `Reservation`, `Reservations` |
 | `concierge/events.py` | Both (contract) | `Thinking`, `SystemInfo`, `ElainaText`, `ElainaDone`, `Question`, `AgentCard`, `Progress`, `Source`, `Result`, `AgentList`, `Error`, `IdeaStep`, `IdeaCard`, `ChatSummary`, `ChatList`, `TranscriptItem`, `Transcript`, `Event`, `to_dict`, `Engine` |
-| `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `ElainaEngine` (outside the contract: `ask_again` for Auto) |
+| `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `FOLLOW_UPS`, `ElainaEngine` (adds `follow_up`, `follow_up_words`, `after_answer`, `pictures`; outside the contract: `ask_again` for Auto) |
 | `concierge/fake_engine.py` | Engine | `FakeEngine`, `PracticeOllama`, `PracticeKeys`, `PracticeAccounts`, `practice_models` |
 | `concierge/cli.py` | Engine | `DIM`, `PLAIN`, `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `cmd_history`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure, history]`; in the chat `/think` turns thinking on or off |
 | `concierge/agents/blueprint.py` | Engine | `BLUEPRINT_DIR`, `Slot`, `Blueprint`, `load_blueprints`; templates in `agents/blueprints/*.yaml` (`documents_qa`, and `custom`: the shared template for agents made from parts) |
@@ -610,8 +641,7 @@ variables inside a function do not need listing.
 | `concierge/agents/runner.py` | Engine | `TOP_PASSAGES`, `MAX_CONTENTS`, `STOPWORDS`, `run`, `matching_words`, `clean_answer`, `refresh_index`, `best_sentence` |
 | `concierge/agents/store.py` | Engine | `Agent`, `agents_dir`, `slugify`, `list_agents`, `find_agent`, `name_taken`, `save`, `load_index`, `delete` |
 | `concierge/agents/eval_router.py` | Engine | `CASES`, `main`; command `python -m concierge.agents.eval_router` |
-| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `GLASS_SIZE`, `GLASS_MIN_HEIGHT`, `GLASS_CHAT_HEIGHT`, `GLASS_GROW_STEPS`, `GLASS_GROW_SECONDS`, `GLASS_ABOVE`, `GLASS_ALPHA`, `GLASS_FADE_STEPS`, `GLASS_FADE_SECONDS`, `GLASS_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `EXPORTS`, `EXPORT_WAIT_HOURS`, `EXPORT_CHECK_SECONDS`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a page calls its `startup`, `send`, `choose`, `ask_again`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `measure`, `set_spot`, `switch_agent`, `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`, `forget_history`, `open_export_page`, `look_around`, `find_downloads`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `sign_in_account`, `install_account`, `check_accounts`, `use_account`, `usage`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_glass`, `fit_glass`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay`, `full_size`, `centered`, `glass_height`, `place_glass`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
+| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `GLASS_SIZE`, `GLASS_MIN_HEIGHT`, `GLASS_CHAT_HEIGHT`, `GLASS_GROW_STEPS`, `GLASS_GROW_SECONDS`, `GLASS_ABOVE`, `GLASS_ALPHA`, `GLASS_FADE_STEPS`, `GLASS_FADE_SECONDS`, `GLASS_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `EXPORTS`, `EXPORT_WAIT_HOURS`, `EXPORT_CHECK_SECONDS`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a page calls its `startup`, `send`, `choose`, `ask_again`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `measure`, `set_spot`, `switch_agent`, `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`, `forget_history`, `open_export_page`, `look_around`, `find_downloads`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `paste_text`, `follow_up`, `after_answer`, `pictures`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `sign_in_account`, `install_account`, `check_accounts`, `use_account`, `usage`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_glass`, `fit_glass`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay`, `pasted_file`, `full_size`, `centered`, `glass_height`, `place_glass`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
 | `concierge/ui/mini.py` | UI | `MINI_SIZE`, `EDGE_GAP`, `DISC_SHARE`, `FRAMES`, `FRAME_SECONDS`, `RESTING`, `BRIGHT`, `FADE_STEP`, `FULL_SCREEN_CHECK_SECONDS`, `IDLE`, `WORKING`, `ASKING`, `LILAC`, `WHITE`, `is_click`, `premultiplied`, `draw_frames`, `Mini` |
 | `concierge/ui/tray.py` | UI | `ICON_SIZE`, `INK`, `DOTS`, `tray_picture`, `Tray` |
-| `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`, `today.show`, `today.closeMenus`, `today.redraw`, `today.spotTried`, `today.chatsArrived`, `today.ui`), `discover.js` (global `discover`: the Agents page and parts it shares), `models.js` (global `modelPage`: the model menu and the Models page; `modelPage.loadUsage` and `modelPage.openUsage` for the usage meter), `spot.html`, `spot.css`, `spot.js` (the Spot, global `spot.open`), `glass.html`, `glass.css`, `glass.js` (the card from minimized Elaina, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `workspace.html`, `workspace.css`, `index.html` (earlier windows, not opened), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`, `app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe` (called by today.js, discover.js and models.js); window event `engine-event` |
-| `concierge/ui/web/workspace/` | UI | Not opened. `mock.js` (`ws.mock`), `parts.js` (`ws.parts`), `store.js` (`ws.store`), `activity.js` (`ws.activity`), `home.js` (`ws.home`), `discover.js` (`ws.discover`), `library.js` (`ws.library`, `ws.agentPage`), `studio.js` (`ws.studio`), `add_agent.js` (`ws.addAgent`), `main.js` (`ws.go`, `ws.refresh`, `ws.toast`, `ws.dock`, `ws.ask`, `ws.actions`) |
+| `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`, `today.show`, `today.closeMenus`, `today.redraw`, `today.spotTried`, `today.chatsArrived`, `today.ui`), `help.js` (global `helpPage`: Help me and Who are you), `about.js` (global `aboutPage`: About you and the first two minutes), `room.js` (global `roomPage`: What I see and Reservations), `discover.js` (global `discover`: the Agents page and parts it shares), `models.js` (global `modelPage`: the model menu and the Models page; `modelPage.loadUsage` and `modelPage.openUsage` for the usage meter), `spot.html`, `spot.css`, `spot.js` (the Spot, global `spot.open`), `glass.html`, `glass.css`, `glass.js` (the card from minimized Elaina, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`, `app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe` (called by today.js, discover.js and models.js); window event `engine-event` |

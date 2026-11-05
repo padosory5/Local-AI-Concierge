@@ -120,7 +120,7 @@ concierge/
   events.py       the contract between engine and UI (see CLAUDE.md)
   engine.py       the real engine the UI talks to
   fake_engine.py  scripted engine for building the UI without a model
-  ui/             the bubble overlay, chat panel and workspace (window.py, web/)
+  ui/             the full window, the circle and its card, and the Spot (window.py, web/)
 tests/            pytest suite, no Ollama needed
 ```
 

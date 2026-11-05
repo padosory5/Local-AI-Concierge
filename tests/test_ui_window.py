@@ -159,7 +159,8 @@ def test_pages_see_only_their_calls():
     hub = ChatHub(FakeEngine())
     assert public(ChatBridge(hub)) == chat_calls
     jobs = {"today", "answer", "undo_sorting", "set_noticing", "privacy", "activity"}
-    full_window = {"quit_app", "agent_details", "send_files", "pick_files", "pick_images", "pick_folder", "screenshot",
+    full_window = {"quit_app", "agent_details", "send_files", "pick_files", "pick_images", "pick_folder", "screenshot", "paste_text",
+                   "follow_up", "after_answer", "pictures",
                    "models", "pick_model", "save_key", "forget_key", "more_models", "open_key_page",
                    "hide_model", "add_custom_model", "remove_custom_model", "delete_model",
                    "browse_models", "get_model", "cancel_download", "downloads",
@@ -393,3 +394,12 @@ def test_nothing_in_downloads_is_said_plainly():
             return {}
 
     assert "didn't find" in TodayBridge(ChatHub(Empty(delay=0)), None).find_downloads()["error"]
+
+
+def test_a_long_paste_becomes_a_file_named_plainly():
+    from concierge.ui.window import pasted_file
+
+    words = "line\n" * 40
+    first, second = pasted_file(words), pasted_file("other")
+    assert first.name == second.name == "Pasted text.txt" and first != second
+    assert first.read_text(encoding="utf-8") == words

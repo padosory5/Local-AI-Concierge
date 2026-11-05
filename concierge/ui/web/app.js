@@ -66,10 +66,37 @@ window.app = (() => {
   function inline(text) {
     const parts = [];
     for (const piece of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/)) {
-      if (/^\*\*.+\*\*$/.test(piece)) parts.push(el("strong", "", piece.slice(2, -2)));
-      else if (/^`.+`$/.test(piece)) parts.push(el("code", "", piece.slice(1, -1)));
-      else if (piece) parts.push(piece);
+      if (/^\*\*.+\*\*$/.test(piece)) {
+        const strong = el("strong");
+        strong.dataset.label = piece.slice(2, -2); // where a photo of the place it names goes
+        strong.append(...keys(piece.slice(2, -2)));
+        parts.push(strong);
+      } else if (/^`.+`$/.test(piece)) parts.push(el("code", "", piece.slice(1, -1)));
+      else if (piece) parts.push(...keys(piece));
     }
+    return parts;
+  }
+
+  // Keys drawn as keys: "Win + Shift + S" is three keys to press, so it shows as
+  // three. A combination starts with a key held down; Print Screen is a key alone.
+  const KEY = String.raw`(?:Ctrl|Control|Alt|Shift|Win|Windows|Cmd|Command|Option|Fn|Tab|Esc|Enter|Space|Delete|Del|Backspace|PrtScn|PrtSc|Print Screen|Home|End|PgUp|PgDn|F\d{1,2}|[A-Z0-9]|[↑↓←→])`;
+  const HELD = String.raw`(?:Ctrl|Control|Alt|Shift|Win|Windows|Cmd|Command|Option|Fn)`;
+  const COMBO = new RegExp(String.raw`\b${HELD}(?:\s*\+\s*${KEY})+(?!\w)|\b(?:PrtScn|PrtSc|Print Screen)\b`, "gi");
+
+  function keys(text) {
+    const parts = [];
+    let last = 0;
+    for (const match of text.matchAll(COMBO)) {
+      if (match.index > last) parts.push(text.slice(last, match.index));
+      const combo = el("span", "keys");
+      match[0].split(/\s*\+\s*/).forEach((key, i) => {
+        if (i) combo.append(el("span", "key-plus", "+"));
+        combo.append(el("kbd", "", key));
+      });
+      parts.push(combo);
+      last = match.index + match[0].length;
+    }
+    if (last < text.length) parts.push(text.slice(last));
     return parts;
   }
 
@@ -163,6 +190,7 @@ window.app = (() => {
 
   function sentBy(user, files) {
     messages.querySelectorAll(".meta-instead").forEach((old) => old.remove()); // it would ask the wrong question now
+    clearAfter();
     const node = message("user", user);
     if (files && files.length) {
       const names = el("div", "sent-files");
@@ -221,9 +249,102 @@ window.app = (() => {
       details(bubble.parentElement, [clock(), who, `${took}s`].filter(Boolean).join(" · "), bubbleText);
       whoAnswered(bubble.parentElement, done);
       if (done && done.instead) askInstead(bubble.parentElement, done.instead);
+      afterAnswer(bubble.parentElement, bubble, bubbleText);
     }
     bubble = null;
     bubbleText = "";
+  }
+
+  // ------------------------------------------------- under her answer
+
+  // Shorter and More detail, so more is one click away instead of a question
+  // tacked on the end. Only under the newest answer, and only under a real answer
+  // (the engine says which: a setup's message has nothing to shorten).
+  const FOLLOW_UPS = { shorter: "Shorter, please.", more: "Tell me more." }; // the same words as engine.FOLLOW_UPS
+  const SHORTER_FROM_WORDS = 30;
+
+  async function afterAnswer(row, node, text) {
+    if (!api || !api.after_answer) return;
+    const can = (await api.after_answer(text)) || {};
+    if (!row.isConnected || messages.lastElementChild !== row) return; // something newer has started
+    clearAfter();
+    if (can.follow_ups) {
+      const buttons = el("span", "follow-ups after");
+      if (text.trim().split(/\s+/).length >= SHORTER_FROM_WORDS) buttons.append(followButton("shorter", "Shorter"));
+      buttons.append(followButton("more", "More detail"));
+      (row.querySelector(".meta") || row).append(buttons);
+    }
+    const photos = photosSetting();
+    if (photos === "on") showPictures(node, await api.pictures(text));
+    else if (photos === null && can.places) askAboutPhotos(row, node, text);
+  }
+
+  function followButton(which, label) {
+    const button = el("button", "follow-up", label);
+    button.type = "button";
+    button.addEventListener("click", () => {
+      if (busy) return;
+      sentBy(FOLLOW_UPS[which]);
+      run(() => api.follow_up(which, thinkMode));
+    });
+    return button;
+  }
+
+  function clearAfter() {
+    messages.querySelectorAll(".after").forEach((node) => node.remove());
+  }
+
+  // Photos of places come from Wikipedia, so nothing is looked up until the user
+  // says yes once, here or on What I see. Kept in the page, like Think.
+  function photosSetting() {
+    try {
+      return localStorage.getItem("photos");
+    } catch {
+      return "off";
+    }
+  }
+
+  function setPhotos(on) {
+    try {
+      localStorage.setItem("photos", on ? "on" : "off");
+    } catch {}
+  }
+
+  function askAboutPhotos(row, node, text) {
+    const ask = el("div", "photo-ask after");
+    const yes = el("button", "follow-up", "Show photos");
+    const no = el("button", "follow-up", "No thanks");
+    yes.type = no.type = "button";
+    yes.addEventListener("click", async () => {
+      setPhotos(true);
+      ask.remove();
+      showPictures(node, await api.pictures(text));
+    });
+    no.addEventListener("click", () => {
+      setPhotos(false);
+      ask.remove();
+    });
+    ask.append(el("span", "", "This plan names places. Show their photos from Wikipedia? Only the place names are looked up."), yes, no);
+    follow(() => row.append(ask));
+  }
+
+  // Each photo goes right beside the line it shows, not in a gallery at the end:
+  // people connect a picture with the words next to it.
+  function showPictures(node, found) {
+    for (const picture of found || []) {
+      const label = [...node.querySelectorAll("strong")].find((strong) => strong.dataset.label === picture.label);
+      const line = label && label.closest("li, p, h4");
+      if (!line || line.querySelector(".beside")) continue;
+      const figure = el("figure", "beside");
+      const image = el("img");
+      image.alt = picture.title;
+      image.addEventListener("error", () => figure.remove());
+      image.src = picture.image;
+      figure.title = [picture.about, "Photo from Wikipedia"].filter(Boolean).join(" · ");
+      figure.append(image, el("figcaption", "", picture.title));
+      line.classList.add("with-picture");
+      follow(() => line.prepend(figure));
+    }
   }
 
   function showTyping() {
@@ -520,11 +641,12 @@ window.app = (() => {
     sendButton.disabled = busy || !canSend();
   }
 
-  // What the + button added, waiting above the text until it's sent.
-  function attach(paths) {
+  // What the + button added, waiting above the text until it's sent. A long paste
+  // comes here too, with its words, so a click can put them back in the box.
+  function attach(paths, pasted = "") {
     for (const path of paths) {
       if (!attached.some((file) => file.path === path)) {
-        attached.push({ path, name: path.split(/[\\/]/).pop() });
+        attached.push(pasted ? { path, name: "Pasted text", pasted } : { path, name: path.split(/[\\/]/).pop() });
       }
     }
     drawAttached();
@@ -534,6 +656,20 @@ window.app = (() => {
   function drawAttached() {
     const chips = attached.map((file) => {
       const chip = el("span", "chip", file.name);
+      if (file.pasted) {
+        const lines = file.pasted.split("\n").length;
+        chip.classList.add("pasted");
+        chip.append(el("span", "chip-lines", lines > 1 ? `${lines} lines` : `${file.pasted.length} letters`));
+        chip.title = "Click to put it back in the box";
+        chip.addEventListener("click", (event) => {
+          if (event.target.closest("button")) return;
+          attached = attached.filter((other) => other !== file);
+          input.setRangeText(file.pasted, input.selectionStart, input.selectionEnd, "end");
+          drawAttached();
+          grow();
+          input.focus();
+        });
+      }
       const remove = el("button", "chip-remove", "×");
       remove.type = "button";
       remove.setAttribute("aria-label", `Remove ${file.name}`);
@@ -611,6 +747,19 @@ window.app = (() => {
   });
 
   input.addEventListener("input", grow);
+
+  // A long paste becomes a file above the box, the way other AI apps do it, so the
+  // box stays small and the chat shows "Pasted text" instead of a wall of words.
+  // It goes to her like any added file, cut to what a small model can read.
+  const PASTE_AS_FILE_CHARS = 1500;
+  const PASTE_AS_FILE_LINES = 20;
+  input.addEventListener("paste", async (e) => {
+    const text = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
+    if (!text || !api || !api.paste_text) return;
+    if (text.length < PASTE_AS_FILE_CHARS && text.split("\n").length < PASTE_AS_FILE_LINES) return;
+    e.preventDefault();
+    attach(await api.paste_text(text), text);
+  });
 
   // The engine keeps the current chat in the list and sends an empty
   // Transcript, which clears the chat area.

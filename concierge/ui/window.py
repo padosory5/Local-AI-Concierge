@@ -31,7 +31,7 @@ from pathlib import Path
 from .. import events
 from ..cloud import load_providers, sent_recently
 from ..elaina import data_dir
-from ..engine import ElainaEngine
+from ..engine import FOLLOW_UPS, ElainaEngine
 from ..events import Engine, Error
 from ..fake_engine import FakeEngine
 from ..quick.tidy import TidyWatch
@@ -343,6 +343,20 @@ class TodayBridge(WatchBridge):
     def quit_app(self) -> None:
         self._overlay.quit()
 
+    # Under each answer: Shorter, More detail, and photos of the places it names
+
+    def follow_up(self, which: str, think: bool = False) -> None:
+        if which in FOLLOW_UPS:
+            # The words the user's click stands for; "Ask {model} instead" needs the model's name.
+            words = self._hub.ask("follow_up_words", which, default=FOLLOW_UPS[which])
+            self._hub.run(self, "follow_up", which, bool(think), user=words)
+
+    def after_answer(self, reply: str) -> dict:
+        return self._hub.ask("after_answer", reply, default={}) or {}
+
+    def pictures(self, reply: str) -> list[dict]:
+        return self._hub.ask("pictures", reply, default=[]) or []
+
     # The + button
 
     def send_files(self, text: str, paths: list[str], think: bool = False) -> None:
@@ -361,6 +375,9 @@ class TodayBridge(WatchBridge):
 
     def screenshot(self) -> list[str]:
         return self._overlay.screenshot()
+
+    def paste_text(self, text: str) -> list[str]:
+        return [str(pasted_file(text))]
 
     # The model menu
 
@@ -503,6 +520,14 @@ class SpotBridge:
 
     def close(self) -> None:
         self._overlay.hide_spot()
+
+
+def pasted_file(text: str) -> Path:
+    """A long paste, kept as a file so it goes to her like anything added with +. Each
+    gets a folder of its own, so every one can keep the plain name "Pasted text"."""
+    path = Path(tempfile.mkdtemp(prefix="elaina-paste-")) / "Pasted text.txt"
+    path.write_text(text, encoding="utf-8")
+    return path
 
 
 # ---------------------------------------------------------------- placing

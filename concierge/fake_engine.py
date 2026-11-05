@@ -36,7 +36,7 @@ from .agents.store import slugify as store_slug
 from .attachments import read_attachments
 from .quick import spot
 from .conversations import ChatBook
-from .engine import WANTS_ON
+from .engine import FOLLOW_UPS, WANTS_ON
 from .models import ModelMenu
 from .events import (
     AgentCard,
@@ -118,6 +118,7 @@ class FakeEngine:
         self.waiting_for: str | None = None  # which typed answer we expect next
         self.deleting: str | None = None
         self.auto_last = ""  # Auto's last choice, for follow-ups
+        self.answered = ""  # the last plain chat reply, which Shorter and More detail can follow
         self.book = ChatBook(None)
         self.settings: dict = {"base_model": "qwen3.5:4b"}  # practice only: nothing touches the real ones
         usage.in_memory()  # practice numbers never reach the real usage file
@@ -147,6 +148,7 @@ class FakeEngine:
 
     def send(self, text: str, think: bool = False) -> Iterator[Event]:
         from .events import Thinking
+        self.answered = ""
 
         def with_thinking():
             chosen = self.menu.chosen()
@@ -203,7 +205,24 @@ class FakeEngine:
         return ElainaDone(by=by, where=auto.CLOUD, plan_used=used)
 
     def choose(self, id: str, choice: str) -> Iterator[Event]:
+        self.answered = ""
         yield from self.book.record(choice, self._choice(id, choice))
+
+    def follow_up(self, which: str, think: bool = False) -> Iterator[Event]:
+        if which not in FOLLOW_UPS:
+            return
+        self.answered = ("Practice: the short version would come here." if which == "shorter"
+                         else "Practice: more detail would come here, going further than before.")
+        yield from self.book.record(FOLLOW_UPS[which], self._say(self.answered))
+
+    def follow_up_words(self, which: str) -> str:
+        return FOLLOW_UPS.get(which, "")
+
+    def after_answer(self, reply: str) -> dict:
+        return {"follow_ups": bool(self.answered) and reply.strip() == self.answered, "places": False}
+
+    def pictures(self, reply: str) -> list[dict]:
+        return []  # the practice app looks nothing up
 
     def new_chat(self) -> Iterator[Event]:
         self.reset()
@@ -268,7 +287,7 @@ class FakeEngine:
         yield self._agent_list()
 
     def activity(self) -> dict[str, int]:
-        return {"explained": 34, "polished": 5, "translated": 12, "sorted": 120, "answered": 9}
+        return {"explained": 34, "polished": 5, "translated": 12, "sorted": 120, "answered": 9, "saved": 12400}
 
     # Getting to know the user: a made-up portrait. Nothing is read or kept.
 
@@ -400,10 +419,9 @@ class FakeEngine:
             )
             yield Question("folder", "Which folder should it read?")
         else:
-            yield from self._say(
-                "This is the fake engine talking. Real replies stream in like this, "
-                "a few words at a time, until the reply is done."
-            )
+            self.answered = ("This is the fake engine talking. Real replies stream in like this, "
+                             "a few words at a time, until the reply is done.")
+            yield from self._say(self.answered)
 
     def _choice(self, id: str, choice: str) -> Iterator[Event]:
         if id == "delete_agent":
