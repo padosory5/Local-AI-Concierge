@@ -25,12 +25,19 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
+from dataclasses import asdict
 
+from . import hardware
+from .agents import community
 from .agents.recipe import CUSTOM, WHILE_ON, describe
 from .agents.starters import asks_for, load_starters
 from .agents.store import Agent
+from .agents.store import slugify as store_slug
+from .attachments import read_attachments
+from .quick import spot
 from .conversations import ChatBook
 from .engine import WANTS_ON
+from .models import ModelMenu
 from .events import (
     AgentCard,
     IdeaCard,
@@ -48,6 +55,58 @@ from .events import (
 )
 
 
+class PracticeOllama:
+    """Stands in for Ollama in the model menu, so nothing is really fetched or deleted."""
+
+    def __init__(self):
+        self.installed = [{"name": "qwen3.5:4b", "size": 3_324_000_000, "details": {"parameter_size": "4.2B"}},
+                          {"name": "gemma4:latest", "size": 6_583_000_000, "details": {"parameter_size": "7.5B"}}]
+
+    def models(self) -> list[dict]:
+        return list(self.installed)
+
+    def capabilities(self, name: str) -> list[str]:
+        return ["completion"]
+
+    def pull(self, tag: str, on_progress) -> None:
+        for percent in range(0, 101, 5):
+            time.sleep(0.15)
+            on_progress("pulling", percent, 100)
+        self.installed.append({"name": tag, "size": 2_400_000_000, "details": {}})
+
+    def delete(self, tag: str) -> None:
+        self.installed = [model for model in self.installed if model["name"] != tag]
+
+
+class PracticeKeys:
+    """Practice keys: kept in memory, never in the password store."""
+
+    def __init__(self):
+        self.keys: dict[str, str] = {}
+
+    def saved_key(self, provider: str) -> str:
+        return self.keys.get(provider, "")
+
+    def save_key(self, provider: str, key: str) -> None:
+        self.keys[provider] = key
+
+    def forget_key(self, provider: str) -> None:
+        self.keys.pop(provider, None)
+
+    def key_refused(self, company, key: str) -> bool:
+        return False  # never sent anywhere
+
+
+def practice_models(words: str = "", sort: str = "downloads", kind: str = "") -> list[dict]:
+    """A few pretend Hugging Face models, so the page works with no internet."""
+    made = [("Tiny-Chat-3B", 2.1, 910_000, 420), ("Writer-7B", 4.8, 640_000, 380), ("Coder-9B", 5.9, 510_000, 890),
+            ("Vision-8B", 5.2, 300_000, 260), ("Giant-90B", 58.0, 120_000, 95), ("Reader-4B", 2.9, 90_000, 70)]
+    return [{"id": f"practice/{name}-GGUF", "author": "practice", "name": name, "downloads": downloads, "likes": likes,
+             "tag": f"hf.co/practice/{name}-GGUF:Q4_K_M", "size_gb": size, "family": "practice", "license": "mit",
+             "vision": name.startswith("Vision")}
+            for name, size, downloads, likes in made if words.lower() in name.lower()]
+
+
 class FakeEngine:
     def __init__(self, delay: float = 0.03):
         # Seconds between streamed pieces and progress steps; 0 for tests.
@@ -59,6 +118,12 @@ class FakeEngine:
         self.waiting_for: str | None = None  # which typed answer we expect next
         self.deleting: str | None = None
         self.book = ChatBook(None)
+        self.settings: dict = {"base_model": "qwen3.5:4b"}  # practice only: nothing touches the real ones
+        self.menu = ModelMenu(PracticeOllama(), lambda: (hardware.detect(), 3.0), load=lambda: dict(self.settings),
+                              save=self._keep_settings, keys=PracticeKeys(), browse=practice_models)
+
+    def _keep_settings(self, settings: dict) -> None:
+        self.settings = settings
 
     # ---------------------------------------------------------- contract
 
@@ -115,6 +180,100 @@ class FakeEngine:
             yield from self._say(f"{name} is {state}.")
             yield self._agent_list()
         yield from self.book.record("", flip())
+
+    def send_files(self, text: str, paths: list[str], think: bool = False) -> Iterator[Event]:
+        attached = read_attachments(paths)
+        said = "\n".join(filter(None, [text, f"Attached: {', '.join(attached.names)}"]))
+        yield from self.book.record(said, self._say(f"Practice: I would read {', '.join(attached.names)} now."))
+
+    def set_agent(self, name: str, on: bool) -> Iterator[Event]:
+        if (name in self.on) != on:
+            yield from self.toggle_agent(name)
+
+    def recipes(self) -> dict:
+        have = {name.lower() for name in self.agents}
+        return {"categories": list(community.CATEGORIES),
+                "recipes": [{**asdict(recipe), "added": recipe.name.lower() in have}
+                            for recipe in community.recipes(online=False)]}
+
+    def add_recipe(self, id: str) -> Iterator[Event]:
+        recipe = community.find(id, online=False)
+        if recipe and recipe.name not in self.agents:
+            self.agents.append(recipe.name)
+            if recipe.when == WHILE_ON:
+                self.switchable.add(recipe.name)
+        yield self._agent_list()
+
+    def post_agent(self, name: str, about: str, category: str, by: str = "") -> dict:
+        return {"error": "This is the practice app, so nothing is posted."}
+
+    def switch_agent(self, name: str, on: bool) -> Iterator[Event]:
+        recipe = community.find(store_slug(name), online=False)
+        if on and name not in self.agents and recipe:
+            self.agents.append(name)
+            if recipe.when == WHILE_ON:
+                self.switchable.add(name)
+        if name in self.switchable:
+            self.on = self.on | {name} if on else self.on - {name}
+        yield self._agent_list()
+
+    def activity(self) -> dict[str, int]:
+        return {"explained": 34, "polished": 5, "translated": 12, "sorted": 120, "answered": 9}
+
+    # Getting to know the user: a made-up portrait. Nothing is read or kept.
+
+    def bring_in_history(self, path: str) -> dict:
+        time.sleep(self.delay * 20)
+        return {"read": 312, "new": 312, "sources": ["ChatGPT", "Claude"], "total": 312}
+
+    def understand_history(self, progress=None) -> dict:
+        for step in ("Sorting 312 chats by what they asked for...", "Looking for what you said about yourself..."):
+            if progress:
+                progress(step)
+            time.sleep(self.delay * 40)
+        self._portrait = _practice_portrait()
+        return self._portrait
+
+    def look_around(self) -> dict:
+        time.sleep(self.delay * 20)
+        made = getattr(self, "_portrait", {}) or {"facts": []}
+        made["computer"] = {"looked": time.time(), "roles": {"developer": 6, "student": 3},
+                            "activities": {"browsing": 6.2, "coding": 4.1, "games": 2.0, "chatting": 1.3},
+                            "used": [{"app": "Chrome", "hours": 6.2, "runs": 40, "last": time.time(), "kind": "browsing"},
+                                     {"app": "Visual Studio Code", "hours": 4.1, "runs": 22, "last": time.time(), "kind": "coding"}]}
+        made["facts"] = [fact for fact in made["facts"] if fact["source"] != "This computer"] + _practice_computer()
+        self._portrait = made
+        return made
+
+    def bring_in_downloads(self, since: float = 0) -> dict:
+        return {"read": 64, "sources": ["Claude"]}
+
+    def what_i_know(self) -> dict:
+        return getattr(self, "_portrait", {})
+
+    def keep_fact(self, fact_id: str, kept: bool) -> dict:
+        for fact in self.what_i_know().get("facts", []):
+            if fact["id"] == fact_id:
+                fact["kept"] = bool(kept)
+        return self.what_i_know()
+
+    def forget_history(self) -> None:
+        self._portrait = {}
+
+    def measure(self) -> dict:
+        time.sleep(self.delay * 40)
+        return {"device": "Practice graphics card · 8 GB", "words_per_second": 45,
+                "results": [{"what": "to explain a word you highlight", "seconds": 0.6, "words": 14},
+                            {"what": "to polish a messy message", "seconds": 0.9, "words": 22},
+                            {"what": "to translate a paragraph", "seconds": 1.7, "words": 40}]}
+
+    def spot_actions(self, text: str, editable: bool) -> list[dict]:
+        return spot.actions_for(text, editable, [("Grammar Fixer", "Fix the grammar.")])
+
+    def spot_run(self, action: str, text: str, ask: str = "") -> dict:
+        time.sleep(self.delay * 10)
+        words = ask or dict((item["id"], item["words"]) for item in spot.actions_for(text, True)).get(action, action)
+        return {"text": f"Practice: the answer to \"{words}\" would appear here."}
 
     def details(self, name: str) -> dict:
         starter = next((s for s in load_starters() if s.name == name), None)
@@ -278,3 +437,38 @@ class FakeEngine:
             ],
         )
         yield from self._say("Acme's contract was signed on 12 March by Dana Kim.")
+
+
+def _practice_portrait() -> dict:
+    """What a portrait looks like, for building the windows without anyone's chats."""
+    def fact(n, about, words, quote, source, seen):
+        return {"id": f"practice{n}", "about": about, "fact": words, "quote": quote, "source": source,
+                "title": "Practice chat", "when": time.time() - n * 86400 * 9, "seen": seen, "kept": None}
+
+    return {
+        "made": time.time(), "chats": {"ChatGPT": 248, "Claude": 64}, "first": time.time() - 86400 * 410,
+        "last": time.time() - 86400, "busiest": "in the evening", "languages": {"Korean": 201, "English": 111},
+        "kinds": [{"id": "writing", "words": "Writing and polishing messages", "topic": "spot", "count": 96},
+                  {"id": "studying", "words": "Studying and homework", "topic": "explain", "count": 71},
+                  {"id": "coding", "words": "Code and errors", "topic": "spot", "count": 54},
+                  {"id": "translating", "words": "Translating", "topic": "translate", "count": 38},
+                  {"id": "planning", "words": "Plans and ideas", "topic": "plan", "count": 21},
+                  {"id": "other", "words": "Other", "topic": "", "count": 32}],
+        "facts": [fact(1, "study", "Studies computer science at university", "I'm a computer science student", "ChatGPT", 9),
+                  fact(2, "tool", "Uses Python and VS Code", "I use Python in VS Code", "Claude", 6),
+                  fact(3, "place", "Lives in Seoul", "저는 서울에 살고 있어요", "ChatGPT", 3),
+                  fact(4, "goal", "Is preparing for a job interview in English", "I have an interview in English next month", "ChatGPT", 2),
+                  fact(5, "interest", "Likes making games", "I love making small games", "Claude", 2)],
+    }
+
+
+def _practice_computer() -> list[dict]:
+    """Made-up guesses from looking around a computer."""
+    def fact(n, about, words, quote):
+        return {"id": f"computer{n}", "about": about, "fact": words, "quote": quote, "source": "This computer",
+                "title": "", "when": time.time(), "seen": 1, "kept": None}
+
+    return [fact(1, "tool", "Writes code in Visual Studio Code", "Visual Studio Code is installed"),
+            fact(2, "tool", "Makes things in Unity", "Unity Hub is installed"),
+            fact(3, "tool", "Writes code, mostly in Python and C#", "5 folders with code, like puzzle-cat"),
+            fact(4, "study", "Keeps school files: lectures and assignments", "48 files named like lectures or assignments")]

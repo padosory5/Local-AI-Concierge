@@ -8,6 +8,7 @@ modules; nothing here holds logic the UI would need.
     python -m concierge setup       download the model and (re)build Elaina
     python -m concierge chat        talk with Elaina
     python -m concierge measure TAG measure a model's real graphics memory use
+    python -m concierge history ZIP get to know you from a ChatGPT or Claude download
 """
 
 from __future__ import annotations
@@ -54,6 +55,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("chat", help="talk with Elaina")
     measure = sub.add_parser("measure", help="measure a model's real graphics memory use")
     measure.add_argument("tag")
+    past = sub.add_parser("history", help="get to know you from a ChatGPT or Claude download")
+    past.add_argument("paths", nargs="*", help="the zip from Export data, or its conversations.json")
+    past.add_argument("--forget", action="store_true", help="forget everything brought in")
     args = parser.parse_args(argv)
 
     try:
@@ -67,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_chat(setup_first=False)
         if args.command == "measure":
             return cmd_measure(args.tag)
+        if args.command == "history":
+            return cmd_history(args.paths, args.forget)
         return cmd_chat(setup_first=True)
     except OllamaError as exc:
         print(f"\n{exc}")
@@ -267,6 +273,62 @@ class TerminalScreen:
             for number, choice in enumerate(choices, 1):
                 print(f"  {number}. {choice}")
             self.pending = (id, choices)
+
+
+def cmd_history(paths: list[str], forget: bool = False) -> int:
+    """Bring in ChatGPT or Claude downloads, then show what Elaina understood and
+    ask about each fact. The same steps the app's windows take."""
+    engine = ElainaEngine()
+    if forget:
+        engine.forget_history()
+        print("Forgotten: every chat brought in, and everything worked out from them.")
+        return 0
+    for path in paths:
+        result = engine.bring_in_history(path)
+        if "error" in result:
+            print(result["error"])
+            return 1
+        print(f"Brought in {result['read']} chats from {' and '.join(result['sources'])} "
+              f"({result['new']} new, {result['total']} in all).")
+    Ollama().ensure_running()
+    made = engine.understand_history(progress=lambda text: print(f"{DIM}{text}{PLAIN}"))
+    if "error" in made:
+        print(made["error"])
+        return 1
+    _show_portrait(made)
+    undecided = [fact for fact in made["facts"] if fact.get("kept") is None]
+    if undecided:
+        print()
+        print("Is this right? y keeps it, n drops it, Enter decides later.")
+    for fact in undecided:
+        answer = input(f"  {fact['fact']}  {DIM}(\"{fact['quote']}\", {fact['source']}){PLAIN} ").strip().lower()
+        if answer in ("y", "n"):
+            engine.keep_fact(fact["id"], answer == "y")
+    kept = [fact["fact"] for fact in engine.what_i_know().get("facts", []) if fact.get("kept")]
+    print()
+    print(f"She'll remember {len(kept)} thing{'s' if len(kept) != 1 else ''} about you, on this computer only.")
+    return 0
+
+
+def _show_portrait(made: dict) -> None:
+    from datetime import datetime
+
+    chats = " and ".join(f"{source} {count} times" for source, count in made["chats"].items())
+    since = datetime.fromtimestamp(made["first"]).strftime("%B %Y") if made.get("first") else "the start"
+    print()
+    print(f"You've talked with {chats}, since {since}", end="")
+    print(f", mostly {made['busiest']}." if made.get("busiest") else ".")
+    if made.get("languages"):
+        print("You write in " + ", ".join(f"{name} ({count})" for name, count in made["languages"].items()) + ".")
+    print()
+    print("What you ask for most:")
+    for kind in made["kinds"][:6]:
+        print(f"  {kind['count']:4}  {kind['words']}")
+    print()
+    print("What I think I know about you:" if made["facts"] else "I didn't find anything you said about yourself.")
+    for fact in made["facts"]:
+        mark = {True: "kept", False: "dropped", None: ""}[fact.get("kept")]
+        print(f"  {fact['fact']}  {DIM}seen in {fact['seen']} chat{'s' if fact['seen'] != 1 else ''} {mark}{PLAIN}")
 
 
 def cmd_measure(tag: str) -> int:

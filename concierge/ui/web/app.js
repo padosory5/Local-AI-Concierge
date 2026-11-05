@@ -22,8 +22,12 @@ window.app = (() => {
   let bubble = null; // Elaina's message that streamed text is added to
   let typing = null; // the "..." row shown until the first event arrives
   let currentChat = null; // id of the open conversation, from ChatList
-  let thinkMode = false; // the Think button: Elaina shows her full thinking
+  let thinkMode = true; // the Think button: Elaina shows her full thinking
   let thinking = null; // the fog box of the current turn, while it is open
+  let bubbleText = ""; // what's been said so far in that message, before formatting
+  let modelName = ""; // who is answering, shown under each reply
+  let turnStarted = 0;
+  let attached = []; // { path, name } waiting to go with the next message
 
   // ------------------------------------------------------------- drawing
 
@@ -50,9 +54,91 @@ window.app = (() => {
   }
 
   function message(who, text) {
-    const node = el("div", `bubble ${who}`, text);
+    const node = el("div", `bubble ${who}`);
+    if (who === "elaina") node.append(...rich(text));
+    else node.textContent = text;
     addRow(who, node);
     return node;
+  }
+
+  // Elaina's replies come with small marks for lists, bold words and code. They
+  // are turned into real elements here, still never as HTML.
+  function inline(text) {
+    const parts = [];
+    for (const piece of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/)) {
+      if (/^\*\*.+\*\*$/.test(piece)) parts.push(el("strong", "", piece.slice(2, -2)));
+      else if (/^`.+`$/.test(piece)) parts.push(el("code", "", piece.slice(1, -1)));
+      else if (piece) parts.push(piece);
+    }
+    return parts;
+  }
+
+  function rich(text) {
+    const out = [];
+    let group = null; // the list or code block being added to
+    for (const line of text.split("\n")) {
+      if (group && group.tagName === "PRE") {
+        if (line.startsWith("```")) group = null;
+        else group.append(`${line}\n`);
+        continue;
+      }
+      const bullet = line.match(/^\s*[-*•]\s+(.*)/);
+      const numbered = line.match(/^\s*\d+[.)]\s+(.*)/);
+      const heading = line.match(/^#{1,4}\s+(.*)/);
+      if (line.startsWith("```")) {
+        group = el("pre");
+        out.push(group);
+      } else if (bullet || numbered) {
+        const tag = bullet ? "UL" : "OL";
+        if (!group || group.tagName !== tag) {
+          group = el(tag.toLowerCase());
+          out.push(group);
+        }
+        const item = el("li");
+        item.append(...inline((bullet || numbered)[1]));
+        group.append(item);
+      } else if (line.trim()) {
+        group = null;
+        const paragraph = el(heading ? "h4" : "p");
+        paragraph.append(...inline(heading ? heading[1] : line));
+        out.push(paragraph);
+      } else if (group) {
+        group = null;
+      }
+    }
+    return out;
+  }
+
+  function clock() {
+    // In English like the rest of the app, not half in the computer's own language.
+    return new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+
+  // A small line under a message: when, who, how long, and Copy.
+  function details(row, words, text) {
+    const line = el("div", "meta", words);
+    if (text) {
+      const copy = el("button", "meta-copy", "Copy");
+      copy.type = "button";
+      copy.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(text);
+        copy.textContent = "Copied";
+        setTimeout(() => (copy.textContent = "Copy"), 1500);
+      });
+      line.append(copy);
+    }
+    row.append(line);
+  }
+
+  function sentBy(user, files) {
+    const node = message("user", user);
+    if (files && files.length) {
+      const names = el("div", "sent-files");
+      names.append(...files.map((name) => el("span", "sent-file", name)));
+      node.parentElement.insertBefore(names, node);
+      if (!user) node.remove();
+    }
+    details(node.parentElement || messages.lastElementChild, clock());
   }
 
   function list(className, items) {
@@ -69,7 +155,7 @@ window.app = (() => {
       button.addEventListener("click", () => {
         if (busy) return;
         button.classList.add("picked");
-        message("user", option);
+        sentBy(option);
         run(() => api.choose(id, option));
       });
       group.append(button);
@@ -79,7 +165,12 @@ window.app = (() => {
 
   function finishBubble() {
     if (bubble && !bubble.textContent.trim()) bubble.parentElement.remove();
+    else if (bubble) {
+      const took = Math.max(1, Math.round((Date.now() - turnStarted) / 1000));
+      details(bubble.parentElement, [clock(), modelName, `${took}s`].filter(Boolean).join(" · "), bubbleText);
+    }
     bubble = null;
+    bubbleText = "";
   }
 
   function showTyping() {
@@ -126,7 +217,8 @@ window.app = (() => {
 
     ElainaText(e) {
       if (!bubble) bubble = message("elaina", "");
-      follow(() => bubble.append(e.text));
+      bubbleText += e.text;
+      follow(() => bubble.replaceChildren(...rich(bubbleText)));
     },
 
     ElainaDone() {
@@ -180,7 +272,7 @@ window.app = (() => {
         const quoted = e.sources.map((s) => (s.quote ? `${s.path}: “${s.quote}”` : s.path));
         box.append(list("sources", quoted));
       }
-      addRow("elaina", box);
+      details(addRow("elaina", box), "", e.text);
     },
 
     AgentList(e) {
@@ -221,22 +313,7 @@ window.app = (() => {
     },
 
     ChatList(e) {
-      currentChat = e.current;
-      if (!$("chats")) return;
-      const items = e.chats.map((chat) => {
-        const open = itemButton("item-main", "", () => {
-          if (chat.id !== currentChat) run(() => api.open_chat(chat.id), { showDots: false });
-        });
-        open.append(el("span", "item-title", chat.title), el("span", "item-when", whenWas(chat.updated)));
-        open.title = `${chat.title}\nLast message ${new Date(chat.updated).toLocaleString()}`;
-        const remove = itemButton("item-delete", "✕", () => confirmDelete(remove, chat.id));
-        remove.setAttribute("aria-label", `Delete chat: ${chat.title}`);
-        remove.title = "Delete this chat";
-        const li = el("li", chat.id === e.current ? "current" : "");
-        li.append(open, remove);
-        return li;
-      });
-      $("chats").replaceChildren(...(items.length ? items : [el("li", "muted", "No chats yet")]));
+      currentChat = e.current; // today.js draws the list, with pins and search
     },
 
     Transcript(e) {
@@ -245,20 +322,15 @@ window.app = (() => {
       empty.hidden = e.items.length > 0;
       for (const item of e.items) {
         if (item.role === "result") draw.Result(item);
-        else message(item.role === "user" ? "user" : item.role === "error" ? "error" : "elaina", item.text);
+        else {
+          const who = item.role === "user" ? "user" : item.role === "error" ? "error" : "elaina";
+          const node = message(who, item.text);
+          if (who === "elaina") details(node.parentElement, "", item.text);
+        }
       }
       messages.scrollTop = messages.scrollHeight;
     },
   };
-
-  // "12:43", "Yesterday" or "Oct 30": enough to find a chat by.
-  function whenWas(moment) {
-    const then = new Date(moment);
-    const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(then).setHours(0, 0, 0, 0)) / 86400000);
-    if (days <= 0) return then.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    if (days === 1) return "Yesterday";
-    return then.toLocaleDateString([], { month: "short", day: "numeric" });
-  }
 
   function itemButton(className, text, onClick) {
     const button = el("button", className, text);
@@ -267,21 +339,6 @@ window.app = (() => {
       if (!busy) onClick();
     });
     return button;
-  }
-
-  // Deleting a chat cannot be undone, so the first click only arms the
-  // button ("Delete?") and a second click within a few seconds deletes.
-  function confirmDelete(button, id) {
-    if (!button.classList.contains("confirm")) {
-      button.classList.add("confirm");
-      button.textContent = "Delete?";
-      setTimeout(() => {
-        button.classList.remove("confirm");
-        button.textContent = "✕";
-      }, 3000);
-      return;
-    }
-    run(() => api.delete_chat(id), { showDots: false });
   }
 
   function thinkingBox() {
@@ -301,7 +358,9 @@ window.app = (() => {
     if (!thinking) return;
     const seconds = Math.max(1, Math.round((Date.now() - thinking.started) / 1000));
     const steps = `${thinking.steps} step${thinking.steps === 1 ? "" : "s"}`;
-    thinking.header.textContent = thinking.thought ? `Thought for ${seconds}s` : `Worked it out in ${steps}`;
+    // One decision says more as itself than as "1 step".
+    const only = thinking.steps === 1 && !thinking.thought && thinking.body.textContent;
+    thinking.header.textContent = only || (thinking.thought ? `Thought for ${seconds}s` : `Worked it out in ${steps}`);
     thinking.box.classList.remove("live", "open");
     thinking = null;
   }
@@ -327,7 +386,7 @@ window.app = (() => {
 
   function setBusy(value) {
     busy = value;
-    sendButton.disabled = value || !input.value.trim();
+    sendButton.disabled = value || !canSend();
     newChatButton.disabled = value;
     document.querySelectorAll(".item-main, .item-delete").forEach((b) => (b.disabled = value));
   }
@@ -335,6 +394,7 @@ window.app = (() => {
   function begin({ showDots = true } = {}) {
     // Old questions and cards are answered once the user moves on.
     document.querySelectorAll(".choices button").forEach((b) => (b.disabled = true));
+    turnStarted = Date.now();
     setBusy(true);
     if (showDots) showTyping();
   }
@@ -366,7 +426,7 @@ window.app = (() => {
   // page shows the user's message and waits along with it.
   function mirror(m) {
     if (m.state === "start") {
-      if (m.user) message("user", m.user);
+      if (m.user) sentBy(m.user);
       begin({ showDots: m.dots });
     } else {
       end();
@@ -380,19 +440,57 @@ window.app = (() => {
     window.dispatchEvent(new CustomEvent("page-shown"));
   }
 
+  function canSend() {
+    return Boolean(input.value.trim() || attached.length);
+  }
+
   function submit() {
     const text = input.value.trim();
-    if (!text || busy) return;
+    if (!canSend() || busy) return;
+    const files = attached;
+    attached = [];
+    drawAttached();
     input.value = "";
     grow();
-    message("user", text);
-    run(() => api.send(text, thinkMode));
+    sentBy(text, files.map((file) => file.name));
+    if (files.length) run(() => api.send_files(text, files.map((file) => file.path), thinkMode));
+    else run(() => api.send(text, thinkMode));
   }
 
   function grow() {
     input.style.height = "auto";
     input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
-    sendButton.disabled = busy || !input.value.trim();
+    input.style.overflowY = input.scrollHeight > 160 ? "auto" : "hidden";
+    sendButton.disabled = busy || !canSend();
+  }
+
+  // What the + button added, waiting above the text until it's sent.
+  function attach(paths) {
+    for (const path of paths) {
+      if (!attached.some((file) => file.path === path)) {
+        attached.push({ path, name: path.split(/[\\/]/).pop() });
+      }
+    }
+    drawAttached();
+    input.focus();
+  }
+
+  function drawAttached() {
+    const chips = attached.map((file) => {
+      const chip = el("span", "chip", file.name);
+      const remove = el("button", "chip-remove", "×");
+      remove.type = "button";
+      remove.setAttribute("aria-label", `Remove ${file.name}`);
+      remove.addEventListener("click", () => {
+        attached = attached.filter((other) => other !== file);
+        drawAttached();
+      });
+      chip.append(remove);
+      return chip;
+    });
+    $("attached").replaceChildren(...chips);
+    $("attached").hidden = !chips.length;
+    sendButton.disabled = busy || !canSend();
   }
 
   // The full window acts through the chat, so Elaina's replies and
@@ -400,7 +498,7 @@ window.app = (() => {
 
   function say(text) {
     if (!api || busy) return false;
-    message("user", text);
+    sentBy(text);
     run(() => api.send(text, thinkMode));
     return true;
   }
@@ -421,6 +519,25 @@ window.app = (() => {
     if (!api || busy) return false;
     run(() => api.delete_agent(name));
     return true;
+  }
+
+  async function addRecipe(id) {
+    if (!api || busy) return false;
+    await run(() => api.add_recipe(id), { showDots: false });
+    return true;
+  }
+
+  function openChat(id) {
+    if (api && !busy && id !== currentChat) run(() => api.open_chat(id), { showDots: false });
+    return !busy;
+  }
+
+  function deleteChat(id) {
+    if (api && !busy) run(() => api.delete_chat(id), { showDots: false });
+  }
+
+  function setModelName(name) {
+    modelName = name;
   }
 
   $("composer").addEventListener("submit", (e) => {
@@ -447,15 +564,23 @@ window.app = (() => {
 
   if ($("about-open")) $("about-open").addEventListener("click", () => $("about").showModal());
 
-  $("think").addEventListener("click", () => {
-    thinkMode = !thinkMode;
+  function drawThink() {
     $("think").setAttribute("aria-pressed", String(thinkMode));
     $("think").classList.toggle("on", thinkMode);
-    if ($("think-hint")) {
-      $("think-hint").textContent = thinkMode
-        ? "Think is on: Elaina shows her thinking first (slower)"
-        : "Think is off";
-    }
+  }
+
+  // Remembered between runs, in this page only. If it can't be read, Think is on.
+  try {
+    thinkMode = localStorage.getItem("think") !== "off";
+  } catch {}
+  drawThink();
+
+  $("think").addEventListener("click", () => {
+    thinkMode = !thinkMode;
+    drawThink();
+    try {
+      localStorage.setItem("think", thinkMode ? "on" : "off");
+    } catch {}
     input.focus();
   });
 
@@ -472,5 +597,5 @@ window.app = (() => {
   if (window.pywebview && window.pywebview.api && window.pywebview.api.startup) start();
   else window.addEventListener("pywebviewready", start);
 
-  return { onEvent, mirror, shown, say, prefill, toggleAgent, deleteAgent };
+  return { onEvent, mirror, shown, say, prefill, toggleAgent, deleteAgent, openChat, deleteChat, attach, setModelName, addRecipe };
 })();

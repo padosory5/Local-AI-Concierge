@@ -1,7 +1,13 @@
 import json
 import re
+import subprocess
+import sys
+import uuid
+
+import pytest
 
 from concierge.events import ElainaText
+from concierge.ui import window
 from concierge.fake_engine import FakeEngine
 from concierge.ui.window import (
     EDGE_GAP,
@@ -152,8 +158,18 @@ def test_pages_see_only_their_calls():
                   "new_chat", "open_chat", "delete_chat", "delete_agent", "toggle_agent"}
     hub = ChatHub(FakeEngine())
     assert public(ChatBridge(hub)) == chat_calls
-    jobs = {"today", "answer", "undo_sorting"}
-    assert public(TodayBridge(hub, None)) == chat_calls | jobs | {"quit_app", "agent_details"}
+    jobs = {"today", "answer", "undo_sorting", "set_noticing", "privacy", "activity"}
+    full_window = {"quit_app", "agent_details", "send_files", "pick_files", "pick_images", "pick_folder", "screenshot",
+                   "models", "pick_model", "save_key", "forget_key", "more_models", "open_key_page",
+                   "hide_model", "add_custom_model", "remove_custom_model", "delete_model",
+                   "browse_models", "get_model", "cancel_download", "downloads",
+                   "recipes", "add_recipe", "post_agent",
+                   "welcome", "set_welcomed", "measure", "set_spot", "switch_agent",
+                   "bring_in_history", "understand_history", "what_i_know", "keep_fact", "forget_history",
+                   "open_export_page", "look_around", "find_downloads",
+                   "pinned_chats", "pin_chat", "search_chats",
+                   "reservations", "add_reservation", "remove_reservation", "switch_reservation"}
+    assert public(TodayBridge(hub, None)) == chat_calls | jobs | full_window
     assert public(GlassBridge(hub, None)) == chat_calls | jobs | {"open_app", "hide_glass", "fit_glass"}
 
 
@@ -205,6 +221,43 @@ def test_an_agents_page_gets_what_the_agent_really_does():
     assert dict(documents["facts"]) ["Knows"] == "3 files"
 
 
+def test_work_no_page_started_is_shown_on_every_page():
+    hub = ChatHub(FakeEngine(delay=0))
+    page, window = page_for(hub)
+    page.startup()
+    window.calls.clear()
+    hub.announce("send", "Grammar Fixer: me and him goes", False, user="Grammar Fixer: me and him goes")
+    assert window.mirrored()[0] == {"state": "start", "user": "Grammar Fixer: me and him goes", "dots": True}
+    assert window.mirrored()[-1] == {"state": "end"}
+    assert "ElainaText" in types(window)
+
+
+def test_pins_and_search_come_from_the_saved_chats():
+    hub = ChatHub(FakeEngine(delay=0))
+    list(hub._engine.send("marmalade on toast"))
+    chat = hub._engine.book.current.id
+    assert hub.book("search", "MARMALADE toast") == [chat]
+    assert hub.book("search", "bicycle") == []
+    assert hub.book("pin", chat, True) == [chat]
+    assert hub.book("pinned") == [chat]
+
+
+def test_a_deleted_chat_loses_its_pin():
+    book = FakeEngine(delay=0).book
+    list(book.record("hello", iter(())))
+    chat = book.current.id
+    book.pin(chat, True)
+    book.delete(chat)
+    assert book.pinned() == []
+
+
+def test_pins_are_kept_with_the_saved_chats(tmp_path):
+    from concierge.conversations import ChatBook
+
+    ChatBook(tmp_path / "conversations").pin("abc", True)
+    assert ChatBook(tmp_path / "conversations").pinned() == ["abc"]
+
+
 def test_an_engine_without_details_just_gives_nothing():
     class Plain(FakeEngine):
         details = None
@@ -217,10 +270,14 @@ def test_the_app_opens_big_on_any_screen():
     big = full_size((0, 0, 3840, 2100))
     assert big[0] > 3000
     # A small laptop still gets a window it can show, and it stays on screen.
-    small = (0, 0, 900, 600)
+    small = (0, 0, 700, 600)
     width, height = full_size(small)
     assert (width, height) == (FULL_MIN_SIZE[0], FULL_MIN_SIZE[1])
-    assert width <= 900 and height <= 600
+    assert width <= 700 and height <= 600
+
+
+def test_the_window_can_shrink_to_half_of_a_small_screen():
+    assert FULL_MIN_SIZE[0] <= 1280 / 2
 
 
 def test_the_app_opens_in_the_middle_of_the_screen():
@@ -249,3 +306,90 @@ def test_see_through_window_stays_on_a_screen_to_the_side():
     left_screen = (-1920, 0, 1920, 1032)
     x, _ = place_glass(GLASS_SIZE, left_screen)
     assert x + GLASS_SIZE[0] == -EDGE_GAP
+
+
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Windows' own named lock")
+
+
+@windows_only
+def test_a_second_copy_finds_the_first_even_in_another_process():
+    name = rf"Local\ElainaTest.{uuid.uuid4().hex}"
+    holder = subprocess.Popen(
+        [sys.executable, "-c", f"from concierge.ui import window; print(window.first_copy({name!r}), flush=True); input()"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "True"
+        assert window.first_copy(name) is False
+    finally:
+        holder.communicate("\n", timeout=10)
+    assert window.first_copy(name) is True  # the first one ended, so this one is first now
+
+
+def test_starting_again_brings_the_running_one_forward_and_opens_nothing(monkeypatch):
+    brought = []
+    monkeypatch.setattr(window, "first_copy", lambda: False)
+    monkeypatch.setattr(window, "bring_forward", lambda: brought.append(True))
+    monkeypatch.setattr(window, "Overlay", lambda *args, **kwargs: pytest.fail("a second copy opened"))
+    assert window.main(["--fake"]) == 0 and brought == [True]
+
+
+@windows_only
+def test_only_a_window_of_her_own_kind_is_brought_forward(monkeypatch):
+    import tkinter
+
+    title = f"Elaina test {uuid.uuid4().hex[:8]}"
+    root = tkinter.Tk()
+    root.withdraw()  # never on screen, and focus is never taken from the person running the tests
+    root.title(title)
+    root.update()
+    fronted = []
+    monkeypatch.setattr(window, "_to_front", fronted.append)
+    try:
+        assert window.bring_forward(title) is False  # a window by that name, but not hers
+        assert window.bring_forward(title, kind="TkTopLevel") is True and len(fronted) == 1
+    finally:
+        root.destroy()
+
+
+def test_the_export_page_opens_only_from_our_own_list(monkeypatch):
+    opened = []
+    monkeypatch.setattr(window.webbrowser, "open", opened.append)
+    bridge = TodayBridge(ChatHub(FakeEngine(delay=0)), None)
+    bridge.open_export_page("Claude")
+    bridge.open_export_page("https://example.com/not-ours")
+    assert opened == ["https://claude.ai/settings/data-privacy-controls"]
+
+
+def test_two_downloads_picked_together_are_counted_together():
+    class Picker:
+        def pick(self, folder=False, images=False, exports=False):
+            return ["chatgpt.zip", "claude.zip"] if exports else []
+
+    class Reader(FakeEngine):
+        def bring_in_history(self, path):
+            source = "ChatGPT" if "chatgpt" in path else "Claude"
+            return {"read": 30 if source == "ChatGPT" else 12, "new": 1, "sources": [source], "total": 42}
+
+    bridge = TodayBridge(ChatHub(Reader(delay=0)), Picker())
+    assert bridge.bring_in_history() == {"read": 42, "new": 2, "sources": ["ChatGPT", "Claude"], "total": 42}
+
+
+def test_opening_an_export_page_starts_watching_downloads_for_it(monkeypatch):
+    from concierge.quick.tidy import TidyWatch
+    from concierge.ui.window import EXPORT_WAIT_HOURS, Overlay
+
+    monkeypatch.setattr(window.webbrowser, "open", lambda url: None)
+    overlay = Overlay(FakeEngine(delay=0), TidyWatch(practice=True))
+    TodayBridge(overlay.hub, overlay).open_export_page("ChatGPT")
+    until, since = overlay.settings["expecting_until"], overlay.settings["expecting_since"]
+    assert until - since == pytest.approx(EXPORT_WAIT_HOURS * 3600, abs=5)
+    overlay.expect_exports()  # asking again keeps the earliest start, so nothing in between is missed
+    assert overlay.settings["expecting_since"] == since
+
+
+def test_nothing_in_downloads_is_said_plainly():
+    class Empty(FakeEngine):
+        def bring_in_downloads(self, since=0):
+            return {}
+
+    assert "didn't find" in TodayBridge(ChatHub(Empty(delay=0)), None).find_downloads()["error"]

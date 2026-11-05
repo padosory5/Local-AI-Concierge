@@ -28,6 +28,10 @@ NUM_CTX = 4096
 # Roughly 2,500 tokens of past conversation, leaving room for the system
 # prompt and the reply inside NUM_CTX.
 HISTORY_CHARS = 9000
+# Usual thinking runs to about 6,000 characters. A small model can also think on
+# until it runs out of room and never answer, which it did one time in four on a
+# question about a file, so past this it's stopped and asked to just answer.
+MAX_THOUGHT_CHARS = 8000
 # Elaina stays in graphics memory while the program is open, and leaves it
 # when the program closes.
 #
@@ -57,7 +61,7 @@ def configure(ollama: Ollama, base: ModelEntry, rec: Recommendation, report: Har
     """Create (or replace) the "elaina" model and remember what she was built from."""
     prompt = system_prompt(base, rec, report)
     ollama.create(ELAINA_MODEL, base.tag, prompt, parameters={"num_ctx": NUM_CTX})
-    save_state({"base_model": base.tag, "prompt_hash": _hash(prompt)})
+    save_state({**load_state(), "base_model": base.tag, "prompt_hash": _hash(prompt)})
 
 
 def needs_configure(ollama: Ollama, base: ModelEntry, rec: Recommendation, report: HardwareReport) -> bool:
@@ -109,21 +113,55 @@ class ElainaChat:
     def __init__(self, ollama: Ollama, model: str = ELAINA_MODEL):
         self.ollama = ollama
         self.model = model
+        self.talker = ollama  # who writes the answers: her own model, or a cloud one (cloud.py)
         self.history: list[dict] = []
         # Thinking models (Qwen 3, Qwen 3.5) reason silently before answering,
         # which makes a chat feel slow. Elaina answers directly.
         self.think = False if "thinking" in ollama.capabilities(model) else None
+        self._context, self._images = "", []  # added with the + button, for the next message
+        self.about = ""  # what she knows about the user and they kept (portrait.about_you)
+        self._persona = None
         self._closed = threading.Event()
         # Held while checking in and while unloading, so a check-in cannot
         # load Elaina again right after close() unloaded her.
         self._lock = threading.Lock()
         threading.Thread(target=self._heartbeat, daemon=True).start()
 
+    def attach(self, context: str, images: list[str]) -> None:
+        """Files' words and pictures for the next message."""
+        self._context, self._images = context, images
+
+    def _hear(self, text: str) -> None:
+        context, self._context = self._context, ""
+        self.history.append({"role": "user", "content": f"{context}\n\n{text}" if context else text})
+
+    def _messages(self) -> list[dict]:
+        """What the model reads. Pictures only go with the message they came with."""
+        messages = self._recent()
+        images, self._images = self._images, []
+        if images:
+            messages[-1] = {**messages[-1], "images": images}
+        if self.about and self.talker is self.ollama and self.persona():
+            # Only her own model on this computer reads about the user. A system
+            # message here takes the place of the one built into her model, so
+            # her persona goes along with it.
+            messages = [{"role": "system", "content": f"{self.persona()}\n\n{self.about}"}, *messages]
+        return messages
+
+    def persona(self) -> str:
+        """The system prompt built into her model, read once."""
+        if self._persona is None:
+            try:
+                self._persona = str(self.ollama.show(self.model).get("system") or "")
+            except Exception:
+                return ""  # asked again next time; without it she's sent nothing about the user
+        return self._persona
+
     def send(self, text: str) -> Iterator[str]:
-        self.history.append({"role": "user", "content": text})
+        self._hear(text)
         reply = []
         try:
-            chunks = self.ollama.chat(self.model, self._recent(), think=self.think, keep_alive=KEEP_ALIVE)
+            chunks = self.talker.chat(self.model, self._messages(), think=self.think, keep_alive=KEEP_ALIVE)
             for piece in without_closing_filler(chunks):
                 reply.append(piece)
                 yield piece
@@ -136,15 +174,24 @@ class ElainaChat:
     @property
     def can_think(self) -> bool:
         """Whether this model can show its thinking (Qwen 3 and 3.5 can)."""
-        return self.think is False
+        if self.talker is self.ollama:
+            return self.think is False
+        return getattr(self.talker, "can_think", False)
+
+    @property
+    def can_see(self) -> bool:
+        """Whether the model writing her answers can look at pictures."""
+        return "vision" in self.talker.capabilities(self.model)
 
     def think_through(self, text: str) -> Iterator[tuple[str, str]]:
         """Like send(), but the model thinks first and its thoughts stream too:
         ("thought", piece) pieces, then ("text", piece) pieces of the reply.
         Only the reply goes into her memory of the conversation."""
-        self.history.append({"role": "user", "content": text})
-        parts = self.ollama.chat_parts(self.model, self._recent(), think=True, keep_alive=KEEP_ALIVE)
+        self._hear(text)
+        messages = self._messages()
+        parts = self.talker.chat_parts(self.model, messages, think=True, keep_alive=KEEP_ALIVE)
         reply = []
+        thought = 0
 
         def rest_of_reply():
             for kind, piece in parts:
@@ -155,11 +202,20 @@ class ElainaChat:
             for kind, piece in parts:
                 if kind == "thought":
                     yield "thought", piece
+                    thought += len(piece)
+                    if thought > MAX_THOUGHT_CHARS:
+                        break
                     continue
                 for out in without_closing_filler(itertools.chain([piece], rest_of_reply())):
                     reply.append(out)
                     yield "text", out
                 break
+            parts.close()
+            if not reply:
+                chunks = self.talker.chat(self.model, messages, think=self.think, keep_alive=KEEP_ALIVE)
+                for out in without_closing_filler(chunks):
+                    reply.append(out)
+                    yield "text", out
         finally:
             if reply:
                 self.history.append({"role": "assistant", "content": "".join(reply).strip()})

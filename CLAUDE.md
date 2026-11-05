@@ -2,15 +2,16 @@
 
 A simple app that sets up local AI for anyone. Elaina checks the computer,
 picks a model that fits it, chats with the user, and (next) creates agents for
-everyday tasks. Everything runs on the user's machine through Ollama. Users
-are not technical: plain words, no jargon, nothing complicated.
+everyday tasks. Everything runs on the user's machine through Ollama, unless the
+user picks a cloud model they pay for. Users are not technical: plain words, no
+jargon, nothing complicated.
 
 Two people work on this, each on their own branch:
 - **Engine** (`concierge/`): hardware check, model choice, Elaina, agents.
-- **UI** (`concierge/ui/`): the app opens as a full window. Minimizing it folds
-  Elaina into a small circle in the corner, above the taskbar; clicking the
-  circle opens a small see-through window with her agents' work and messages.
-  Both windows share one conversation (`ChatHub` sends every event to both).
+- **UI** (`concierge/ui/`): the app opens as a full window. Minimizing it keeps it
+  on the taskbar and folds Elaina into a small circle in the corner; clicking the
+  circle opens a small window with her agents' work and messages. Both windows
+  share one conversation (`ChatHub` sends every event to both).
 
 ## The rule between UI and engine
 
@@ -163,10 +164,21 @@ showing through made it hard to read.
 `concierge/quick/tidy.py` is what she notices herself. `TidyWatch` looks at two
 things: 30 or more loose files in Downloads, and a lecture in the window in
 front (`quick/watching.py`, from the window's title only, two looks in a row).
-It waits until the user stops typing, the full window is closed and no job is
-running, then asks one short question with Yes and No in `quick/note.py`, next
-to the circle. Questions take turns. "No" keeps her quiet about it for a while,
-and the same question waits in both windows until it's answered.
+She notices nothing until the user says yes once (Today asks, and Settings › What
+I see has the switch; `TidyWatch.noticing`, kept in `tidy_settings.json`).
+
+She asks at a break between tasks (`BreakSpotter`: a window switch in the last
+`BREAK_SECONDS` and no typing), never just because typing stopped, since a pause
+is usually someone thinking. That was the research's clearest warning. Questions
+are hours apart (`QUESTION_GAP_SECONDS`), take turns, and wait while the full
+window is open or a job runs. One short question with Yes and No appears in
+`quick/note.py`, next to the circle. "No" keeps her quiet about it for a week,
+and the same question waits in both windows until it's answered. Every yes, no
+and ignored question is counted on the computer (`questions.json`, shown on What
+I see), so questions people keep refusing can be found and dropped.
+
+The lecture question is only asked in the practice run (`LECTURE_NOTES_BUILT`):
+a Yes that does nothing spends an interruption on nothing.
 
 When a job the user said yes to starts, a soft lilac light runs once around the
 screen they are working on (`quick/glow.py`, Engine side like the highlight
@@ -176,21 +188,77 @@ shows no green. Clicks and typing pass through the light, and during games,
 videos and slideshows there is none.
 
 Sorting is plain code with no model: it moves files into folders by kind, never
-deletes or overwrites, and Undo puts them back. Summarizing a video is **not
+deletes or overwrites, and never touches files kept only in the cloud
+(`CLOUD_ONLY`). The question comes with where everything would go
+(`sort_plan`), the finished job says where it all went (`moved_to`), and every
+sort can be undone on its own for a week (`sorts.json`, `UNDO_DAYS`). Summarizing a video is **not
 built**: Yes only says so, plainly, with no light. `python -m concierge.ui
 --fake` is a practice run where both questions come soon after minimizing, the
 jobs only wait, and no files are looked at or moved.
 
+## The Spot
+
+Tapping Ctrl twice in any program (`quick/spot.py`, `DoubleTap`) opens a small
+card right under what's highlighted (`spot.html`, `spot.js`, `SpotBridge`,
+`Overlay.open_spot`). Code decides the buttons from the text (`actions_for`):
+your own writing gets Polish it and Make it shorter, something you're reading
+gets Explain simply and Sum it up, an error gets What this error means, code
+gets Explain this code. Translate is offered when the text isn't in the
+computer's own language. The user's own chat agents come after those, and
+there's a line to type anything. With nothing highlighted, what's typed is the
+request and the answer is typed at the cursor.
+
+The answer goes back where it came from (`Overlay.put_back`): in place of the
+highlight, on a new line under it (Shift+Enter, so a chat message isn't sent),
+at the cursor, or onto the clipboard. The user's own clipboard is put back
+afterwards. Where the text can't be typed into (`selection_editable`: UI Automation, then
+whether the window shows a text cursor, `caret_box`), Copy is the first button.
+Short text isn't offered Sum it up or Make it shorter (`SUM_UP_CHARS`,
+`SHORTEN_CHARS`): one sentence summed up came back as three bullet points. Ctrl used with another key, or held, never opens it.
+
+The Spot always runs on her own model, whatever the model menu says: it can be
+opened over anything in any program, so what it reads never goes to a cloud
+model.
+
+## Safety
+
+`concierge/safety.py`: words about ending one's life or hurting oneself get a
+fixed, kind reply with numbers to call (109 in Korea, 988 in the US), in the
+language the person wrote in, before anything else runs, setups included. The
+model never improvises there. Answers about health or money get a plain note to
+check with a person. Ollama stopping halfway is `OllamaError(UNREACHABLE)`, shown
+in plain words like any other problem.
+
 ## The full window
 
-`today.html` opens with the app. It starts on Help me: a rolling list of what
-the user can make an agent for (`TOPICS` in `today.js`), and one line to write
-on. Each line only sends plain words to Elaina, as if typed, so she still
-decides everything. Picking one, or typing, turns the window into an ordinary
-chat. New chat comes back to Help me. The side list has New chat, Today,
-Sessions, Agents (with a switch right on the row) and Add more (the ready-made
-agents the user doesn't have yet), with Settings at the bottom. Today says what
-is running, what she noticed and what was done today.
+`today.html` opens with the app. The side list has New chat, Today, Help me,
+Chat and Elaina's room, then the sessions (search, pinned, the rest) and which
+model is answering. Elaina's room has tabs (`#room-tabs`): About you, Agents, Models,
+Reservations, What I see and Settings, so a beginner only meets the first four
+items.
+
+The very first time, it opens on the first two minutes (`view-welcome`): she
+times three real jobs on this computer (`Engine.measure`, never guessed), then
+waits for the user to try the Spot in another window (`today.spotTried`, called
+when the Spot opens), offers to look around this computer to get to know them, then
+asks who they are, with what looking around found first. After that it opens on Today once
+there's something to show this week, and on Help me otherwise. What was chosen is
+kept in `window.json` (`Overlay.settings`; in memory in the practice run).
+
+Help me is the rolling list (`TOPICS` in `today.js`), each line finishing "Help
+me...". A line can be a switch (a ready-made highlight agent, the Spot, her
+noticing), Add (a ready-made chat agent), a request sent to Elaina as if typed, or
+"Not built yet". The middle line's control works right on it, and a small moving
+example of it happening shows beside the list, so people can picture it. Under
+it, "Who are you?" (`ROLES`) offers which lines to switch on, and "Setting this
+up for someone else" makes every word bigger. Switches go through
+`Engine.switch_agent`, which adds and switches agents with nothing said in the
+chat. Picking a line that sends words, or typing, turns the window into an
+ordinary chat. New chat comes back to Help me; opening Chat on purpose stays there.
+
+Today starts with what she did this week (`concierge/activity.py`: only the kind
+of job and when, never the words, kept a month), then what's running, what she
+noticed and what was done today.
 
 An agent's page shows what it does and how it's set up, from `recipe.describe`
 through `Engine.details(name)` and `TodayBridge.agent_details`, outside
@@ -199,10 +267,164 @@ page goes to that agent.
 
 `app.js` draws the chat and passes every event on as an `engine-event`;
 `today.js` draws the rest from those events, and acts through `app.say`,
-`app.prefill`, `app.toggleAgent` and `app.deleteAgent`. What the windows show
+`app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`,
+`app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe`. What the windows show
 about her jobs comes from `TidyWatch.today()` through `WatchBridge`, outside
 `events.py`, because those jobs aren't part of a conversation. Fonts are in
 `web/fonts/`, because the app must work with no internet.
+
+The chat sits in one centred column (`--column` in `today.css`), so the two sides
+of a conversation stay close on a wide window. Below 1100 pixels the side list
+folds to icons and opens over the page when asked, and below 760 "Help me" goes
+above its wheel, so half a screen stays readable. The title bar stays Windows'
+own, or snapping would stop working; `_blend_title` gives it the page's black.
+Minimize and X both leave the window on the taskbar; Quit is in Settings and on
+the clock icon. Only one copy runs at a time (`first_copy`): starting her again
+brings the running one forward (`bring_forward`), the practice run included,
+because two copies would both answer Ctrl tapped twice.
+
+Think is on by default: about 10 seconds more on this hardware, and the user asked
+to see her working it out. A switch beside the box turns it off, remembered in the
+page. Under each reply is the time, the model, how long it took and Copy, and
+replies keep their lists, bold and code (`rich` in `app.js`, built as elements, never
+as HTML).
+
+The model menu sits beside the text box, not under it, and the box is left out of the
+Agents and Models pages because those are for looking around.
+
+Sessions can be pinned and searched, by title at once and by what was said a moment
+later (`ChatBook.pin`, `ChatBook.search`). Agents and Models have pages of their own
+in the side list.
+
+## Cloud models
+
+The menu beside the chat box (`concierge/models.py`, `ModelMenu`, `web/models.js`) has
+two tabs: On this computer (everything in Ollama) and API (the companies in
+`cloud_models.yaml`, plus custom ones at any address that talks the way OpenAI's does).
+With a key saved, More models asks the company for the rest. Keys go in Windows'
+password store through `keyring`, are never in a file, and pages only ever learn
+whether one is saved. Elaina's persona goes along as the system prompt.
+
+Only her answers and agents asked in the chat move to the picked model
+(`ElainaChat.talker`). Deciding what a message is for and filling in forms stay with
+her own small model, and so do switch-on agents, because those see whatever the user
+highlights in any program. The documents agent stays too. The windows say so
+whenever a model off the computer is chosen. Names in the yaml come from OpenRouter's
+public list and may need changing; a wrong one shows "doesn't have that model".
+
+The Models page has three tabs. Discover reads Hugging Face's public list
+(`concierge/huggingface.py`) for GGUF models, the only kind Ollama can run, and works
+out what each would download; Ollama fetches them itself from `hf.co/...`. Whether
+one fits comes from the real file size against `helper_room` and the free disk, and
+those come first. A model can be huge, so the first click on one only says how big. On
+this computer and API edit what the menu shows (hiding removes nothing), delete local
+models (never Elaina's own) and add custom ones. A deleted model or a removed key
+falls back to her own model, so she never stops talking.
+
+The calls for this are outside `events.py`, like `details`: the bridge reaches them
+through `ChatHub.menu`, and `FakeEngine` gives `ModelMenu` a `PracticeOllama`,
+`PracticeKeys` and `practice_models`, so the practice app fetches, deletes and stores nothing.
+
+## Sharing agents
+
+The Agents page has Discover and Your agents (`web/discover.js`, shared with the
+Models page). An agent made from parts is only words, never code, so it's safe to
+share (`concierge/agents/community.py`, `community.json`). Agents that read a folder
+can't be posted, because they're made of someone's own files.
+
+The list everyone sees is `community.json` in the public repository
+`padosory5/elaina-agents`, kept apart because this project's code is private. There's
+no server. Post an agent opens GitHub's new issue page in the browser, filled in, and
+the user presses Submit, which needs a free GitHub account. Someone reads the issue
+and adds the entry to that file by hand, so nothing goes live unchecked. The app reads
+the list from the internet, then its last copy, then the one it shipped with, and
+checks every entry with `community.clean`, which keeps only known settings. Until the
+repository exists, `community.can_post` says so and nobody is sent to a dead page.
+
+## The + button
+
+Files, a folder, pictures or a screenshot (`concierge/attachments.py`, `send_files`).
+Something added is the point of the message, so it skips the router and goes
+straight to her. A file's words go into her memory of the conversation, cut to what
+a small model can read, so the user can ask about it again. Pictures only go with
+their own message, because they're too big to keep. A model that can't see pictures
+says so; it never pretends. A folder starts a documents agent for it. What couldn't
+be read is named in her thinking.
+
+## Getting to know the user
+
+Elaina can learn who someone is from their past chats with ChatGPT and Claude
+(`concierge/history.py`, `concierge/portrait.py`). Those chats live on the companies'
+servers, so nothing is automatic: the user asks each company once for a download
+(Settings, then Export data) and gets a zip by email. She never signs in as them and
+never reads their screen. `history.read_export` takes the zip, the unpacked folder or
+its `conversations.json`, follows only the branch of a ChatGPT chat the user last saw
+(edited drafts are side branches), and keeps only the user's own messages, cut short,
+in `history.json`.
+
+`portrait.understand` then works out what it can. Code counts the chats, the time of
+day, the language (`language_of`) and the kinds of help asked for. Her model only sorts
+each chat into one of `KINDS` (forced by the schema) and suggests facts, each with the
+line number and the exact words it came from. Code drops a fact whose words aren't in
+that line, that shares no word with its quote, that names a language its quote doesn't,
+or that touches `SENSITIVE` matters (health, money, beliefs, politics, family,
+relationships). Then a second, separate look (`confirmed`) shows the model each fact
+beside its line and takes only "yes": suggesting and checking are different jobs, and
+the second one caught every wrong fact in testing. The user keeps or drops each fact
+(`portrait.keep`); only kept ones, plus what they ask for most, go into
+`portrait.about_you`, which `ElainaChat` sends with her persona (a system message there
+replaces the one built into her model), and only to her own model, never a cloud one.
+
+Real chats taught two more rules. Lines where someone sets a task ("I have to
+integrate...", "represented as a list") aren't about them, so `SELF_WORDS` leaves them
+out; a "fact" that's really a request ("Requests course layouts") is dropped by
+`ASKING`, and the second look only says yes to lasting things (work, studies, home,
+interests, tools, goals). One line gives at most `FACTS_PER_LINE` facts, or a single
+line about a project became four.
+
+Looking around this computer comes first (`concierge/signs.py`); chats are optional
+extra. She reads the apps with a Start menu or desktop shortcut she knows
+(`KNOWN_APPS`), which apps are used most from Windows' own count of hours in front
+(UserAssist in the registry, read only: `app_use`, named the way people know them by
+`app_name`, grouped into `ACTIVITIES`), the kinds and counts of files in the user's
+own folders and which kinds changed in the last `RECENT_DAYS`, and folders with code
+(a `.git` inside). Never AppData, hidden folders, links, anything inside a file, or
+what was done inside an app. Windows only counts programs opened from Start or the
+taskbar, so a program started from a terminal shows few hours; files changed lately
+make up for that. Apps that touch `SENSITIVE` matters are left out. It's plain code
+with no model, bounded by `MAX_ENTRIES` and `MAX_SECONDS` (under a second here), and
+every guess says what it came from ("Unity Hub is installed", "5.2 hours in front, by
+Windows' own count"). Only the summary is kept, in `portrait.json` beside the chats'
+facts (`portrait.add_computer`), and the roles it points to put the matching "Who are
+you?" card first.
+
+Chat downloads arrive as links in an email. She can't read anyone's email, and the
+links need the user signed in, so she never fetches them: when the user opens a
+company's export page from her, she watches Downloads for `EXPORT_WAIT_HOURS`
+(`Overlay.expect_exports`) and reads each export that lands there by herself
+(`history.find_exports`, never the same file twice). Find it in my Downloads does the
+same at once, and Choose the zip takes one by hand.
+
+In the windows, step 3 of the first two minutes ("Get to know you") only offers Look
+around. About you, the first tab of Elaina's room, leads with what they do most on
+this computer, each activity beside what she can do about it with Turn on right
+there, then what they ask other AIs for most (from chats), each fact with what it
+came from and Keep or Not right, then Tell me more (look around, and the chats,
+marked Optional) and Forget all of this. The engine's calls are outside `events.py`,
+like `measure`: `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`,
+`forget_history`, `look_around`, `bring_in_downloads`, reached through `TodayBridge`,
+which opens a company's export page from `EXPORT_PAGES` only.
+`FakeEngine` gives a made-up portrait and reads nothing. `python -m concierge history ZIP`
+does the same in the terminal (`--forget` forgets everything).
+
+## Reservations
+
+Booking an agent for later (`concierge/reservations.py`, `Overlay._run_booking`):
+ask an agent something, switch one on or off, or sort Downloads, once, every day or
+every week. They run only while the app is open, minimized or not. Something that
+came due while it was closed is never run late: a one-time booking shows as missed
+and a repeating one waits for its next time, because moving files hours later could
+surprise someone. Bookings are saved in the data folder, or in memory with `--fake`.
 
 The earlier five-screen workspace (`workspace.html`, `workspace.css`,
 `workspace/`) and `index.html` are no longer opened.
@@ -261,13 +483,23 @@ variables inside a function do not need listing.
 | --- | --- | --- |
 | `concierge/hardware.py` | Engine | `GB`, `MIN_USABLE_VRAM_GB`, `GPU`, `HardwareReport`, `detect`, `parse_nvidia_smi`, `describe` |
 | `concierge/catalog.py` | Engine | `CATALOG_PATH`, `GPU_SHARE`, `APPLE_SHARE`, `CPU_SHARE`, `CPU_MAX_GB`, `GPU_HEADROOM_GB`, `RAM_HEADROOM_GB`, `DISK_HEADROOM_GB`, `CPU_HELPER_SHARE`, `ModelEntry`, `HelperModel`, `Recommendation`, `load_catalog`, `load_helpers`, `helper_room`, `pick_helper`, `find_model`, `memory_budget`, `recommend`; models in `models.yaml` (`models`, `helpers`) |
-| `concierge/elaina.py` | Engine | `ELAINA_MODEL`, `PERSONA_PATH`, `NUM_CTX`, `HISTORY_CHARS`, `UNLOAD_ON_EXIT`, `KEEP_ALIVE`, `HEARTBEAT_SECONDS`, `CLOSING_FILLER`, `without_closing_filler`, `system_prompt`, `configure`, `needs_configure`, `ElainaChat`, `data_dir`, `load_state`, `save_state` |
-| `concierge/ollama.py` | Engine | `DEFAULT_URL`, `DOWNLOAD_PAGE`, `OllamaError`, `Ollama` |
+| `concierge/activity.py` | Engine | `ANSWERED`, `EXPLAINED`, `TRANSLATED`, `POLISHED`, `SUMMED_UP`, `HELPED`, `SORTED`, `READ`, `KEPT_DAYS`, `WEEK_DAYS`, `record`, `this_week` |
+| `concierge/safety.py` | Engine | `CRISIS`, `HEALTH`, `MONEY`, `CRISIS_REPLY`, `CRISIS_REPLY_KO`, `HEALTH_NOTE`, `MONEY_NOTE`, `crisis`, `crisis_reply`, `caution` |
+| `concierge/elaina.py` | Engine | `ELAINA_MODEL`, `PERSONA_PATH`, `NUM_CTX`, `HISTORY_CHARS`, `MAX_THOUGHT_CHARS`, `UNLOAD_ON_EXIT`, `KEEP_ALIVE`, `HEARTBEAT_SECONDS`, `CLOSING_FILLER`, `without_closing_filler`, `system_prompt`, `configure`, `needs_configure`, `ElainaChat`, `data_dir`, `load_state`, `save_state` |
+| `concierge/ollama.py` | Engine | `DEFAULT_URL`, `DOWNLOAD_PAGE`, `UNREACHABLE`, `OllamaError`, `Ollama` |
 | `concierge/conversations.py` | Engine | `TITLE_CHARS`, `Conversation`, `ChatBook`, `title_from` |
+| `concierge/models.py` | Engine | `LOCAL`, `CUSTOM`, `LOOPBACK`, `GB`, `FITS`, `SLOW`, `NO_DISK`, `LocalModel`, `ModelMenu`, `nice_name` |
+| `concierge/huggingface.py` | Engine | `API`, `TIMEOUT`, `LIST_LIMIT`, `SIZE_WORKERS`, `CACHE_SECONDS`, `GB`, `SORTS`, `VISION`, `PREFERRED`, `QUANTIZATION`, `PART`, `HubError`, `HubModel`, `best_file`, `browse`, `tag_from` |
+| `concierge/cloud.py` | Engine | `CATALOG_PATH`, `KEY_STORE`, `MAX_REPLY_TOKENS`, `LIST_TIMEOUT`, `REPLY_TIMEOUT`, `MORE_MODELS`, `ANTHROPIC_VERSION`, `SENT_KEPT`, `NOT_FOR_CHAT`, `CloudError`, `CloudOption`, `Provider`, `CloudModel`, `load_providers`, `saved_key`, `save_key`, `forget_key`, `request_for`, `text_in`, `record_sent`, `sent_recently`, `key_refused`, `live_models`, `overview`, `find_option`; companies and models in `cloud_models.yaml` |
+| `concierge/attachments.py` | Engine | `IMAGE_TYPES`, `MAX_CHARS_PER_FILE`, `MAX_CHARS`, `MAX_IMAGE_MB`, `NOTHING_SAID`, `Attached`, `read_attachments` |
+| `concierge/history.py` | Engine | `CHATGPT`, `CLAUDE`, `EXPORT_PAGES`, `MAX_MESSAGE_CHARS`, `MAX_EXPORT_MB`, `CONVERSATIONS`, `HistoryError`, `PastChat`, `history_path`, `is_export`, `read_export`, `bring_in`, `brought_in`, `forget`, `read_files_path`, `find_exports` |
+| `concierge/signs.py` | Engine | `KNOWN_APPS`, `NOT_APPS`, `FILE_KINDS`, `RECENT_GROUPS`, `RECENT_DAYS`, `USER_ASSIST`, `MAX_APPS_KEPT`, `MIN_HOURS`, `ACTIVITIES`, `GAME_FOLDERS`, `PLAIN_FOLDERS`, `NOT_ACTIVITIES`, `FRIENDLY`, `CODE`, `STUDY_NAMES`, `WORK_NAMES`, `SKIP_DIRS`, `MAX_ENTRIES`, `MAX_SECONDS`, `MAX_DEPTH`, `MAX_PROJECTS_KEPT`, `REPARSE_POINT`, `THIS_COMPUTER`, `look_around`, `app_use`, `app_name`, `activity_of`, `activities`, `installed_apps`, `facts_from`, `role_words` |
+| `concierge/portrait.py` | Engine | `KINDS`, `KIND_MEANINGS`, `ABOUT`, `MAX_SORTED`, `SORT_BATCH`, `SORT_PREVIEW_CHARS`, `MAX_SNIPPETS`, `SNIPPET_CHARS`, `FACT_BATCH`, `MAX_FACTS`, `FACTS_PER_LINE`, `QUOTE_MIN_CHARS`, `FACT_MAX_CHARS`, `SELF_WORDS`, `SENSITIVE`, `SUBJECT`, `ASKING`, `PARTS_OF_DAY`, `SCRIPTS`, `ENGLISH_WORDS`, `portrait_path`, `load`, `forget`, `understand`, `add_computer`, `keep`, `about_you`, `busiest_part_of_day`, `languages_used`, `language_of`, `sort_kinds`, `find_facts`, `confirmed`, `self_snippets`, `checked`, `merge` |
+| `concierge/reservations.py` | Engine | `SORT`, `RUN`, `TURN_ON`, `TURN_OFF`, `ONCE`, `DAILY`, `WEEKLY`, `CHECK_SECONDS`, `STEPS`, `ReservationError`, `Reservation`, `Reservations` |
 | `concierge/events.py` | Both (contract) | `Thinking`, `SystemInfo`, `ElainaText`, `ElainaDone`, `Question`, `AgentCard`, `Progress`, `Source`, `Result`, `AgentList`, `Error`, `IdeaStep`, `IdeaCard`, `ChatSummary`, `ChatList`, `TranscriptItem`, `Transcript`, `Event`, `to_dict`, `Engine` |
-| `concierge/engine.py` | Engine | `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `ElainaEngine` |
-| `concierge/fake_engine.py` | Engine | `FakeEngine` |
-| `concierge/cli.py` | Engine | `DIM`, `PLAIN`, `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure]`; in the chat `/think` turns thinking on or off |
+| `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `ElainaEngine` |
+| `concierge/fake_engine.py` | Engine | `FakeEngine`, `PracticeOllama`, `PracticeKeys`, `practice_models` |
+| `concierge/cli.py` | Engine | `DIM`, `PLAIN`, `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `cmd_history`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure, history]`; in the chat `/think` turns thinking on or off |
 | `concierge/agents/blueprint.py` | Engine | `BLUEPRINT_DIR`, `Slot`, `Blueprint`, `load_blueprints`; templates in `agents/blueprints/*.yaml` (`documents_qa`, and `custom`: the shared template for agents made from parts) |
 | `concierge/quick/agents.py` | Engine | `BUBBLE`, `CLIPBOARD`, `BOTH`, `UNTIL_UNHIGHLIGHT`, `FEW_SECONDS`, `CHECK_SECONDS`, `CHECK_FOR_SECONDS`, `QuickAgents` |
 | `concierge/quick/bubble.py` | Engine | `GAP`, `MAX_WIDTH`, `COLORS`, `GWL_EXSTYLE`, `WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW`, `WS_EX_TOPMOST`, `show_seconds`, `Bubble` |
@@ -275,19 +507,21 @@ variables inside a function do not need listing.
 | `concierge/quick/glow.py` | Engine | `LILAC`, `GREEN`, `THICKNESS_SHARE`, `RIM_SHARE`, `BRIGHTEST`, `RUN_SECONDS`, `HOLD_SECONDS`, `FADE_SECONDS`, `FRAME_SECONDS`, `LINE_SHARE`, `LINE_BREATH_SECONDS`, `WS_POPUP`, `LIGHT_STYLE`, `light_at`, `pixel`, `reached`, `eased`, `full_screen_in_use`, `work_screen`, `real_pixels`, `Layer`, `pump`, `Glow` |
 | `concierge/quick/note.py` | Engine | `COLORS`, `CIRCLE_ROOM`, `BOTTOM_GAP`, `SHOW_SECONDS`, `CHECK_MS`, `ARRIVE_STEPS`, `ARRIVE_MS`, `ARRIVE_PIXELS`, `SOLID`, `ask` |
 | `concierge/quick/watching.py` | Engine | `LECTURE_WORDS`, `VIDEO_SITES`, `BROWSERS`, `PLAYERS`, `looks_like_lecture`, `lecture_on_screen` |
-| `concierge/quick/tidy.py` | Engine | `MIN_FILES`, `SETTLE_SECONDS`, `FIRST_LOOK_SECONDS`, `LOOK_SECONDS`, `SNOOZE_DAYS`, `IGNORED_DAYS`, `QUIET_SECONDS`, `MIN_JOB_SECONDS`, `PRACTICE_FIRST_LOOK_SECONDS`, `PRACTICE_JOB_SECONDS`, `VIDEO_LOOK_SECONDS`, `PRACTICE_VIDEO_SECONDS`, `QUESTION_GAP_SECONDS`, `YES`, `NOT_NOW`, `SORT`, `VIDEO`, `VIDEO_QUESTION`, `NO_VIDEO_SUMMARY`, `PRACTICE_LECTURE`, `DONE_KEPT`, `SHELVES`, `OTHER_SHELF`, `UNFINISHED`, `SYSTEM_FILES`, `downloads_dir`, `log_path`, `shelf_for`, `loose_files`, `free_name`, `sort_folder`, `can_undo`, `undo_sort`, `user_is_quiet`, `TidyWatch` |
+| `concierge/quick/tidy.py` | Engine | `MIN_FILES`, `SETTLE_SECONDS`, `FIRST_LOOK_SECONDS`, `LOOK_SECONDS`, `SNOOZE_DAYS`, `IGNORED_DAYS`, `BREAK_SECONDS`, `TYPING_GAP_SECONDS`, `MIN_JOB_SECONDS`, `PRACTICE_FIRST_LOOK_SECONDS`, `PRACTICE_JOB_SECONDS`, `VIDEO_LOOK_SECONDS`, `PRACTICE_VIDEO_SECONDS`, `QUESTION_GAP_SECONDS`, `PRACTICE_QUESTION_GAP_SECONDS`, `UNDO_DAYS`, `LECTURE_NOTES_BUILT`, `CLOUD_ONLY`, `YES`, `NOT_NOW`, `SORT`, `VIDEO`, `VIDEO_QUESTION`, `NO_VIDEO_SUMMARY`, `PRACTICE_LECTURE`, `DONE_KEPT`, `SHELVES`, `OTHER_SHELF`, `UNFINISHED`, `SYSTEM_FILES`, `downloads_dir`, `log_path`, `shelf_for`, `loose_files`, `free_name`, `sort_plan`, `sort_folder`, `last_sort`, `moved_to`, `can_undo`, `undo_sort`, `BreakSpotter`, `TidyWatch` |
+| `concierge/quick/spot.py` | Engine | `DOUBLE_TAP_SECONDS`, `TAP_SECONDS`, `MAX_SPOT_CHARS`, `MAX_HELPERS`, `SUM_UP_CHARS`, `SHORTEN_CHARS`, `WRITING`, `READING`, `ERROR`, `CODE`, `NOTHING`, `ERROR_WORDS`, `CODE_SIGNS`, `WRITE_FOR_ME`, `ACTIONS`, `home_language`, `kind_of`, `actions_for`, `job`, `caret_box`, `selection_editable`, `DoubleTap` |
 | `concierge/quick/translate.py` | Engine | `LANGUAGES`, `language_in`, `looks_like` |
 | `concierge/agents/builder.py` | Engine | `PLACES`, `CANCEL_WORDS`, `YES_WORDS`, `BLOCKED`, `SKIP_WHILE_SEARCHING`, `CARD`, `CHANGE`, `PICK_FOLDER`, `DUPLICATE`, `REPLACE`, `MAKE_ANOTHER`, `CREATE_IT`, `SAVE_CHANGES`, `RENAME`, `TARGET_LANGUAGE`, `LANGUAGE_CHOICES`, `custom_card`, `Draft`, `AgentBuilder`, `say`, `place_dirs`, `find_folders`, `agent_for_folder`, `is_blocked`, `describe_files` |
 | `concierge/agents/planner.py` | Engine | `BLOCKS_PATH`, `OTHER`, `MAX_STEPS`, `IDEA`, `IDEA_CHANGE`, `KEY_COMBO`, `ASKED_FOR_KEY`, `settle_triggers`, `MAKE_IT`, `SAVE_IDEA`, `CHANGE_IDEA`, `DROP_IDEA`, `HELPER_ROLES`, `ROLE_WORDS`, `Block`, `PlanStep`, `Assessment`, `IdeaDraft`, `IdeaPlanner`, `load_blocks`, `assess`, `clean_detail`, `ideas_path`, `list_ideas`, `save_idea`, `describe_ideas`; building blocks in `agents/capabilities.yaml` |
 | `concierge/agents/recipe.py` | Engine | `CUSTOM`, `WHILE_ON`, `IN_CHAT`, `MAX_INSTRUCTION`, `HIGHLIGHT_WORDS`, `CHAT_WORDS`, `SHOW_WORDS`, `COPY_WORDS`, `STAY_WORDS`, `SHORT_WORDS`, `SAMPLE_TEXT`, `SAMPLE_QUESTION`, `MECHANICS`, `describe`, `run_instruction`, `target_language`, `settings_from_words`, `needs_language`, `with_language`, `write_recipe`, `rewrite_instruction`, `is_switchable`, `migrate` |
 | `concierge/agents/files.py` | Engine | `TEXT_TYPES`, `SUPPORTED`, `MAX_FILES`, `MAX_FILE_MB`, `PASSAGE_CHARS`, `PASSAGE_OVERLAP`, `Passage`, `ScanResult`, `scan`, `read_pages`, `split`, `passages_of`, `tokens`, `SearchIndex`, `folder_signature` |
 | `concierge/agents/router.py` | Engine | `IDEA_OPTION`, `WANTS_CHANGE`, `WANTS_NEW`, `Route`, `route`, `wants_change`, `refers_to`, `names_an_agent`; test cases in `agents/router_cases.yaml` |
+| `concierge/agents/community.py` | Engine | `REPOSITORY`, `INDEX_PATH`, `INDEX_URL`, `POST_URL`, `TIMEOUT`, `CACHE_SECONDS`, `MAX_NAME`, `MAX_ABOUT`, `MAX_BY`, `READY_MADE`, `COMMUNITY`, `CATEGORIES`, `OTHER_CATEGORY`, `STARTER_DETAILS`, `PostError`, `Recipe`, `clean`, `recipes`, `find`, `install`, `can_post`, `post_address`; shared agents in `agents/community.json` |
 | `concierge/agents/starters.py` | Engine | `STARTERS_PATH`, `WANTS_ADD`, `MAX_WORDS`, `Starter`, `load_starters`, `asks_for`, `install`; recipes in `agents/starters.yaml` |
 | `concierge/agents/runner.py` | Engine | `TOP_PASSAGES`, `MAX_CONTENTS`, `STOPWORDS`, `run`, `matching_words`, `clean_answer`, `refresh_index`, `best_sentence` |
 | `concierge/agents/store.py` | Engine | `Agent`, `agents_dir`, `slugify`, `list_agents`, `find_agent`, `name_taken`, `save`, `load_index`, `delete` |
 | `concierge/agents/eval_router.py` | Engine | `CASES`, `main`; command `python -m concierge.agents.eval_router` |
-| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `GLASS_SIZE`, `GLASS_MIN_HEIGHT`, `GLASS_CHAT_HEIGHT`, `GLASS_GROW_STEPS`, `GLASS_GROW_SECONDS`, `GLASS_ABOVE`, `GLASS_ALPHA`, `GLASS_FADE_STEPS`, `GLASS_FADE_SECONDS`, `GLASS_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a page calls its `startup`, `send`, `choose`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `answer`, `undo_sorting`), `TodayBridge` (adds `agent_details`, `quit_app`), `GlassBridge` (adds `open_app`, `hide_glass`, `fit_glass`), `Overlay`, `full_size`, `centered`, `glass_height`, `place_glass`, `work_area`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
+| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `GLASS_SIZE`, `GLASS_MIN_HEIGHT`, `GLASS_CHAT_HEIGHT`, `GLASS_GROW_STEPS`, `GLASS_GROW_SECONDS`, `GLASS_ABOVE`, `GLASS_ALPHA`, `GLASS_FADE_STEPS`, `GLASS_FADE_SECONDS`, `GLASS_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `EXPORTS`, `EXPORT_WAIT_HOURS`, `EXPORT_CHECK_SECONDS`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a page calls its `startup`, `send`, `choose`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `measure`, `set_spot`, `switch_agent`, `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`, `forget_history`, `open_export_page`, `look_around`, `find_downloads`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_glass`, `fit_glass`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay`, `full_size`, `centered`, `glass_height`, `place_glass`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
 | `concierge/ui/mini.py` | UI | `MINI_SIZE`, `EDGE_GAP`, `DISC_SHARE`, `FRAMES`, `FRAME_SECONDS`, `RESTING`, `BRIGHT`, `FADE_STEP`, `FULL_SCREEN_CHECK_SECONDS`, `IDLE`, `WORKING`, `ASKING`, `LILAC`, `WHITE`, `is_click`, `premultiplied`, `draw_frames`, `Mini` |
 | `concierge/ui/tray.py` | UI | `ICON_SIZE`, `INK`, `DOTS`, `tray_picture`, `Tray` |
-| `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`), `glass.html`, `glass.css`, `glass.js` (the card from minimized Elaina, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `workspace.html`, `workspace.css`, `index.html` (earlier windows, not opened), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent` and `app.deleteAgent` (called by today.js); window event `engine-event` |
+| `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`, `today.show`, `today.closeMenus`, `today.redraw`, `today.spotTried`, `today.chatsArrived`, `today.ui`), `discover.js` (global `discover`: the Agents page and parts it shares), `models.js` (global `modelPage`: the model menu and the Models page), `spot.html`, `spot.css`, `spot.js` (the Spot, global `spot.open`), `glass.html`, `glass.css`, `glass.js` (the card from minimized Elaina, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `workspace.html`, `workspace.css`, `index.html` (earlier windows, not opened), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`, `app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe` (called by today.js, discover.js and models.js); window event `engine-event` |
 | `concierge/ui/web/workspace/` | UI | Not opened. `mock.js` (`ws.mock`), `parts.js` (`ws.parts`), `store.js` (`ws.store`), `activity.js` (`ws.activity`), `home.js` (`ws.home`), `discover.js` (`ws.discover`), `library.js` (`ws.library`, `ws.agentPage`), `studio.js` (`ws.studio`), `add_agent.js` (`ws.addAgent`), `main.js` (`ws.go`, `ws.refresh`, `ws.toast`, `ws.dock`, `ws.ask`, `ws.actions`) |

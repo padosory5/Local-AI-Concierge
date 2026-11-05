@@ -57,6 +57,8 @@ class ChatBook:
         self.history = history
         self.current: Conversation | None = None
         self._memory: dict[str, Conversation] = {}
+        self._pins_path = folder.parent / "pinned_chats.json" if folder else None
+        self._pins: list[str] = self._read_pins()
 
     # ---------------------------------------------------------- recording
 
@@ -131,6 +133,7 @@ class ChatBook:
         self._memory.pop(id, None)
         if self.folder:
             (self.folder / f"{id}.json").unlink(missing_ok=True)
+        self.pin(id, False)
         return events + [self.chat_list()]
 
     def transcript(self) -> Transcript:
@@ -146,6 +149,34 @@ class ChatBook:
         chats = sorted(self._all(), key=lambda c: c.updated, reverse=True)
         summaries = [ChatSummary(c.id, c.title, c.updated) for c in chats]
         return ChatList(summaries, self.current.id if self.current else None)
+
+    # -------------------------------------------------- pinning and finding
+
+    def pinned(self) -> list[str]:
+        return list(self._pins)
+
+    def pin(self, id: str, on: bool) -> list[str]:
+        self._pins = [pin for pin in self._pins if pin != id] + ([id] if on else [])
+        if self._pins_path:
+            self._pins_path.parent.mkdir(parents=True, exist_ok=True)
+            self._pins_path.write_text(json.dumps(self._pins), encoding="utf-8")
+        return self.pinned()
+
+    def search(self, words: str) -> list[str]:
+        """Conversations that say every one of these words, in their title or anywhere in them."""
+        wanted = words.lower().split()
+        found = []
+        for chat in self._all():
+            said = " ".join([chat.title, *(item["text"] for item in chat.items)]).lower()
+            if wanted and all(word in said for word in wanted):
+                found.append(chat.id)
+        return found
+
+    def _read_pins(self) -> list[str]:
+        try:
+            return json.loads(self._pins_path.read_text(encoding="utf-8")) if self._pins_path else []
+        except (OSError, ValueError):
+            return []
 
     # ------------------------------------------------------------ storage
 

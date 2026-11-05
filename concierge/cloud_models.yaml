@@ -1,0 +1,110 @@
+# Cloud models for people who already pay for one. These are the popular ones to
+# offer first; once a key is saved, the app also asks the company for its full
+# list (cloud.live_models), so a new model shows up without changing this file.
+#
+# Names checked against the public catalog at openrouter.ai/api/v1/models on
+# 2026-11-01. Companies rename models often, so check here first if one stops working.
+#
+#   kind      anthropic: its own way of talking. openai: the shared way most others use.
+#   url       where its API lives
+#   keys      the page where people get a key
+#   images    false for a model that can't look at pictures (true when left out)
+
+providers:
+  anthropic:
+    name: Claude
+    company: Anthropic
+    kind: anthropic
+    url: https://api.anthropic.com/v1
+    keys: https://console.anthropic.com/settings/keys
+    models:
+      - {id: claude-opus-5-5, name: Claude Opus 5.5}
+      - {id: claude-sonnet-5-5, name: Claude Sonnet 5.5}
+      - {id: claude-haiku-5-5, name: Claude Haiku 5.5}
+      - {id: claude-fable-5-1, name: Claude Fable 5.1}
+
+  openai:
+    name: ChatGPT
+    company: OpenAI
+    kind: openai
+    url: https://api.openai.com/v1
+    keys: https://platform.openai.com/api-keys
+    models:
+      - {id: gpt-6.1-sol, name: GPT-6.1 Sol}
+      - {id: gpt-6.1-terra, name: GPT-6.1 Terra}
+      - {id: gpt-6-luna, name: GPT-6 Luna}
+      - {id: gpt-6-astra, name: GPT-6 Astra}
+
+  google:
+    name: Gemini
+    company: Google
+    kind: openai
+    url: https://generativelanguage.googleapis.com/v1beta/openai
+    keys: https://aistudio.google.com/apikey
+    models:
+      - {id: gemini-4-argon, name: Gemini 4 Argon}
+      - {id: gemini-3.8-flash, name: Gemini 3.8 Flash}
+      - {id: gemini-3.5-flash-lite, name: Gemini 3.5 Flash Lite}
+
+  xai:
+    name: Grok
+    company: xAI
+    kind: openai
+    url: https://api.x.ai/v1
+    keys: https://console.x.ai
+    models:
+      - {id: grok-4.7, name: Grok 4.7}
+      - {id: grok-4.6, name: Grok 4.6}
+
+  deepseek:
+    name: DeepSeek
+    company: DeepSeek
+    kind: openai
+    url: https://api.deepseek.com
+    keys: https://platform.deepseek.com/api_keys
+    models:
+      - {id: deepseek-v4-pro, name: DeepSeek V4 Pro, images: false}
+      - {id: deepseek-v4-flash, name: DeepSeek V4 Flash, images: false}
+
+  mistral:
+    name: Mistral
+    company: Mistral AI
+    kind: openai
+    url: https://api.mistral.ai/v1
+    keys: https://console.mistral.ai/api-keys
+    models:
+      - {id: mistral-large-latest, name: Mistral Large}
+      - {id: mistral-medium-latest, name: Mistral Medium}
+      - {id: mistral-small-latest, name: Mistral Small}
+
+  perplexity:
+    name: Perplexity
+    company: Perplexity
+    kind: openai
+    url: https://api.perplexity.ai
+    keys: https://www.perplexity.ai/settings/api
+    models:
+      - {id: sonar-pro, name: Sonar Pro}
+      - {id: sonar, name: Sonar}
+
+  cohere:
+    name: Cohere
+    company: Cohere
+    kind: openai
+    url: https://api.cohere.ai/compatibility/v1
+    keys: https://dashboard.cohere.com/api-keys
+    models:
+      - {id: command-a-plus, name: Command A+}
+
+  openrouter:
+    name: OpenRouter
+    company: OpenRouter, one key for all of these
+    kind: openai
+    url: https://openrouter.ai/api/v1
+    keys: https://openrouter.ai/keys
+    models:
+      - {id: anthropic/claude-opus-5.5, name: Claude Opus 5.5}
+      - {id: openai/gpt-6.1-sol, name: GPT-6.1 Sol}
+      - {id: google/gemini-4-argon, name: Gemini 4 Argon}
+      - {id: x-ai/grok-4.7, name: Grok 4.7}
+      - {id: mistralai/mistral-large-4-0, name: Mistral Large 4}
