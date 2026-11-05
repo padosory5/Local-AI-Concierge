@@ -26,6 +26,7 @@ window.app = (() => {
   let thinking = null; // the fog box of the current turn, while it is open
   let bubbleText = ""; // what's been said so far in that message, before formatting
   let modelName = ""; // who is answering, shown under each reply
+  let ownName = ""; // her own model, for an answer made here when the menu says Auto
   let turnStarted = 0;
   let attached = []; // { path, name } waiting to go with the next message
 
@@ -189,8 +190,7 @@ window.app = (() => {
   }
 
   function sentBy(user, files) {
-    messages.querySelectorAll(".meta-instead").forEach((old) => old.remove()); // it would ask the wrong question now
-    clearAfter();
+    clearAfter(); // the buttons under the last answer would ask the wrong question now
     const node = message("user", user);
     if (files && files.length) {
       const names = el("div", "sent-files");
@@ -223,21 +223,30 @@ window.app = (() => {
     return group;
   }
 
+  // The row of buttons under the newest answer, made once and shared: Ask X instead
+  // (Auto kept the answer here), then Shorter and More detail. Cleared by the next message.
+  function buttonRow(row) {
+    let buttons = row.querySelector(".follow-ups");
+    if (!buttons) {
+      buttons = el("div", "follow-ups after");
+      row.append(buttons);
+    }
+    return buttons;
+  }
+
   // Auto kept this answer on the computer: one click asks the plan's model instead.
   // Only the newest answer has it, because it asks the last question again.
   function askInstead(row, name) {
-    messages.querySelectorAll(".meta-instead").forEach((old) => old.remove());
-    const again = el("button", "meta-copy meta-instead", `Ask ${name} instead`);
+    const again = el("button", "follow-up follow-instead", `Ask ${name} instead`);
     again.type = "button";
     again.title = `Ask the same question again, answered by ${name}. Uses some of your plan.`;
     again.addEventListener("click", () => {
       if (busy) return;
-      again.remove();
       const words = `Ask ${name} instead`;
       sentBy(words);
       run(() => api.ask_again(words));
     });
-    row.lastElementChild.append(again); // the line details() just added
+    buttonRow(row).prepend(again);
   }
 
   function finishBubble(done) {
@@ -245,7 +254,7 @@ window.app = (() => {
     else if (bubble) {
       const took = Math.max(1, Math.round((Date.now() - turnStarted) / 1000));
       // With Auto, the reply says which model wrote it; the menu only says "Auto".
-      const who = (done && done.by) || modelName;
+      const who = (done && done.by) || (done && done.where === "here" ? ownName || "This computer" : modelName);
       details(bubble.parentElement, [clock(), who, `${took}s`].filter(Boolean).join(" · "), bubbleText);
       whoAnswered(bubble.parentElement, done);
       if (done && done.instead) askInstead(bubble.parentElement, done.instead);
@@ -267,12 +276,14 @@ window.app = (() => {
     if (!api || !api.after_answer) return;
     const can = (await api.after_answer(text)) || {};
     if (!row.isConnected || messages.lastElementChild !== row) return; // something newer has started
-    clearAfter();
+    // Older answers lose their buttons; this answer keeps the Ask X instead it may already have.
+    messages.querySelectorAll(".after").forEach((node) => {
+      if (!row.contains(node)) node.remove();
+    });
     if (can.follow_ups) {
-      const buttons = el("span", "follow-ups after");
+      const buttons = buttonRow(row);
       if (text.trim().split(/\s+/).length >= SHORTER_FROM_WORDS) buttons.append(followButton("shorter", "Shorter"));
       buttons.append(followButton("more", "More detail"));
-      (row.querySelector(".meta") || row).append(buttons);
     }
     const photos = photosSetting();
     if (photos === "on") showPictures(node, await api.pictures(text));
@@ -728,8 +739,9 @@ window.app = (() => {
     if (api && !busy) run(() => api.delete_chat(id), { showDots: false });
   }
 
-  function setModelName(name) {
+  function setModelName(name, own = "") {
     modelName = name;
+    ownName = own || ownName;
   }
 
   $("composer").addEventListener("submit", (e) => {

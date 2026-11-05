@@ -19,6 +19,7 @@ from collections.abc import Iterator
 # The kinds of question, how many words an answer gets, and how many points at most.
 # Every model, big or small, treats "up to six points" as six, so the caps are low.
 BUDGETS = {
+    "small_talk": (30, 0),
     "fact": (40, 0),
     "chat": (60, 2),
     "explain": (70, 2),
@@ -33,7 +34,12 @@ BUDGETS = {
 SHORTER_SHARE = 0.5
 # Checked in this order: the first kind whose words appear wins. "Should I learn Python
 # or JavaScript?" is a choice, not a coding question, so choosing comes before code.
+# Small talk comes first: "hello" or "thanks!" is the whole message, with nothing to
+# answer, and the note for answers made her re-answer the last question instead.
 KIND_WORDS = (
+    ("small_talk", r"^\s*(hi|hello|hey|yo|hiya|thanks?|thank you|thx|ty|ok(ay)?|cool|nice|great|awesome|perfect|"
+                   r"good (morning|night|evening|afternoon)|bye|see (you|ya)|lol|haha|안녕\S*|고마워\S*|감사\S*|ㅋ+|ㅎ+|응|네|좋아\S*)"
+                   r"([\s,!.~]+[\w']+){0,3}[\s!.~]*$"),  # a few words at most, and never a question
     ("plan", r"\b(plan|itinerary|schedule|routine|timetable)\b|계획|일정"),
     ("decide", r"\bshould i\b|\bwhich (is|one|should)\b|\bbetter\b|\bvs\.?\b|\bor\b.*\?\s*$|추천|뭐가 (나아|좋아)"),
     ("how-to", r"^\s*how (do|can|should|to)\b|\bhow to\b|\bsteps?\b|방법|어떻게"),
@@ -50,6 +56,15 @@ STYLE = (
     "- No headings, tables, horizontal lines or emoji.{extra}\n"
     "- At most one short tip or warning, and only if it really matters.\n"
     "- Don't end with an offer or a question. Ask a question only if you can't answer without it.\n"
+    "- Keep it under {words} words, in the same language as the user."
+)
+# Small talk isn't a question: a greeting answered "the answer first, no greeting" came
+# out as a list of what she can do, and "thanks!" as the last answer all over again.
+SMALL_TALK_STYLE = (
+    "How to answer (Elaina's way):\n"
+    "- This is small talk, not a question. Reply as yourself in one or two warm, natural sentences.\n"
+    "- Don't answer an earlier question again, don't list what you can do, and don't explain how you answer.\n"
+    "- One short friendly question back is fine. No headings, lists or emoji.\n"
     "- Keep it under {words} words, in the same language as the user."
 )
 # Small models write points as loose lines unless told how each one starts, and
@@ -74,6 +89,16 @@ OPENER = re.compile(
     re.IGNORECASE,
 )
 QUOTE = re.compile(r"^\s*>\s?")  # "> Note:" shows as a stray mark
+# A whole line that only echoes the note on how to answer: "No special conditions are
+# needed for this answer.", "That's all it needs.", "Word count: 38". Dropped, since it
+# tells the user nothing. A line that merely starts with "No" waits to be whole first
+# (ECHO_START), so it can be checked; "No, the capital is Tokyo." then goes through.
+RULE_ECHO = re.compile(
+    r"^\s*\W*(?:(?:there (?:are|is) )?no (?:additional |special |extra |further |other |more )?"
+    r"(?:tips?|questions?|conditions?|lists?|points?|warnings?|offers?)\b[^.!?]{0,80}"
+    r"|that'?s all (?:it|this) needs|no list (?:is )?needed|word count:?\s*\d+|\(?(?:under|within) \d+ words\)?)"
+    r"\W*$", re.IGNORECASE)
+ECHO_START = re.compile(r"^\s*\W*(?:no |there (?:are|is) no|that'?s all|word count|\(?(?:under|within) \d)", re.IGNORECASE)
 HEADING = re.compile(r"^\s*#{1,6}\s+(.+?)\s*#*\s*$")
 RULE = re.compile(r"^\s*([-*_])(\s*\1){2,}\s*$")
 TABLE_ROW = re.compile(r"^\s*\|(.+)\|\s*$")
@@ -94,6 +119,8 @@ def guide(question: str, kind: str = "", before: str = "") -> str:
     `before` is her previous answer, which Shorter halves."""
     kind = kind if kind in BUDGETS else kind_of(question)
     words, points = BUDGETS[kind]
+    if kind == "small_talk":
+        return SMALL_TALK_STYLE.format(words=words)
     if kind == "shorter" and before:
         words = max(15, min(words, int(len(before.split()) * SHORTER_SHARE)))
     more = POINTS.format(points=points) if points else NO_POINTS
@@ -116,7 +143,7 @@ def tidy(chunks: Iterator[str]) -> Iterator[str]:
             if not line.strip():
                 return None  # the whole line was "Great question!"
             line = line[:1].upper() + line[1:]
-        if RULE.match(line):
+        if RULE.match(line) or RULE_ECHO.match(line):
             return None
         line = QUOTE.sub("", line, count=1)
         if heading := HEADING.match(line):
@@ -167,7 +194,7 @@ def tidy(chunks: Iterator[str]) -> Iterator[str]:
                 pending, started = line[:1].upper() + line[1:], True
         # An ordinary line streams as it comes, so the answer still appears word by word;
         # only a line that could turn out to be a heading, table or rule waits to be whole.
-        if pending and started and not table and (mid or SAFE_START.match(pending)):
+        if pending and started and not table and (mid or (SAFE_START.match(pending) and not ECHO_START.match(pending))):
             yield pending
             pending, mid, gap = "", True, False
     if mid:

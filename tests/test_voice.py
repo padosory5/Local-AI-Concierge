@@ -15,7 +15,8 @@ def test_the_kind_of_question_is_decided_by_code():
     assert voice.kind_of("What's the capital of Australia?") == "fact"
     assert voice.kind_of("What is an API?") == "explain"
     assert voice.kind_of("주말에 공부하는 방법 알려줘") == "how-to"
-    assert voice.kind_of("hey") == "chat"
+    assert voice.kind_of("hey") == "small_talk"
+    assert voice.kind_of("hey, can you help me with my CV?") == "chat"
 
 
 def test_each_kind_gets_its_own_word_budget():
@@ -104,3 +105,27 @@ def test_the_note_is_chosen_from_the_question_not_from_an_added_file():
     list(chat.send("What does this say?"))
     assert own.sent[-1]["content"].endswith(voice.guide("What does this say?"))
     chat.close()
+
+
+def test_small_talk_gets_a_note_of_its_own_and_no_answer_rules():
+    for words in ("hello", "Thanks!", "ok cool", "good morning Elaina", "안녕!", "고마워요"):
+        assert voice.kind_of(words) == "small_talk", words
+    note = voice.guide("thanks!")
+    assert "small talk" in note and "Don't answer an earlier question again" in note
+    assert "Start with the answer itself" not in note
+    assert voice.kind_of("thanks for that, but what's the capital of Peru?") != "small_talk"
+
+
+def test_lines_that_only_echo_the_answer_rules_are_dropped():
+    said = "".join(voice.tidy(iter([
+        "The capital of Japan is Tokyo.\n",
+        "There are no additional tips or questions needed for this answer.\n",
+        "No special conditions are needed for this answer.\n",
+        "Word count: 12\n",
+    ])))
+    assert said.strip() == "The capital of Japan is Tokyo."
+
+
+def test_a_real_answer_starting_with_no_still_goes_through():
+    said = "".join(voice.tidy(iter(["No, the capital of Australia is Canberra, not Sydney.\n", "It has been since 1913.\n"])))
+    assert said == "No, the capital of Australia is Canberra, not Sydney.\nIt has been since 1913.\n"

@@ -236,8 +236,11 @@ the user's plan, or one with a key (`concierge/voice.py`). The answer comes firs
 one or two plain sentences, then a few short points only if they help, at most one
 tip, and no greeting, headings, tables or closing offer. Two halves, because a
 model's habits win over a polite request. Code picks the kind of question
-(`kind_of`: fact, chat, explain, decide, how-to, code, plan) and its word and point
-budget (`BUDGETS`), and `guide` goes with that one question only, so her memory of
+(`kind_of`: small_talk, fact, chat, explain, decide, how-to, code, plan) and its word and point
+budget (`BUDGETS`). Small talk ("hello", "thanks!") gets a note of its own (`SMALL_TALK_STYLE`):
+told to answer first with no greeting, her model listed what it can do, or answered the
+last question again. A whole line that only echoes the note ("No special conditions are
+needed for this answer.", `RULE_ECHO`) is dropped by `tidy`, and `guide` goes with that one question only, so her memory of
 the chat keeps just the words. Then `tidy` shapes every reply as it streams: it
 drops "Great question!", turns headings into bold lines, tables into short lines,
 takes out horizontal lines and quote marks and closes up gaps, never touching code.
@@ -247,7 +250,8 @@ answer (`ANSWERED_SENTENCES`); a question she needs to ask stays. Every model tr
 seven questions asked of her own model, GPT through Codex and Claude through Claude
 Code.
 
-Under her newest answer, Shorter and More detail (`FOLLOW_UPS`) skip the router and
+Under her newest answer, on a row of pills of their own below the facts line, Ask X
+instead (Auto), Shorter and More detail. Shorter and More detail (`FOLLOW_UPS`) skip the router and
 set the answer's kind in code. Keys are drawn as keys (`keys` in `app.js`). A photo of a
 place she names goes beside its line (`pictures.py`: Wikipedia pages with map
 coordinates whose title is the name she wrote). Nothing is looked up until the user says
@@ -599,7 +603,7 @@ variables inside a function do not need listing.
 | `concierge/hardware.py` | Engine | `GB`, `MIN_USABLE_VRAM_GB`, `GPU`, `HardwareReport`, `detect`, `parse_nvidia_smi`, `describe` |
 | `concierge/catalog.py` | Engine | `CATALOG_PATH`, `GPU_SHARE`, `APPLE_SHARE`, `CPU_SHARE`, `CPU_MAX_GB`, `GPU_HEADROOM_GB`, `RAM_HEADROOM_GB`, `DISK_HEADROOM_GB`, `CPU_HELPER_SHARE`, `ModelEntry`, `HelperModel`, `Recommendation`, `load_catalog`, `load_helpers`, `helper_room`, `pick_helper`, `find_model`, `memory_budget`, `recommend`; models in `models.yaml` (`models`, `helpers`) |
 | `concierge/activity.py` | Engine | `ANSWERED`, `EXPLAINED`, `TRANSLATED`, `POLISHED`, `SUMMED_UP`, `HELPED`, `SORTED`, `READ`, `KEPT_DAYS`, `WEEK_DAYS`, `record`, `this_week` |
-| `concierge/voice.py` | Engine | `BUDGETS`, `KIND_WORDS`, `SHORTER_SHARE`, `STYLE`, `POINTS`, `NO_POINTS`, `EXTRA`, `OPENER`, `QUOTE`, `HEADING`, `RULE`, `TABLE_ROW`, `TABLE_LINE`, `SAFE_START`, `FIRST_SENTENCE`, `kind_of`, `guide`, `tidy` |
+| `concierge/voice.py` | Engine | `BUDGETS`, `KIND_WORDS`, `SHORTER_SHARE`, `STYLE`, `SMALL_TALK_STYLE`, `POINTS`, `NO_POINTS`, `EXTRA`, `OPENER`, `QUOTE`, `RULE_ECHO`, `ECHO_START`, `HEADING`, `RULE`, `TABLE_ROW`, `TABLE_LINE`, `SAFE_START`, `FIRST_SENTENCE`, `kind_of`, `guide`, `tidy` |
 | `concierge/pictures.py` | Engine | `API`, `USER_AGENT`, `TIMEOUT`, `MAX_PICTURES`, `MAX_LOOKUPS`, `PICTURE_PIXELS`, `NO_PICTURES`, `BOLD`, `PART`, `BETWEEN`, `PLACE_WORDS`, `names_in`, `same_place`, `place`, `worth_asking`, `for_answer` |
 | `concierge/safety.py` | Engine | `CRISIS`, `HEALTH`, `MONEY`, `CRISIS_REPLY`, `CRISIS_REPLY_KO`, `HEALTH_NOTE`, `MONEY_NOTE`, `crisis`, `crisis_reply`, `caution` |
 | `concierge/elaina.py` | Engine | `ELAINA_MODEL`, `PERSONA_PATH`, `NUM_CTX`, `HISTORY_CHARS`, `MAX_THOUGHT_CHARS`, `UNLOAD_ON_EXIT`, `KEEP_ALIVE`, `HEARTBEAT_SECONDS`, `CLOSING_FILLER`, `ANSWERED_SENTENCES`, `without_closing_filler`, `system_prompt`, `configure`, `needs_configure`, `ElainaChat` (`kind`), `data_dir`, `load_state`, `save_state` |

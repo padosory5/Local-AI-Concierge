@@ -183,7 +183,8 @@ class FakeEngine:
 
         def again():
             yield Thinking(f"Asking {cloud} instead.")
-            yield from self._say(f"Practice: this is where {cloud} would answer.", self._practice_done(False, cloud))
+            self.answered = f"Practice: this is where {cloud} would answer."  # so More detail can follow it
+            yield from self._say(self.answered, self._practice_done(False, cloud))
         yield from self.book.record(f"Ask {cloud} instead", again())
 
     def _practice_done(self, here: bool, by: str, instead: str = "") -> ElainaDone:

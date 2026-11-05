@@ -54,7 +54,7 @@ window.modelPage = (() => {
     $("privacy").textContent = privacy();
     $("side-model").textContent = !now ? "Elaina · on this computer" : now.here ? `${now.name} on this computer`
       : now.auto ? `Auto: ${models.own} or ${now.cloud.name}` : `${now.name}, ${now.company}`;
-    app.setModelName(label());
+    app.setModelName(label(), models.own || "");
     drawUsage();
   }
 

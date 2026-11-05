@@ -2188,11 +2188,24 @@ body.side-over .side {
   line-height: 1.3;
 }
 
-/* Under the newest answer: Shorter, More detail, and the one question about photos */
+/* Under the newest answer, on a row of their own: Ask X instead, Shorter, More detail,
+   and the one question about photos. The facts line above never breaks inside an item. */
 
 .follow-ups {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+  margin-top: 8px;
+}
+
+.follow-instead {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.follow-instead:hover {
+  border-color: var(--accent-hover);
+  color: var(--accent-hover);
 }
 
 .follow-up {
@@ -2222,12 +2235,17 @@ body.side-over .side {
 
 .meta {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   align-items: center;
   min-height: 1.5em;
   margin-top: 5px;
   font-size: 0.8rem;
   color: var(--faint);
+}
+
+.meta > * {
+  white-space: nowrap;
 }
 
 .meta-copy {
@@ -2273,18 +2291,6 @@ body.side-over .side {
 
 .meta-saved {
   color: var(--here-blue);
-}
-
-/* Auto kept this answer here: always shown, unlike Copy, so people find it. */
-.meta-copy.meta-instead {
-  margin-left: 4px;
-  color: var(--accent);
-  opacity: 1;
-}
-
-.meta-copy.meta-instead:hover {
-  color: var(--accent-hover);
-  text-decoration: underline;
 }
 
 .sent-files {
