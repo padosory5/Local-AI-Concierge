@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
 
-from . import activity, elaina, hardware, history, portrait, safety, signs
+from . import activity, elaina, hardware, history, pictures, portrait, safety, signs
 from .agents import community, runner, store
 from .agents.blueprint import load_blueprints
 from .agents.builder import AgentBuilder, say
@@ -66,6 +66,9 @@ MEASURED_JOBS = (
      "The library opens at nine on weekdays and at ten on weekends. Books can be borrowed for three weeks, "
      "and you can renew them online if nobody else is waiting for them."),
 )
+# The two buttons under an answer, and what each says in the chat. Code knows what they
+# mean, so they skip the router, where "shorter" could change one of the user's agents.
+FOLLOW_UPS = {"shorter": "Shorter, please.", "more": "Tell me more."}
 
 
 class ElainaEngine:
@@ -180,6 +183,49 @@ class ElainaEngine:
         attached = read_attachments(paths)
         said = "\n".join(filter(None, [text, f"Attached: {', '.join(attached.names)}"]))
         yield from self._full_lists(self.book.record(said, self._with_attachments(text, attached, think)))
+
+    def follow_up(self, which: str, think: bool = False) -> Iterator[Event]:
+        """Shorter or More detail, clicked under her last answer (FOLLOW_UPS)."""
+        if self.chat is None:
+            yield Error("Elaina is not running. Restart the app after setting her up.")
+            return
+        if which not in FOLLOW_UPS:
+            return
+        self.deleting = None
+        self.fixing = None
+        self.chat.kind = which
+        yield from self._full_lists(self.book.record(FOLLOW_UPS[which], self._follow_up(which, think)))
+
+    def _follow_up(self, which: str, think: bool) -> Iterator[Event]:
+        try:
+            yield Thinking("You asked for it shorter, so I'll keep only what matters most." if which == "shorter"
+                           else "You asked for more, so I'll go further without repeating myself.")
+            yield from self._reply(FOLLOW_UPS[which], think)
+        except OllamaError as exc:
+            yield Error(str(exc))
+
+    def after_answer(self, reply: str) -> dict:
+        """What can go under a reply the page just showed. Only her answer in the chat
+        gets Shorter and More detail, not a setup's message or a switch's note; and only
+        a plan that names places gets the one-time question about photos."""
+        if not self._answered(reply):
+            return {"follow_ups": False, "places": False}
+        return {"follow_ups": True, "places": pictures.worth_asking(self._question(), self.chat.history[-1]["content"])}
+
+    def pictures(self, reply: str) -> list[dict]:
+        """Photos of the places her answer names, for beside their lines (pictures.py).
+        The page asks only once the user said yes to photos."""
+        if not self._answered(reply):
+            return []
+        return pictures.for_answer(self._question(), self.chat.history[-1]["content"])
+
+    def _answered(self, reply: str) -> bool:
+        history = self.chat.history if self.chat else []
+        return bool(reply.strip() and history and history[-1]["role"] == "assistant"
+                    and reply.strip().startswith(history[-1]["content"]))
+
+    def _question(self) -> str:
+        return self.chat.history[-2]["content"] if len(self.chat.history) > 1 else ""
 
     def set_agent(self, name: str, on: bool) -> Iterator[Event]:
         yield from self.book.record("", self._toggle(name, on=on))

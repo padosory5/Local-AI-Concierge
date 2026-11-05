@@ -20,6 +20,7 @@ from pathlib import Path
 from .catalog import ModelEntry, Recommendation
 from .hardware import HardwareReport, describe
 from .ollama import Ollama
+from . import voice
 
 ELAINA_MODEL = "elaina"
 PERSONA_PATH = Path(__file__).parent / "persona" / "elaina_en.txt"
@@ -78,30 +79,39 @@ def needs_configure(ollama: Ollama, base: ModelEntry, rec: Recommendation, repor
 # "Let me know if you need anything else!", "Feel free to ask...".
 CLOSING_FILLER = re.compile(
     r"^\s*(let me know|just let me know|feel free|if you need|if you have any|anything else|"
-    r"is there anything|hope (this|that) helps|happy to help|더 필요한|궁금한 (점|게)|언제든)",
+    r"is there anything|hope (this|that) helps|happy to help|would you like|do you want me to|want me to|shall i|"
+    r"더 필요한|궁금한 (점|게)|언제든)",
     re.IGNORECASE,
 )
-_SENTENCE_END = re.compile(r"(?<=[.!?。])\s+")
+# A line ends a sentence too: list points often have no full stop.
+_SENTENCE_END = re.compile(r"(?<=[.!?。？])\s+|\n")
+# A question tacked on after a whole answer ("Which area feels right to you?") is an
+# offer in disguise. After fewer sentences than this it's kept: she may need to know.
+ANSWERED_SENTENCES = 3
+
+
+def _closing(sentence: str, said: int) -> bool:
+    return bool(CLOSING_FILLER.match(sentence)) or (said >= ANSWERED_SENTENCES and sentence.rstrip().endswith(("?", "？")))
 
 
 def without_closing_filler(chunks: Iterator[str]) -> Iterator[str]:
     """Pass a streamed reply through sentence by sentence, dropping filler
     sentences at its very end. A filler sentence in the middle is kept: it is
     held back only until it is clear more text follows."""
-    pending, held, said = "", [], False
+    pending, held, said = "", [], 0
     for chunk in chunks:
         pending += chunk
         while match := _SENTENCE_END.search(pending):
             sentence, pending = pending[:match.end()], pending[match.end():]
-            if CLOSING_FILLER.match(sentence):
+            if _closing(sentence, said):
                 held.append(sentence)
                 continue
             if held:
                 yield "".join(held)
                 held = []
             yield sentence
-            said = True
-    if pending.strip() and not CLOSING_FILLER.match(pending):
+            said += 1
+    if pending.strip() and not _closing(pending, said):
         yield "".join(held) + pending
     elif not said and (held or pending.strip()):
         yield (held or [pending])[0]  # all filler ("Happy to help!"): never answer with nothing
@@ -119,6 +129,8 @@ class ElainaChat:
         # which makes a chat feel slow. Elaina answers directly.
         self.think = False if "thinking" in ollama.capabilities(model) else None
         self._context, self._images = "", []  # added with the + button, for the next message
+        self._asked = ""  # the user's own words this time, without any file added to them
+        self.kind = ""  # the kind of answer, when code already knows it (voice.BUDGETS); used once
         self.about = ""  # what she knows about the user and they kept (portrait.about_you)
         self._persona = None
         self._closed = threading.Event()
@@ -133,6 +145,7 @@ class ElainaChat:
 
     def _hear(self, text: str) -> None:
         context, self._context = self._context, ""
+        self._asked = text
         self.history.append({"role": "user", "content": f"{context}\n\n{text}" if context else text})
 
     def _messages(self) -> list[dict]:
@@ -141,6 +154,12 @@ class ElainaChat:
         images, self._images = self._images, []
         if images:
             messages[-1] = {**messages[-1], "images": images}
+        # How to answer goes with this one question only, so every model, hers or a
+        # cloud one, answers her way, and her memory of the chat keeps just the words.
+        kind, self.kind = self.kind, ""
+        before = next((m["content"] for m in reversed(self.history[:-1]) if m["role"] == "assistant"), "")
+        note = voice.guide(self._asked, kind, before)
+        messages[-1] = {**messages[-1], "content": f"{messages[-1]['content']}\n\n{note}"}
         if self.about and self.talker is self.ollama and self.persona():
             # Only her own model on this computer reads about the user. A system
             # message here takes the place of the one built into her model, so
@@ -162,7 +181,7 @@ class ElainaChat:
         reply = []
         try:
             chunks = self.talker.chat(self.model, self._messages(), think=self.think, keep_alive=KEEP_ALIVE)
-            for piece in without_closing_filler(chunks):
+            for piece in voice.tidy(without_closing_filler(chunks)):
                 reply.append(piece)
                 yield piece
         finally:
@@ -206,14 +225,14 @@ class ElainaChat:
                     if thought > MAX_THOUGHT_CHARS:
                         break
                     continue
-                for out in without_closing_filler(itertools.chain([piece], rest_of_reply())):
+                for out in voice.tidy(without_closing_filler(itertools.chain([piece], rest_of_reply()))):
                     reply.append(out)
                     yield "text", out
                 break
             parts.close()
             if not reply:
                 chunks = self.talker.chat(self.model, messages, think=self.think, keep_alive=KEEP_ALIVE)
-                for out in without_closing_filler(chunks):
+                for out in voice.tidy(without_closing_filler(chunks)):
                     reply.append(out)
                     yield "text", out
         finally:
