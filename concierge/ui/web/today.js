@@ -694,7 +694,7 @@ window.today = (() => {
   ];
   const NEVER = [
     ["Take pictures of your screen", "Only you can, with the + button."],
-    ["Send anything off this computer without you choosing to", "Only when you pick a cloud model, and it's counted below."],
+    ["Send anything off this computer without you choosing to", "Only when you pick a cloud model or turn on photos of places, and it's counted below."],
     ["Delete your files", "I only move them, and Undo puts them back for a week."],
     ["Learn from your chats for anyone else", "Everything stays in your own folder on this computer."],
   ];
@@ -717,8 +717,23 @@ window.today = (() => {
     const sent = data.sent || [];
     const companies = [...new Set(sent.map((item) => item.company))];
     const left = sent.length
-      ? `Words left this computer ${sent.length} time${sent.length === 1 ? "" : "s"} in the last 7 days, to ${companies.join(", ")}, when you chose a cloud model.`
+      ? `Words left this computer ${sent.length} time${sent.length === 1 ? "" : "s"} in the last 7 days, to ${companies.join(", ")}, each time because you chose it.`
       : "Nothing left this computer in the last 7 days.";
+    // Photos of places: the page keeps the choice (app.js), so it's read and set here.
+    let photos = null;
+    try {
+      photos = localStorage.getItem("photos");
+    } catch {}
+    const photoToggle = button(`toggle ${photos === "on" ? "on" : ""}`, "", () => {
+      try {
+        localStorage.setItem("photos", photos === "on" ? "off" : "on");
+      } catch {}
+      drawPrivacy();
+    });
+    photoToggle.append(el("span", "track"), photos === "on" ? "On" : "Off");
+    photoToggle.setAttribute("aria-pressed", String(photos === "on"));
+    const photoRow = el("div", "noticed", el("div", "ask-words", el("b", "", "Photos of places"),
+                        el("span", "", "When my answer names a place, I show its photo from Wikipedia. Only the place's name is looked up, never what you typed.")), photoToggle);
     $("view-privacy").replaceChildren(
       el("h1", "", "What I see"),
       el("p", "sub", "Everything I can look at, and what I never do."),
@@ -728,6 +743,7 @@ window.today = (() => {
          el("div", "", el("h2", "", "What I never do"), ...list(NEVER, false))),
       el("h2", "", "Leaving this computer"),
       el("div", "nothing", left),
+      photoRow,
       el("h2", "", "How you answered my questions"),
       ...(answered.length ? answered : [el("div", "nothing", "I haven't asked anything yet.")]),
       el("p", "hint-line", "These counts stay on this computer. They're how I learn which questions aren't worth asking."),
