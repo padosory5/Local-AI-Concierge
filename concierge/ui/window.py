@@ -383,6 +383,9 @@ class TodayBridge(WatchBridge):
     def check_accounts(self) -> dict:
         return self._hub.menu("check_accounts", default={})
 
+    def use_account(self, app: str, on: bool) -> dict:
+        return self._hub.menu("use_account", app, bool(on), default={})
+
     def more_models(self, provider: str) -> list[dict]:
         return self._hub.menu("more", provider, default=[])
 

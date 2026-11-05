@@ -3060,6 +3060,107 @@ body[data-view="models"] .room-tabs {
   }
 }
 
+/* Models › Accounts: connect with what people already have, the way other AI apps do. */
+.accounts-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.accounts-head h2 {
+  margin: 0 0 6px;
+}
+
+.link-button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.back-link {
+  margin-bottom: 14px;
+  border-bottom: 0;
+  color: var(--muted);
+}
+
+.account-label {
+  margin: 26px 0 6px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+}
+
+.account-row.clickable {
+  cursor: pointer;
+}
+
+.account-row.clickable:hover,
+.account-card {
+  background: var(--panel);
+}
+
+.account-card:hover {
+  background: var(--raised);
+}
+
+.account-words {
+  display: grid;
+  gap: 4px;
+}
+
+.account-words > span {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.account-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.05rem;
+}
+
+.account-badge {
+  padding: 2px 9px;
+  border-radius: 7px;
+  background: var(--raised);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.account-go {
+  color: var(--muted);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.account-note {
+  color: var(--accent);
+  font-size: 0.92rem;
+}
+
+.account-note:empty {
+  display: none;
+}
+
 /* Set up for someone else: bigger words everywhere. */
 :root:has(body.simple) {
   font-size: clamp(19px, 17px + 0.2vw, 21px);

@@ -119,7 +119,7 @@ class ModelMenu:
                 host = _host(found["url"])
                 return {"provider": CUSTOM, "model": model, "name": found["name"], "company": host,
                         "here": host in LOOPBACK}
-        if provider in apps.APPS:
+        if provider in apps.APPS and provider not in self._state("hidden_accounts", []):
             status = self.accounts.status(provider)
             found = next((item for item in status["models"] if item["id"] == model), None)
             if found:
@@ -180,7 +180,7 @@ class ModelMenu:
                    "hidden": f"{CUSTOM}/{item['id']}" in hidden} for item in self._custom()]
         known = find_model(own) if own else None
         return {"own": known.name if known else own or "Elaina's model", "current": self.chosen(),
-                "local": local, "accounts": self.accounts.overview(), "providers": companies, "custom": custom}
+                "local": local, "accounts": self._accounts_shown(), "providers": companies, "custom": custom}
 
     def hide(self, provider: str, model: str, hidden: bool) -> dict:
         """Edit models: what shows in the menu. Nothing is removed by this."""
@@ -220,6 +220,18 @@ class ModelMenu:
     def install_account(self, app: str) -> dict:
         self.accounts.install(app)
         return self.info()
+
+    def use_account(self, app: str, on: bool) -> dict:
+        """Stop or start using a plan here. It doesn't sign anyone out of Codex or Claude
+        Code, which people may use on their own."""
+        rest = [item for item in self._state("hidden_accounts", []) if item != app]
+        self._store("hidden_accounts", rest + ([] if on else [app]))
+        self.changed()
+        return self.info()
+
+    def _accounts_shown(self) -> list[dict]:
+        hidden = set(self._state("hidden_accounts", []))
+        return [{**status, "hidden": status["id"] in hidden} for status in self.accounts.overview()]
 
     def check_accounts(self) -> dict:
         """Look again, after the user signed in or installed something."""

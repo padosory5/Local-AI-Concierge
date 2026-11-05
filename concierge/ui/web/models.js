@@ -14,6 +14,7 @@ window.modelPage = (() => {
 
   let models = {}; // what Python says is on offer
   let tab = "discover";
+  let keysOpen = false; // "Have an API key instead?" was pressed
   let sort = "downloads";
   let kind = "";
   let words = "";
@@ -120,7 +121,7 @@ window.modelPage = (() => {
     const foot = el("div", "pick-foot",
                     button("pick-link", "Discover", () => open("discover")),
                     button("pick-link", "Manage models", () => open("local")),
-                    button("pick-link", "Use an API key", () => open("api")));
+                    button("pick-link", "Use an API key", () => open("keys")));
     $("model-menu").replaceChildren(list, foot);
   }
 
@@ -348,36 +349,6 @@ window.modelPage = (() => {
     results.replaceChildren(el("p", "sub", "Free, and everything stays on this computer. The switch shows a model in the menu, or hides it."), ...rows, ...waiting, addLocal());
   }
 
-  // A ChatGPT or Claude plan, used through the company's own app (accounts.py).
-  function planRow(plan) {
-    const row = el("div", "cloud-row", el("div", "cloud-name", `${plan.name} plan`, el("span", "cloud-company", `through ${plan.app}`)));
-    row.id = `plan-${plan.id}`;
-    const note = el("div", "cloud-note");
-    const check = async () => {
-      note.textContent = "Checking...";
-      await load(await pywebview.api.check_accounts());
-      drawTab();
-    };
-    if (plan.signed_in) {
-      row.append(el("span", "cloud-saved", "Signed in"));
-    } else if (plan.installed) {
-      row.append(button("solid-button", "Sign in", async () => {
-        const reply = await pywebview.api.sign_in_account(plan.id);
-        if (reply.error) note.textContent = reply.error;
-        else note.replaceChildren(`${plan.sign_in}. `, button("quiet-button", "I've signed in", check));
-      }));
-    } else {
-      row.append(button("line-button", `Get ${plan.app}`, async () => {
-        await pywebview.api.install_account(plan.id);
-        note.replaceChildren(plan.id === "claude_code" ? "It's installing in the window that opened. When it's done, " : "Get it from OpenAI's page. When it's installed, ",
-                             button("quiet-button", "Check again", check));
-      }));
-    }
-    const lines = plan.signed_in ? plan.models.map((model) => el("div", "model-line", el("span", "", model.name)))
-                                 : [el("div", "model-line", el("span", "", plan.installed ? plan.sign_in : `Needs ${plan.app}, ${plan.name}'s own app`))];
-    return el("div", "cloud-item", row, note, el("div", "model-lines", ...lines));
-  }
-
   function keyRow(company) {
     const row = el("div", "cloud-row", el("div", "cloud-name", company.name, el("span", "cloud-company", company.note || company.company)));
     const note = el("div", "cloud-note");
@@ -447,7 +418,74 @@ window.modelPage = (() => {
               el("p", "hint-line", "For any service that talks the way OpenAI's does, including programs on this computer like LM Studio."), form, note);
   }
 
-  function drawApi() {
+  // One account on the Accounts page: a plan, used through the company's own app (accounts.py).
+  function accountRow(plan) {
+    const connected = plan.signed_in && !plan.hidden;
+    const note = el("div", "account-note");
+    const check = async () => {
+      note.textContent = "Checking...";
+      await load(await pywebview.api.check_accounts());
+      drawTab();
+    };
+    const about = connected ? `Through ${plan.app}. Its models are in the menu beside the chat box.`
+      : plan.signed_in ? `You're signed in to ${plan.app}. Click to use it here again.`
+      : plan.installed ? `${plan.sign_in}, through ${plan.app}`
+      : `Needs ${plan.app}, ${plan.name}'s own app. Click to get it, then sign in.`;
+    const title = el("div", "account-title", el("b", "", `${plan.name} account`),
+                     connected ? el("span", "account-badge", "✓ Connected") : "");
+    let act = el("span", "account-go", "›");
+    if (connected) {
+      act = button("item-delete", "×", async () => {
+        await load(await pywebview.api.use_account(plan.id, false));
+        drawTab();
+      });
+      act.title = `Stop using it in Elaina. You stay signed in to ${plan.app}.`;
+      act.setAttribute("aria-label", act.title);
+    }
+    const row = el("div", `account-row ${connected ? "" : "clickable"}`, el("div", "account-words", title, el("span", "", about), note), act);
+    row.id = `plan-${plan.id}`;
+    if (!connected) {
+      row.addEventListener("click", async (event) => {
+        if (event.target.closest("button")) return;
+        if (plan.signed_in) {
+          await load(await pywebview.api.use_account(plan.id, true));
+          drawTab();
+        } else if (!plan.installed) {
+          await pywebview.api.install_account(plan.id);
+          note.replaceChildren(plan.id === "claude_code" ? "It's installing in the window that opened. When it's done, " : "Get it from OpenAI's page. When it's installed, ",
+                               button("quiet-button", "check again", check));
+        } else {
+          const reply = await pywebview.api.sign_in_account(plan.id);
+          if (reply.error) note.textContent = reply.error;
+          else note.replaceChildren("Finish signing in in your browser, then ", button("quiet-button", "I've signed in", check));
+        }
+      });
+    }
+    return row;
+  }
+
+  // Accounts, the way people already know it: connect with what they have, no keys.
+  function accountsPage() {
+    const plans = models.accounts || [];
+    const connected = plans.filter((plan) => plan.signed_in && !plan.hidden);
+    const others = plans.filter((plan) => !(plan.signed_in && !plan.hidden));
+    const local = el("div", "account-row account-card clickable",
+                     el("div", "account-words", el("div", "account-title", el("b", "", "Run models locally")),
+                        el("span", "", "No account needed: download a model and run it on this computer")),
+                     el("span", "account-go", "›"));
+    local.addEventListener("click", () => open("discover"));
+    results.replaceChildren(
+      el("div", "accounts-head",
+         el("div", "", el("h2", "", "Connect an account"),
+            el("p", "sub", "Sign in with your ChatGPT or Claude account: no API key to copy. Elaina opens the sign-in for you.")),
+         button("link-button", "Have an API key instead?", () => open("keys"))),
+      local,
+      ...(connected.length ? [el("div", "account-label", "Connected"), ...connected.map(accountRow)] : []),
+      ...(others.length ? [el("div", "account-label", connected.length ? "Other accounts" : "Accounts"), ...others.map(accountRow)] : []));
+  }
+
+  // Only for people who already pay a company for its API.
+  function keysPage() {
     const custom = (models.custom || []).map((item) => {
       const remove = button("item-delete", "×", async () => {
         await load(await pywebview.api.remove_custom_model(item.id));
@@ -459,10 +497,18 @@ window.modelPage = (() => {
                                         el("span", "does", `${item.model} at ${item.url}`))),
                 showSwitch("custom", item.id, item.hidden, item.name), remove);
     });
-    results.replaceChildren(el("p", "hint-line", "Sign in with a ChatGPT or Claude account and its models are in the menu beside the chat box: no key needed. What you say to Elaina then goes to that company."),
-                            el("h2", "", "Your plans"), el("div", "cloud-list", ...(models.accounts || []).map(planRow)),
-                            ...(custom.length ? [el("h2", "", "Your own"), ...custom] : []),
-                            el("h2", "", "With an API key (optional)"), el("p", "sub", "Only if you already pay a company for its API. Most people never need this."), el("div", "cloud-list", ...(models.providers || []).map(keyRow)), addCustom());
+    results.replaceChildren(
+      button("link-button back-link", "‹ Accounts", () => open("api")),
+      el("h2", "", "API keys"),
+      el("p", "sub", "Only if you already pay a company for its API. Paste the key, and its models join the menu beside the chat box. Keys are kept in Windows' own password store."),
+      el("div", "cloud-list", ...(models.providers || []).map(keyRow)),
+      ...(custom.length ? [el("h2", "", "Your own"), ...custom] : []),
+      addCustom());
+  }
+
+  function drawApi() {
+    if (keysOpen) keysPage();
+    else accountsPage();
   }
 
   // ------------------------------------------------------------------ the page
@@ -505,7 +551,8 @@ window.modelPage = (() => {
 
   // Opens the page at a tab, and puts the cursor in a box on it if asked.
   function open(which, focus) {
-    if (which) tab = which;
+    keysOpen = which === "keys";
+    if (which) tab = which === "keys" ? "api" : which;
     today.closeMenus();
     if (document.body.dataset.view !== "models") {
       today.show("models"); // which draws the page, by coming back here

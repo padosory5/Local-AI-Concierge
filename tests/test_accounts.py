@@ -151,3 +151,14 @@ def test_a_plan_picked_in_the_menu_answers_and_falls_back_when_signed_out():
     assert menu.pick("codex", "practice-1")["current"]["name"] == "ChatGPT (practice)"
     assert "Practice" in "".join(menu.talker("You are Elaina.").chat("x", []))
     assert isinstance(ModelMenu(menu.ollama, menu.hardware, load=lambda: {}, save=lambda s: None).accounts, Accounts)
+
+
+def test_removing_a_plan_only_stops_elaina_using_it():
+    menu = FakeEngine(delay=0).menu
+    menu.sign_in_account("claude_code")
+    menu.pick("claude_code", "practice-1")
+    info = menu.use_account("claude_code", False)
+    assert info["current"] is None  # back to her own model
+    assert next(plan for plan in info["accounts"] if plan["id"] == "claude_code")["hidden"] is True
+    assert "claude_code" in menu.accounts.signed  # still signed in to the app itself
+    assert menu.use_account("claude_code", True)["current"]["name"] == "Claude (practice)"
