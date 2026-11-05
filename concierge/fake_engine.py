@@ -27,7 +27,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import asdict
 
-from . import hardware
+from . import hardware, savings
 from .agents import community
 from .agents.recipe import CUSTOM, WHILE_ON, describe
 from .agents.starters import asks_for, load_starters
@@ -118,6 +118,7 @@ class FakeEngine:
         self.waiting_for: str | None = None  # which typed answer we expect next
         self.deleting: str | None = None
         self.answered = ""  # the last plain chat reply, which Shorter and More detail can follow
+        self.saved: dict | None = None  # practice: a job kept here although a cloud model is picked
         self.book = ChatBook(None)
         self.settings: dict = {"base_model": "qwen3.5:4b"}  # practice only: nothing touches the real ones
         self.menu = ModelMenu(PracticeOllama(), lambda: (hardware.detect(), 3.0), load=lambda: dict(self.settings),
@@ -146,6 +147,7 @@ class FakeEngine:
 
     def send(self, text: str, think: bool = False) -> Iterator[Event]:
         self.answered = ""
+        self.saved = None
 
         def with_thinking():
             if think:
@@ -158,17 +160,29 @@ class FakeEngine:
 
     def choose(self, id: str, choice: str) -> Iterator[Event]:
         self.answered = ""
+        self.saved = None
         yield from self.book.record(choice, self._choice(id, choice))
 
     def follow_up(self, which: str, think: bool = False) -> Iterator[Event]:
         if which not in FOLLOW_UPS:
             return
-        self.answered = ("Practice: the short version would come here." if which == "shorter"
-                         else "Practice: more detail would come here, going further than before.")
-        yield from self.book.record(FOLLOW_UPS[which], self._say(self.answered))
+        if which == "cloud":
+            if self.saved is None:
+                return
+            self.answered = f"Practice: the answer from {self.saved['model']} would come here."
+            self.saved = None
+        else:
+            self.answered = ("Practice: the short version would come here." if which == "shorter"
+                             else "Practice: more detail would come here, going further than before.")
+        yield from self.book.record(self.follow_up_words(which), self._say(self.answered))
+
+    def follow_up_words(self, which: str) -> str:
+        picked = self.menu.chosen()
+        return FOLLOW_UPS.get(which, "").format(model=picked["name"] if picked else "the model I picked")
 
     def after_answer(self, reply: str) -> dict:
-        return {"follow_ups": bool(self.answered) and reply.strip() == self.answered, "places": False}
+        answered = bool(self.answered) and reply.strip() == self.answered
+        return {"follow_ups": answered, "places": False, "saved": self.saved if answered else None}
 
     def pictures(self, reply: str) -> list[dict]:
         return []  # the practice app looks nothing up
@@ -236,7 +250,7 @@ class FakeEngine:
         yield self._agent_list()
 
     def activity(self) -> dict[str, int]:
-        return {"explained": 34, "polished": 5, "translated": 12, "sorted": 120, "answered": 9}
+        return {"explained": 34, "polished": 5, "translated": 12, "sorted": 120, "answered": 9, "saved": 12400}
 
     # Getting to know the user: a made-up portrait. Nothing is read or kept.
 
@@ -343,6 +357,12 @@ class FakeEngine:
             else:
                 yield from self._say(f"{starter.name} is ready. Use its switch to turn it on.")
             yield self._agent_list()
+        elif (job := savings.local_job(text)) and (picked := self.menu.chosen()) and not picked["here"]:
+            # A cloud model is picked, but this job stays here: the saved line and its button.
+            self.answered = (f"Practice: I'd {savings.JOB_WORDS[job]} myself, right here, and "
+                             f"{picked['name']} would stay out of it.")
+            self.saved = {"tokens": 640, "model": picked["name"]}
+            yield from self._say(self.answered)
         elif any(word in lowered for word in ("translate", "shortcut", "screenshot", "idea")):
             yield IdeaCard(
                 "idea", "Highlight translator",

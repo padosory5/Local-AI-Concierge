@@ -343,7 +343,9 @@ class TodayBridge(WatchBridge):
 
     def follow_up(self, which: str, think: bool = False) -> None:
         if which in FOLLOW_UPS:
-            self._hub.run(self, "follow_up", which, bool(think), user=FOLLOW_UPS[which])
+            # The words the user's click stands for; "Ask {model} instead" needs the model's name.
+            words = self._hub.ask("follow_up_words", which, default=FOLLOW_UPS[which])
+            self._hub.run(self, "follow_up", which, bool(think), user=words)
 
     def after_answer(self, reply: str) -> dict:
         return self._hub.ask("after_answer", reply, default={}) or {}

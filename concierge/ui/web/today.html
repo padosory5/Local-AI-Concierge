@@ -157,8 +157,11 @@
     </form>
   </main>
 
-  <!-- today.js first: app.js may start drawing the moment it runs. -->
+  <!-- today.js first, then the pages that draw from it; app.js last, because it may start drawing the moment it runs. -->
   <script src="today.js"></script>
+  <script src="help.js"></script>
+  <script src="about.js"></script>
+  <script src="room.js"></script>
   <script src="discover.js"></script>
   <script src="models.js"></script>
   <script src="app.js"></script>

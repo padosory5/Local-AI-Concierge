@@ -2210,7 +2210,8 @@ body.side-over .side {
   color: var(--text);
 }
 
-.photo-ask {
+.photo-ask,
+.saved {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

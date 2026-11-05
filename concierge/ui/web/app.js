@@ -207,7 +207,7 @@ window.app = (() => {
   // Shorter and More detail, so more is one click away instead of a question
   // tacked on the end. Only under the newest answer, and only under a real answer
   // (the engine says which: a setup's message has nothing to shorten).
-  const FOLLOW_UPS = { shorter: "Shorter, please.", more: "Tell me more." }; // the same words as engine.FOLLOW_UPS
+  const FOLLOW_UPS = { shorter: "Shorter, please.", more: "Tell me more.", cloud: "Ask {model} instead." }; // the same words as engine.FOLLOW_UPS
   const SHORTER_FROM_WORDS = 30;
 
   async function afterAnswer(row, node, text) {
@@ -221,17 +221,30 @@ window.app = (() => {
       buttons.append(followButton("more", "More detail"));
       (row.querySelector(".meta") || row).append(buttons);
     }
+    if (can.saved) savedLine(row, can.saved);
     const photos = photosSetting();
     if (photos === "on") showPictures(node, await api.pictures(text));
     else if (photos === null && can.places) askAboutPhotos(row, node, text);
   }
 
-  function followButton(which, label) {
+  // A job done on this computer although a cloud model is picked: what it kept off
+  // the user's plan, and one click to ask that model after all (savings.py).
+  function savedLine(row, saved) {
+    // The line under the answer named the picked model; this answer was made here.
+    const meta = row.querySelector(".meta");
+    if (meta && meta.firstChild) meta.firstChild.textContent = meta.firstChild.textContent.replace(saved.model, "This computer");
+    const line = el("div", "saved after");
+    line.append(el("span", "", `Answered here. Saved about ${saved.tokens.toLocaleString("en-US")} tokens of ${saved.model}.`),
+                followButton("cloud", `Ask ${saved.model} instead`, saved.model));
+    follow(() => row.append(line));
+  }
+
+  function followButton(which, label, model = "") {
     const button = el("button", "follow-up", label);
     button.type = "button";
     button.addEventListener("click", () => {
       if (busy) return;
-      sentBy(FOLLOW_UPS[which]);
+      sentBy(FOLLOW_UPS[which].replace("{model}", model));
       run(() => api.follow_up(which, thinkMode));
     });
     return button;

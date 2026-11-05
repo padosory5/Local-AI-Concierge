@@ -12,8 +12,9 @@ import threading
 import time
 from pathlib import Path
 
-ANSWERED, EXPLAINED, TRANSLATED, POLISHED, SUMMED_UP, HELPED, SORTED, READ = (
-    "answered", "explained", "translated", "polished", "summed_up", "helped", "sorted", "read")
+ANSWERED, EXPLAINED, TRANSLATED, POLISHED, SUMMED_UP, HELPED, SORTED, READ, SAVED = (
+    "answered", "explained", "translated", "polished", "summed_up", "helped", "sorted", "read", "saved")
+# SAVED counts tokens kept off the user's cloud model, not jobs (savings.py).
 KEPT_DAYS = 30
 WEEK_DAYS = 7
 _lock = threading.Lock()

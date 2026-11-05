@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
 
-from . import activity, elaina, hardware, history, pictures, portrait, safety, signs
+from . import activity, elaina, hardware, history, pictures, portrait, safety, savings, signs, voice
 from .agents import community, runner, store
 from .agents.blueprint import load_blueprints
 from .agents.builder import AgentBuilder, say
@@ -66,9 +66,10 @@ MEASURED_JOBS = (
      "The library opens at nine on weekdays and at ten on weekends. Books can be borrowed for three weeks, "
      "and you can renew them online if nobody else is waiting for them."),
 )
-# The two buttons under an answer, and what each says in the chat. Code knows what they
+# The buttons under an answer, and what each says in the chat. Code knows what they
 # mean, so they skip the router, where "shorter" could change one of the user's agents.
-FOLLOW_UPS = {"shorter": "Shorter, please.", "more": "Tell me more."}
+# "cloud" asks the picked model after all, when the answer was kept on this computer.
+FOLLOW_UPS = {"shorter": "Shorter, please.", "more": "Tell me more.", "cloud": "Ask {model} instead."}
 
 
 class ElainaEngine:
@@ -85,6 +86,10 @@ class ElainaEngine:
         # A diagnosis waiting for "Fix it": (agent name, settings to change, switch it on)
         self.fixing: tuple[str, dict, bool] | None = None
         self.talker_name = ""  # the model writing her answers, if it isn't her own
+        self._talker_here = True  # whether that model runs on this computer
+        self._cloud_system = ""  # what goes to a cloud model as her persona, counted in savings
+        # What the last answer kept off the picked cloud model, or None (savings.py).
+        self.saved: dict | None = None
         self.menu = ModelMenu(self.ollama, self._hardware)
         self.menu.changed = self._use_chosen_model
 
@@ -193,14 +198,29 @@ class ElainaEngine:
             return
         self.deleting = None
         self.fixing = None
-        self.chat.kind = which
-        yield from self._full_lists(self.book.record(FOLLOW_UPS[which], self._follow_up(which, think)))
+        if which in voice.BUDGETS:
+            self.chat.kind = which
+        yield from self._full_lists(self.book.record(self.follow_up_words(which), self._follow_up(which, think)))
+
+    def follow_up_words(self, which: str) -> str:
+        """What a click on a button under an answer says in the chat."""
+        return FOLLOW_UPS.get(which, "").format(model=self.talker_name or "the model I picked")
 
     def _follow_up(self, which: str, think: bool) -> Iterator[Event]:
         try:
+            if which == "cloud":
+                # The same question again, to the picked model this time.
+                if self.saved is None or not self._cloud_picked():
+                    return
+                question = self._question()
+                yield Thinking(f"You asked for {self.talker_name}, so this one goes to {self.talker_name}.")
+                yield from self._reply(question, think)
+                return
+            # Shorter and More detail stay where the answer they follow was made.
+            here = self.saved is not None
             yield Thinking("You asked for it shorter, so I'll keep only what matters most." if which == "shorter"
                            else "You asked for more, so I'll go further without repeating myself.")
-            yield from self._reply(FOLLOW_UPS[which], think)
+            yield from self._reply(FOLLOW_UPS[which], think, here=here)
         except OllamaError as exc:
             yield Error(str(exc))
 
@@ -209,8 +229,9 @@ class ElainaEngine:
         gets Shorter and More detail, not a setup's message or a switch's note; and only
         a plan that names places gets the one-time question about photos."""
         if not self._answered(reply):
-            return {"follow_ups": False, "places": False}
-        return {"follow_ups": True, "places": pictures.worth_asking(self._question(), self.chat.history[-1]["content"])}
+            return {"follow_ups": False, "places": False, "saved": None}
+        return {"follow_ups": True, "places": pictures.worth_asking(self._question(), self.chat.history[-1]["content"]),
+                "saved": self.saved}
 
     def pictures(self, reply: str) -> list[dict]:
         """Photos of the places her answer names, for beside their lines (pictures.py).
@@ -460,21 +481,38 @@ class ElainaEngine:
                 yield Thinking(f"This is a job for {where.agent}.")
                 yield from self._run_agent(where.agent, where.request, text)
             else:
-                yield Thinking(f"This is just a chat, so I'll ask {self.talker_name}." if self.talker_name
-                               else "This is just a chat, so I'll answer it myself.")
+                job = self._job_for_here(text)
+                if job:
+                    yield Thinking(f"I can {savings.JOB_WORDS[job]} myself, so {self.talker_name} isn't needed.")
+                else:
+                    yield Thinking(f"This is just a chat, so I'll ask {self.talker_name}." if self.talker_name
+                                   else "This is just a chat, so I'll answer it myself.")
                 if think and not self.chat.can_think and not self.talker_name:
                     yield Thinking("This model can't show its thinking, so here is my answer.")
-                yield from self._reply(text, think)
+                yield from self._reply(text, think, here=bool(job))
         except OllamaError as exc:
             yield Error(str(exc))
 
-    def _reply(self, text: str, think: bool) -> Iterator[Event]:
-        if think and self.chat.can_think:
-            for kind, piece in self.chat.think_through(text):
-                yield Thinking(piece, "thought") if kind == "thought" else ElainaText(piece)
-        else:
-            for chunk in self.chat.send(text):
-                yield ElainaText(chunk)
+    def _reply(self, text: str, think: bool, here: bool = False) -> Iterator[Event]:
+        """Her answer. `here` keeps it on this computer although a cloud model is picked,
+        and counts what that kept off the user's plan (savings.py)."""
+        self.saved = None
+        talker = self.chat.talker
+        if here:
+            self.chat.talker = self.ollama
+        try:
+            if think and self.chat.can_think:
+                for kind, piece in self.chat.think_through(text):
+                    yield Thinking(piece, "thought") if kind == "thought" else ElainaText(piece)
+            else:
+                for chunk in self.chat.send(text):
+                    yield ElainaText(chunk)
+        finally:
+            self.chat.talker = talker
+        if here:
+            tokens = savings.kept(self.chat.recent_messages(), self._cloud_system)
+            activity.record(activity.SAVED, tokens)
+            self.saved = {"tokens": tokens, "model": self.talker_name}
         if note := safety.caution(text):
             yield ElainaText(f"\n\n{note}")
         activity.record(activity.ANSWERED)
@@ -504,7 +542,10 @@ class ElainaEngine:
             read = [name for name in attached.names if name not in attached.unread]
             yield Thinking(f"Read {', '.join(read)}.")
             self.chat.attach(attached.context, images)
-            yield from self._reply(text or NOTHING_SAID, think)
+            job = "" if images else self._job_for_here(text)
+            if job:
+                yield Thinking(f"I can {savings.JOB_WORDS[job]} myself, so {self.talker_name} isn't needed.")
+            yield from self._reply(text or NOTHING_SAID, think, here=bool(job))
         except OllamaError as exc:
             yield Error(str(exc))
 
@@ -515,13 +556,23 @@ class ElainaEngine:
         that must never leave the computer without them asking each time."""
         chosen = self.menu.chosen()
         self.talker_name = chosen["name"] if chosen else ""
+        self._talker_here = chosen["here"] if chosen else True
+        self.saved = None
         if self.chat is None:
             return
         try:
             system = self.ollama.show(elaina.ELAINA_MODEL).get("system", "") if chosen else ""
         except OllamaError:
             system = ""
+        self._cloud_system = system
         self.chat.talker = self.menu.talker(system) or self.ollama
+
+    def _cloud_picked(self) -> bool:
+        return bool(self.talker_name) and not self._talker_here
+
+    def _job_for_here(self, text: str) -> str:
+        """A job worth keeping on this computer although a cloud model is picked, or ""."""
+        return savings.local_job(text) if self._cloud_picked() else ""
 
     def _handle_choice(self, id: str, choice: str) -> Iterator[Event]:
         if id == PICK_AGENT_TO_DELETE:

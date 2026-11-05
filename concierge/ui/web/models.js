@@ -27,8 +27,10 @@ window.modelPage = (() => {
 
   // -------------------------------------------------- who is answering
 
+  // A beginner only ever has her own model, so the pill says where she is, not what
+  // she runs on. Model names stay inside the menu and the Models page.
   function label() {
-    return models.current ? models.current.name : models.own || "";
+    return models.current ? models.current.name : "This computer";
   }
 
   function privacy() {
@@ -44,7 +46,7 @@ window.modelPage = (() => {
     // Only models on this computer can show their thinking.
     $("think").hidden = Boolean(now) && now.provider !== "local";
     $("privacy").textContent = privacy();
-    $("side-model").textContent = !now || now.here ? `${label()} on this computer` : `${now.name}, ${now.company}`;
+    $("side-model").textContent = !now ? "Elaina · on this computer" : now.here ? `${now.name} on this computer` : `${now.name}, ${now.company}`;
     app.setModelName(label());
   }
 
