@@ -2803,6 +2803,263 @@ body[data-view="models"] .room-tabs {
   line-height: 1.4;
 }
 
+/* Getting to know you: About you in Elaina's room, and step 3 of the first two minutes */
+.knowing h1 {
+  margin: 0 0 6px;
+  font-family: var(--serif);
+  font-size: clamp(34px, 2.8vw, 48px);
+  font-weight: 400;
+  line-height: 1.12;
+}
+
+.known-sentence em {
+  color: var(--accent);
+}
+
+.welcome .known-sentence {
+  margin: 4px 0 10px;
+  font-family: var(--serif);
+  font-size: clamp(26px, 2vw, 34px);
+  font-weight: 400;
+  line-height: 1.15;
+}
+
+.knowing h2 {
+  margin: 30px 0 10px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.export-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 26px;
+}
+
+.export-card {
+  padding: 20px 22px;
+  border-radius: 13px;
+  background: var(--panel);
+}
+
+.export-card h3 {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+}
+
+.export-card ol {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.75;
+}
+
+.export-card ol b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.drop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 16px 22px;
+  border: 1px dashed #3a3340;
+  border-radius: 13px;
+  color: var(--muted);
+}
+
+.drop b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.promise-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-top: 20px;
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+
+.read-problem {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.ask-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 250px) 1fr auto;
+  align-items: center;
+  gap: 18px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ask-name b {
+  display: block;
+  font-weight: 600;
+}
+
+.ask-bar {
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0.75;
+}
+
+.ask-offer {
+  color: var(--muted);
+  font-size: 0.93rem;
+}
+
+.ask-offer b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.kept {
+  color: var(--accent);
+  font-size: 0.92rem;
+}
+
+.fact-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fact-row.dropped {
+  opacity: 0.5;
+}
+
+.fact-row b {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.fact-row small {
+  display: block;
+  margin-top: 3px;
+  color: var(--faint);
+  font-size: 0.86rem;
+}
+
+.fact-buttons,
+.knowing-buttons {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+
+.knowing-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 26px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.93rem;
+}
+
+.tell-cards {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 2.4fr;
+  gap: 14px;
+}
+
+.tell-card {
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.tell-card h3 {
+  display: inline-block;
+  margin: 0 10px 8px 0;
+  font-size: 1.1rem;
+}
+
+.optional {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: 2px;
+}
+
+.tell-card p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 0.93rem;
+  line-height: 1.5;
+}
+
+.tell-card .export-cards {
+  margin: 0 0 14px;
+}
+
+.tell-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.arrived {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--accent);
+}
+
+.role-card.suggested {
+  border-color: var(--accent);
+}
+
+.role-tag {
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #000;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+@container (max-width: 760px) {
+  .tell-cards,
+  .export-cards,
+  .ask-row {
+    grid-template-columns: 1fr;
+  }
+
+  .knowing-foot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 /* Set up for someone else: bigger words everywhere. */
 :root:has(body.simple) {
   font-size: clamp(19px, 17px + 0.2vw, 21px);

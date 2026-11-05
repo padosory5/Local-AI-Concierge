@@ -233,14 +233,15 @@ in plain words like any other problem.
 
 `today.html` opens with the app. The side list has New chat, Today, Help me,
 Chat and Elaina's room, then the sessions (search, pinned, the rest) and which
-model is answering. Elaina's room has tabs (`#room-tabs`): Agents, Models,
+model is answering. Elaina's room has tabs (`#room-tabs`): About you, Agents, Models,
 Reservations, What I see and Settings, so a beginner only meets the first four
 items.
 
 The very first time, it opens on the first two minutes (`view-welcome`): she
 times three real jobs on this computer (`Engine.measure`, never guessed), then
 waits for the user to try the Spot in another window (`today.spotTried`, called
-when the Spot opens), then asks who they are. After that it opens on Today once
+when the Spot opens), offers to look around this computer to get to know them, then
+asks who they are, with what looking around found first. After that it opens on Today once
 there's something to show this week, and on Help me otherwise. What was chosen is
 kept in `window.json` (`Overlay.settings`; in memory in the practice run).
 
@@ -350,6 +351,72 @@ their own message, because they're too big to keep. A model that can't see pictu
 says so; it never pretends. A folder starts a documents agent for it. What couldn't
 be read is named in her thinking.
 
+## Getting to know the user
+
+Elaina can learn who someone is from their past chats with ChatGPT and Claude
+(`concierge/history.py`, `concierge/portrait.py`). Those chats live on the companies'
+servers, so nothing is automatic: the user asks each company once for a download
+(Settings, then Export data) and gets a zip by email. She never signs in as them and
+never reads their screen. `history.read_export` takes the zip, the unpacked folder or
+its `conversations.json`, follows only the branch of a ChatGPT chat the user last saw
+(edited drafts are side branches), and keeps only the user's own messages, cut short,
+in `history.json`.
+
+`portrait.understand` then works out what it can. Code counts the chats, the time of
+day, the language (`language_of`) and the kinds of help asked for. Her model only sorts
+each chat into one of `KINDS` (forced by the schema) and suggests facts, each with the
+line number and the exact words it came from. Code drops a fact whose words aren't in
+that line, that shares no word with its quote, that names a language its quote doesn't,
+or that touches `SENSITIVE` matters (health, money, beliefs, politics, family,
+relationships). Then a second, separate look (`confirmed`) shows the model each fact
+beside its line and takes only "yes": suggesting and checking are different jobs, and
+the second one caught every wrong fact in testing. The user keeps or drops each fact
+(`portrait.keep`); only kept ones, plus what they ask for most, go into
+`portrait.about_you`, which `ElainaChat` sends with her persona (a system message there
+replaces the one built into her model), and only to her own model, never a cloud one.
+
+Real chats taught two more rules. Lines where someone sets a task ("I have to
+integrate...", "represented as a list") aren't about them, so `SELF_WORDS` leaves them
+out; a "fact" that's really a request ("Requests course layouts") is dropped by
+`ASKING`, and the second look only says yes to lasting things (work, studies, home,
+interests, tools, goals). One line gives at most `FACTS_PER_LINE` facts, or a single
+line about a project became four.
+
+Looking around this computer comes first (`concierge/signs.py`); chats are optional
+extra. She reads the apps with a Start menu or desktop shortcut she knows
+(`KNOWN_APPS`), which apps are used most from Windows' own count of hours in front
+(UserAssist in the registry, read only: `app_use`, named the way people know them by
+`app_name`, grouped into `ACTIVITIES`), the kinds and counts of files in the user's
+own folders and which kinds changed in the last `RECENT_DAYS`, and folders with code
+(a `.git` inside). Never AppData, hidden folders, links, anything inside a file, or
+what was done inside an app. Windows only counts programs opened from Start or the
+taskbar, so a program started from a terminal shows few hours; files changed lately
+make up for that. Apps that touch `SENSITIVE` matters are left out. It's plain code
+with no model, bounded by `MAX_ENTRIES` and `MAX_SECONDS` (under a second here), and
+every guess says what it came from ("Unity Hub is installed", "5.2 hours in front, by
+Windows' own count"). Only the summary is kept, in `portrait.json` beside the chats'
+facts (`portrait.add_computer`), and the roles it points to put the matching "Who are
+you?" card first.
+
+Chat downloads arrive as links in an email. She can't read anyone's email, and the
+links need the user signed in, so she never fetches them: when the user opens a
+company's export page from her, she watches Downloads for `EXPORT_WAIT_HOURS`
+(`Overlay.expect_exports`) and reads each export that lands there by herself
+(`history.find_exports`, never the same file twice). Find it in my Downloads does the
+same at once, and Choose the zip takes one by hand.
+
+In the windows, step 3 of the first two minutes ("Get to know you") only offers Look
+around. About you, the first tab of Elaina's room, leads with what they do most on
+this computer, each activity beside what she can do about it with Turn on right
+there, then what they ask other AIs for most (from chats), each fact with what it
+came from and Keep or Not right, then Tell me more (look around, and the chats,
+marked Optional) and Forget all of this. The engine's calls are outside `events.py`,
+like `measure`: `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`,
+`forget_history`, `look_around`, `bring_in_downloads`, reached through `TodayBridge`,
+which opens a company's export page from `EXPORT_PAGES` only.
+`FakeEngine` gives a made-up portrait and reads nothing. `python -m concierge history ZIP`
+does the same in the terminal (`--forget` forgets everything).
+
 ## Reservations
 
 Booking an agent for later (`concierge/reservations.py`, `Overlay._run_booking`):
@@ -425,11 +492,14 @@ variables inside a function do not need listing.
 | `concierge/huggingface.py` | Engine | `API`, `TIMEOUT`, `LIST_LIMIT`, `SIZE_WORKERS`, `CACHE_SECONDS`, `GB`, `SORTS`, `VISION`, `PREFERRED`, `QUANTIZATION`, `PART`, `HubError`, `HubModel`, `best_file`, `browse`, `tag_from` |
 | `concierge/cloud.py` | Engine | `CATALOG_PATH`, `KEY_STORE`, `MAX_REPLY_TOKENS`, `LIST_TIMEOUT`, `REPLY_TIMEOUT`, `MORE_MODELS`, `ANTHROPIC_VERSION`, `SENT_KEPT`, `NOT_FOR_CHAT`, `CloudError`, `CloudOption`, `Provider`, `CloudModel`, `load_providers`, `saved_key`, `save_key`, `forget_key`, `request_for`, `text_in`, `record_sent`, `sent_recently`, `key_refused`, `live_models`, `overview`, `find_option`; companies and models in `cloud_models.yaml` |
 | `concierge/attachments.py` | Engine | `IMAGE_TYPES`, `MAX_CHARS_PER_FILE`, `MAX_CHARS`, `MAX_IMAGE_MB`, `NOTHING_SAID`, `Attached`, `read_attachments` |
+| `concierge/history.py` | Engine | `CHATGPT`, `CLAUDE`, `EXPORT_PAGES`, `MAX_MESSAGE_CHARS`, `MAX_EXPORT_MB`, `CONVERSATIONS`, `HistoryError`, `PastChat`, `history_path`, `is_export`, `read_export`, `bring_in`, `brought_in`, `forget`, `read_files_path`, `find_exports` |
+| `concierge/signs.py` | Engine | `KNOWN_APPS`, `NOT_APPS`, `FILE_KINDS`, `RECENT_GROUPS`, `RECENT_DAYS`, `USER_ASSIST`, `MAX_APPS_KEPT`, `MIN_HOURS`, `ACTIVITIES`, `GAME_FOLDERS`, `PLAIN_FOLDERS`, `NOT_ACTIVITIES`, `FRIENDLY`, `CODE`, `STUDY_NAMES`, `WORK_NAMES`, `SKIP_DIRS`, `MAX_ENTRIES`, `MAX_SECONDS`, `MAX_DEPTH`, `MAX_PROJECTS_KEPT`, `REPARSE_POINT`, `THIS_COMPUTER`, `look_around`, `app_use`, `app_name`, `activity_of`, `activities`, `installed_apps`, `facts_from`, `role_words` |
+| `concierge/portrait.py` | Engine | `KINDS`, `KIND_MEANINGS`, `ABOUT`, `MAX_SORTED`, `SORT_BATCH`, `SORT_PREVIEW_CHARS`, `MAX_SNIPPETS`, `SNIPPET_CHARS`, `FACT_BATCH`, `MAX_FACTS`, `FACTS_PER_LINE`, `QUOTE_MIN_CHARS`, `FACT_MAX_CHARS`, `SELF_WORDS`, `SENSITIVE`, `SUBJECT`, `ASKING`, `PARTS_OF_DAY`, `SCRIPTS`, `ENGLISH_WORDS`, `portrait_path`, `load`, `forget`, `understand`, `add_computer`, `keep`, `about_you`, `busiest_part_of_day`, `languages_used`, `language_of`, `sort_kinds`, `find_facts`, `confirmed`, `self_snippets`, `checked`, `merge` |
 | `concierge/reservations.py` | Engine | `SORT`, `RUN`, `TURN_ON`, `TURN_OFF`, `ONCE`, `DAILY`, `WEEKLY`, `CHECK_SECONDS`, `STEPS`, `ReservationError`, `Reservation`, `Reservations` |
 | `concierge/events.py` | Both (contract) | `Thinking`, `SystemInfo`, `ElainaText`, `ElainaDone`, `Question`, `AgentCard`, `Progress`, `Source`, `Result`, `AgentList`, `Error`, `IdeaStep`, `IdeaCard`, `ChatSummary`, `ChatList`, `TranscriptItem`, `Transcript`, `Event`, `to_dict`, `Engine` |
 | `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `ElainaEngine` |
 | `concierge/fake_engine.py` | Engine | `FakeEngine`, `PracticeOllama`, `PracticeKeys`, `practice_models` |
-| `concierge/cli.py` | Engine | `DIM`, `PLAIN`, `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure]`; in the chat `/think` turns thinking on or off |
+| `concierge/cli.py` | Engine | `DIM`, `PLAIN`, `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `cmd_history`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure, history]`; in the chat `/think` turns thinking on or off |
 | `concierge/agents/blueprint.py` | Engine | `BLUEPRINT_DIR`, `Slot`, `Blueprint`, `load_blueprints`; templates in `agents/blueprints/*.yaml` (`documents_qa`, and `custom`: the shared template for agents made from parts) |
 | `concierge/quick/agents.py` | Engine | `BUBBLE`, `CLIPBOARD`, `BOTH`, `UNTIL_UNHIGHLIGHT`, `FEW_SECONDS`, `CHECK_SECONDS`, `CHECK_FOR_SECONDS`, `QuickAgents` |
 | `concierge/quick/bubble.py` | Engine | `GAP`, `MAX_WIDTH`, `COLORS`, `GWL_EXSTYLE`, `WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW`, `WS_EX_TOPMOST`, `show_seconds`, `Bubble` |
@@ -450,8 +520,8 @@ variables inside a function do not need listing.
 | `concierge/agents/runner.py` | Engine | `TOP_PASSAGES`, `MAX_CONTENTS`, `STOPWORDS`, `run`, `matching_words`, `clean_answer`, `refresh_index`, `best_sentence` |
 | `concierge/agents/store.py` | Engine | `Agent`, `agents_dir`, `slugify`, `list_agents`, `find_agent`, `name_taken`, `save`, `load_index`, `delete` |
 | `concierge/agents/eval_router.py` | Engine | `CASES`, `main`; command `python -m concierge.agents.eval_router` |
-| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `GLASS_SIZE`, `GLASS_MIN_HEIGHT`, `GLASS_CHAT_HEIGHT`, `GLASS_GROW_STEPS`, `GLASS_GROW_SECONDS`, `GLASS_ABOVE`, `GLASS_ALPHA`, `GLASS_FADE_STEPS`, `GLASS_FADE_SECONDS`, `GLASS_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a page calls its `startup`, `send`, `choose`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `measure`, `set_spot`, `switch_agent`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_glass`, `fit_glass`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay`, `full_size`, `centered`, `glass_height`, `place_glass`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
+| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `GLASS_SIZE`, `GLASS_MIN_HEIGHT`, `GLASS_CHAT_HEIGHT`, `GLASS_GROW_STEPS`, `GLASS_GROW_SECONDS`, `GLASS_ABOVE`, `GLASS_ALPHA`, `GLASS_FADE_STEPS`, `GLASS_FADE_SECONDS`, `GLASS_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `EXPORTS`, `EXPORT_WAIT_HOURS`, `EXPORT_CHECK_SECONDS`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a page calls its `startup`, `send`, `choose`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `measure`, `set_spot`, `switch_agent`, `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`, `forget_history`, `open_export_page`, `look_around`, `find_downloads`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_glass`, `fit_glass`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay`, `full_size`, `centered`, `glass_height`, `place_glass`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
 | `concierge/ui/mini.py` | UI | `MINI_SIZE`, `EDGE_GAP`, `DISC_SHARE`, `FRAMES`, `FRAME_SECONDS`, `RESTING`, `BRIGHT`, `FADE_STEP`, `FULL_SCREEN_CHECK_SECONDS`, `IDLE`, `WORKING`, `ASKING`, `LILAC`, `WHITE`, `is_click`, `premultiplied`, `draw_frames`, `Mini` |
 | `concierge/ui/tray.py` | UI | `ICON_SIZE`, `INK`, `DOTS`, `tray_picture`, `Tray` |
-| `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`, `today.show`, `today.closeMenus`, `today.redraw`, `today.spotTried`, `today.ui`), `discover.js` (global `discover`: the Agents page and parts it shares), `models.js` (global `modelPage`: the model menu and the Models page), `spot.html`, `spot.css`, `spot.js` (the Spot, global `spot.open`), `glass.html`, `glass.css`, `glass.js` (the card from minimized Elaina, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `workspace.html`, `workspace.css`, `index.html` (earlier windows, not opened), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`, `app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe` (called by today.js, discover.js and models.js); window event `engine-event` |
+| `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`, `today.show`, `today.closeMenus`, `today.redraw`, `today.spotTried`, `today.chatsArrived`, `today.ui`), `discover.js` (global `discover`: the Agents page and parts it shares), `models.js` (global `modelPage`: the model menu and the Models page), `spot.html`, `spot.css`, `spot.js` (the Spot, global `spot.open`), `glass.html`, `glass.css`, `glass.js` (the card from minimized Elaina, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `workspace.html`, `workspace.css`, `index.html` (earlier windows, not opened), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`, `app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe` (called by today.js, discover.js and models.js); window event `engine-event` |
 | `concierge/ui/web/workspace/` | UI | Not opened. `mock.js` (`ws.mock`), `parts.js` (`ws.parts`), `store.js` (`ws.store`), `activity.js` (`ws.activity`), `home.js` (`ws.home`), `discover.js` (`ws.discover`), `library.js` (`ws.library`, `ws.agentPage`), `studio.js` (`ws.studio`), `add_agent.js` (`ws.addAgent`), `main.js` (`ws.go`, `ws.refresh`, `ws.toast`, `ws.dock`, `ws.ask`, `ws.actions`) |

@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
 
-from . import activity, elaina, hardware, safety
+from . import activity, elaina, hardware, history, portrait, safety, signs
 from .agents import community, runner, store
 from .agents.blueprint import load_blueprints
 from .agents.builder import AgentBuilder, say
@@ -31,6 +31,7 @@ from .models import ModelMenu
 from .ollama import Ollama, OllamaError
 from .quick import spot
 from .quick.agents import QuickAgents
+from .quick.tidy import downloads_dir
 from .agents.recipe import (BUBBLE, CLIPBOARD, CUSTOM, MECHANICS, WHILE_ON, describe, is_switchable, migrate,
                             needs_language, run_instruction, target_language, with_language)
 from .quick.translate import language_in
@@ -104,6 +105,7 @@ class ElainaEngine:
                 yield Error("Elaina is not set up yet. Run: python -m concierge setup")
                 return
             self.chat = elaina.ElainaChat(self.ollama)
+            self.chat.about = portrait.about_you(portrait.load())
             self._use_chosen_model()
         except OllamaError as exc:
             yield Error(str(exc))
@@ -232,6 +234,67 @@ class ElainaEngine:
 
     def activity(self) -> dict[str, int]:
         return activity.this_week()
+
+    # ------------------------------------- getting to know the user (history.py)
+
+    def bring_in_history(self, path: str) -> dict:
+        """Read a ChatGPT or Claude download. Outside events.py, like measure: it's
+        part of getting to know the user, not of a conversation."""
+        try:
+            return history.bring_in(Path(path))
+        except history.HistoryError as exc:
+            return {"error": str(exc)}
+        except OSError:
+            return {"error": "I couldn't open that file."}
+
+    def understand_history(self, progress=None) -> dict:
+        """Read everything brought in and work out what she can about the user.
+        Always her own model: these chats never go to a cloud one."""
+        chats = history.brought_in()
+        if not chats:
+            return {"error": "There's nothing brought in yet."}
+        try:
+            made = portrait.understand(self.ollama, elaina.ELAINA_MODEL, chats, self._quick_think(), progress)
+        except OllamaError as exc:
+            return {"error": str(exc)}
+        self._use_portrait()
+        return made
+
+    def look_around(self) -> dict:
+        """What this computer says about the user (signs.py): names and counts only,
+        and only because they asked."""
+        summary = signs.look_around()
+        made = portrait.add_computer(summary, signs.facts_from(summary))
+        self._use_portrait()
+        return made
+
+    def bring_in_downloads(self, since: float = 0) -> dict:
+        """Every ChatGPT or Claude download in Downloads not read yet. {} when none."""
+        read, sources = 0, set()
+        for path in history.find_exports(downloads_dir(), since):
+            result = self.bring_in_history(str(path))
+            if "error" not in result:
+                read += result["read"]
+                sources.update(result["sources"])
+        return {"read": read, "sources": sorted(sources)} if read else {}
+
+    def what_i_know(self) -> dict:
+        return portrait.load()
+
+    def keep_fact(self, fact_id: str, kept: bool) -> dict:
+        made = portrait.keep(fact_id, kept)
+        self._use_portrait()
+        return made
+
+    def forget_history(self) -> None:
+        """Everything brought in and everything she worked out from it, gone."""
+        history.forget()
+        portrait.forget()
+        self._use_portrait()
+
+    def _use_portrait(self) -> None:
+        if self.chat:
+            self.chat.about = portrait.about_you(portrait.load())
 
     def measure(self) -> dict:
         """What this computer can do, timed on it just now, for the first two minutes.

@@ -57,6 +57,11 @@ FULL_SHARE = 0.9  # of the screen when the app opens, so it has the user's atten
 FULL_MIN_SIZE = (640, 560)  # half of a small screen, for working side by side
 SCREEN_SETTLE_SECONDS = 0.25  # for the window to be gone before a screenshot
 PICTURES = "Pictures (*.png;*.jpg;*.jpeg;*.webp;*.gif;*.bmp)"
+EXPORTS = "ChatGPT or Claude download (*.zip;*.json)"
+# After the user opens a company's export page, how long she watches Downloads for it:
+# the email can take a day to come.
+EXPORT_WAIT_HOURS = 48
+EXPORT_CHECK_SECONDS = 5
 APP_ID = "LocalAIConcierge.Elaina"  # so Windows shows her own icon, not Python's
 # Held while she runs, so starting her again finds her: two copies would both answer
 # Ctrl tapped twice, and their Spots would fight over the keyboard and the clipboard.
@@ -278,6 +283,52 @@ class TodayBridge(WatchBridge):
 
     def measure(self) -> dict:
         return self._hub.ask("measure", default={"error": "I can't measure this computer right now."})
+
+    # Getting to know the user from their ChatGPT and Claude downloads (history.py).
+
+    def bring_in_history(self) -> dict:
+        """Windows' own picker for the download, then reading it. Nothing is read
+        until the user picks a file themselves."""
+        chosen = self._overlay.pick(exports=True)
+        if not chosen:
+            return {"cancelled": True}
+        results = [self._hub.ask("bring_in_history", path, default={"error": "I can't read downloads here."})
+                   for path in chosen]
+        if problem := next((result for result in results if "error" in result), None):
+            return problem
+        return {"read": sum(result["read"] for result in results), "new": sum(result["new"] for result in results),
+                "sources": sorted({source for result in results for source in result["sources"]}),
+                "total": results[-1]["total"]}
+
+    def understand_history(self) -> dict:
+        return self._hub.ask("understand_history", default={"error": "I can't read chats here."})
+
+    def what_i_know(self) -> dict:
+        return self._hub.ask("what_i_know", default={})
+
+    def keep_fact(self, fact_id: str, kept: bool) -> dict:
+        return self._hub.ask("keep_fact", fact_id, bool(kept), default={})
+
+    def forget_history(self) -> None:
+        self._hub.ask("forget_history")
+
+    def open_export_page(self, source: str) -> None:
+        """Only a page from our own list, never an address a page hands us. From now
+        on she watches Downloads for that download (Overlay.expect_exports)."""
+        from ..history import EXPORT_PAGES
+
+        if source in EXPORT_PAGES:
+            webbrowser.open(EXPORT_PAGES[source])
+            if self._overlay:
+                self._overlay.expect_exports()
+
+    def look_around(self) -> dict:
+        return self._hub.ask("look_around", default={"error": "I can't look around this computer here."})
+
+    def find_downloads(self) -> dict:
+        found = self._hub.ask("bring_in_downloads", 0, default={})
+        return found or {"error": "I didn't find a ChatGPT or Claude download in your Downloads yet. "
+                                  "Click the links in their email first."}
 
     def set_spot(self, on: bool) -> None:
         self._overlay.set_spot(bool(on))
@@ -610,6 +661,30 @@ class Overlay:
             self.watch.held = lambda: self._full_open
             self.watch.start()
         self.bookings.start(self._run_booking, self._bookings_changed)
+        if self._settings_path:  # the practice run looks at no real downloads
+            threading.Thread(target=self._watch_exports, name="exports", daemon=True).start()
+
+    def expect_exports(self) -> None:
+        """The user went to ask ChatGPT or Claude for their chats. For the next
+        EXPORT_WAIT_HOURS, a download of them landing in Downloads is read at once,
+        so all they do is click the links in the email."""
+        now = time.time()
+        if self.settings.get("expecting_until", 0) < now:
+            self.remember(expecting_since=now)
+        self.remember(expecting_until=now + EXPORT_WAIT_HOURS * 3600)
+
+    def _watch_exports(self) -> None:
+        while not self._quitting:
+            time.sleep(EXPORT_CHECK_SECONDS)
+            if self._quitting or time.time() > self.settings.get("expecting_until", 0):
+                continue
+            found = self.hub.ask("bring_in_downloads", self.settings.get("expecting_since", 0), default={})
+            if not found:
+                continue
+            made = self.hub.ask("understand_history", default={})
+            arrived = {**found, "error": made.get("error", "")}
+            if self._full and not self._quitting:
+                self._full.run_js(f"window.today && today.chatsArrived({json.dumps(arrived)})")
 
     def _run_booking(self, item: Reservation) -> None:
         if item.action == SORT:
@@ -798,13 +873,13 @@ class Overlay:
         time.sleep(PASTE_SETTLE_SECONDS)
         restore_clipboard(saved)
 
-    def pick(self, folder: bool = False, images: bool = False) -> list[str]:
-        """Windows' own file picker, for the + button."""
+    def pick(self, folder: bool = False, images: bool = False, exports: bool = False) -> list[str]:
+        """Windows' own file picker, for the + button and for chat downloads."""
         import webview
 
         kind = webview.FileDialog.FOLDER if folder else webview.FileDialog.OPEN
-        chosen = self._full.create_file_dialog(kind, allow_multiple=not folder,
-                                               file_types=(PICTURES,) if images else ())
+        types = (PICTURES,) if images else (EXPORTS,) if exports else ()
+        chosen = self._full.create_file_dialog(kind, allow_multiple=not folder, file_types=types)
         return list(chosen or ())
 
     def screenshot(self) -> list[str]:

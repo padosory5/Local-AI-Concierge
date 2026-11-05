@@ -220,6 +220,46 @@ class FakeEngine:
     def activity(self) -> dict[str, int]:
         return {"explained": 34, "polished": 5, "translated": 12, "sorted": 120, "answered": 9}
 
+    # Getting to know the user: a made-up portrait. Nothing is read or kept.
+
+    def bring_in_history(self, path: str) -> dict:
+        time.sleep(self.delay * 20)
+        return {"read": 312, "new": 312, "sources": ["ChatGPT", "Claude"], "total": 312}
+
+    def understand_history(self, progress=None) -> dict:
+        for step in ("Sorting 312 chats by what they asked for...", "Looking for what you said about yourself..."):
+            if progress:
+                progress(step)
+            time.sleep(self.delay * 40)
+        self._portrait = _practice_portrait()
+        return self._portrait
+
+    def look_around(self) -> dict:
+        time.sleep(self.delay * 20)
+        made = getattr(self, "_portrait", {}) or {"facts": []}
+        made["computer"] = {"looked": time.time(), "roles": {"developer": 6, "student": 3},
+                            "activities": {"browsing": 6.2, "coding": 4.1, "games": 2.0, "chatting": 1.3},
+                            "used": [{"app": "Chrome", "hours": 6.2, "runs": 40, "last": time.time(), "kind": "browsing"},
+                                     {"app": "Visual Studio Code", "hours": 4.1, "runs": 22, "last": time.time(), "kind": "coding"}]}
+        made["facts"] = [fact for fact in made["facts"] if fact["source"] != "This computer"] + _practice_computer()
+        self._portrait = made
+        return made
+
+    def bring_in_downloads(self, since: float = 0) -> dict:
+        return {"read": 64, "sources": ["Claude"]}
+
+    def what_i_know(self) -> dict:
+        return getattr(self, "_portrait", {})
+
+    def keep_fact(self, fact_id: str, kept: bool) -> dict:
+        for fact in self.what_i_know().get("facts", []):
+            if fact["id"] == fact_id:
+                fact["kept"] = bool(kept)
+        return self.what_i_know()
+
+    def forget_history(self) -> None:
+        self._portrait = {}
+
     def measure(self) -> dict:
         time.sleep(self.delay * 40)
         return {"device": "Practice graphics card · 8 GB", "words_per_second": 45,
@@ -397,3 +437,38 @@ class FakeEngine:
             ],
         )
         yield from self._say("Acme's contract was signed on 12 March by Dana Kim.")
+
+
+def _practice_portrait() -> dict:
+    """What a portrait looks like, for building the windows without anyone's chats."""
+    def fact(n, about, words, quote, source, seen):
+        return {"id": f"practice{n}", "about": about, "fact": words, "quote": quote, "source": source,
+                "title": "Practice chat", "when": time.time() - n * 86400 * 9, "seen": seen, "kept": None}
+
+    return {
+        "made": time.time(), "chats": {"ChatGPT": 248, "Claude": 64}, "first": time.time() - 86400 * 410,
+        "last": time.time() - 86400, "busiest": "in the evening", "languages": {"Korean": 201, "English": 111},
+        "kinds": [{"id": "writing", "words": "Writing and polishing messages", "topic": "spot", "count": 96},
+                  {"id": "studying", "words": "Studying and homework", "topic": "explain", "count": 71},
+                  {"id": "coding", "words": "Code and errors", "topic": "spot", "count": 54},
+                  {"id": "translating", "words": "Translating", "topic": "translate", "count": 38},
+                  {"id": "planning", "words": "Plans and ideas", "topic": "plan", "count": 21},
+                  {"id": "other", "words": "Other", "topic": "", "count": 32}],
+        "facts": [fact(1, "study", "Studies computer science at university", "I'm a computer science student", "ChatGPT", 9),
+                  fact(2, "tool", "Uses Python and VS Code", "I use Python in VS Code", "Claude", 6),
+                  fact(3, "place", "Lives in Seoul", "저는 서울에 살고 있어요", "ChatGPT", 3),
+                  fact(4, "goal", "Is preparing for a job interview in English", "I have an interview in English next month", "ChatGPT", 2),
+                  fact(5, "interest", "Likes making games", "I love making small games", "Claude", 2)],
+    }
+
+
+def _practice_computer() -> list[dict]:
+    """Made-up guesses from looking around a computer."""
+    def fact(n, about, words, quote):
+        return {"id": f"computer{n}", "about": about, "fact": words, "quote": quote, "source": "This computer",
+                "title": "", "when": time.time(), "seen": 1, "kept": None}
+
+    return [fact(1, "tool", "Writes code in Visual Studio Code", "Visual Studio Code is installed"),
+            fact(2, "tool", "Makes things in Unity", "Unity Hub is installed"),
+            fact(3, "tool", "Writes code, mostly in Python and C#", "5 folders with code, like puzzle-cat"),
+            fact(4, "study", "Keeps school files: lectures and assignments", "48 files named like lectures or assignments")]

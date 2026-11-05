@@ -119,6 +119,8 @@ class ElainaChat:
         # which makes a chat feel slow. Elaina answers directly.
         self.think = False if "thinking" in ollama.capabilities(model) else None
         self._context, self._images = "", []  # added with the + button, for the next message
+        self.about = ""  # what she knows about the user and they kept (portrait.about_you)
+        self._persona = None
         self._closed = threading.Event()
         # Held while checking in and while unloading, so a check-in cannot
         # load Elaina again right after close() unloaded her.
@@ -139,7 +141,21 @@ class ElainaChat:
         images, self._images = self._images, []
         if images:
             messages[-1] = {**messages[-1], "images": images}
+        if self.about and self.talker is self.ollama and self.persona():
+            # Only her own model on this computer reads about the user. A system
+            # message here takes the place of the one built into her model, so
+            # her persona goes along with it.
+            messages = [{"role": "system", "content": f"{self.persona()}\n\n{self.about}"}, *messages]
         return messages
+
+    def persona(self) -> str:
+        """The system prompt built into her model, read once."""
+        if self._persona is None:
+            try:
+                self._persona = str(self.ollama.show(self.model).get("system") or "")
+            except Exception:
+                return ""  # asked again next time; without it she's sent nothing about the user
+        return self._persona
 
     def send(self, text: str) -> Iterator[str]:
         self._hear(text)
