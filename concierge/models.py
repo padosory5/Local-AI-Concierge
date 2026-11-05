@@ -14,6 +14,7 @@ import threading
 from collections.abc import Callable
 from urllib.parse import urlsplit
 
+from . import accounts as apps
 from . import cloud, elaina, huggingface
 from .catalog import DISK_HEADROOM_GB, find_model, helper_room
 from .ollama import OllamaError
@@ -74,7 +75,7 @@ class ModelMenu:
     the real settings or the password store."""
 
     def __init__(self, ollama, hardware: Callable, load: Callable = None, save: Callable = None, keys=cloud,
-                 browse: Callable = None):
+                 browse: Callable = None, accounts=None):
         self.ollama = ollama
         self.hardware = hardware  # returns (report, memory Elaina's model takes)
         self.keys = keys
@@ -82,6 +83,7 @@ class ModelMenu:
         self._load = load or elaina.load_state
         self._save = save or elaina.save_state
         self._browse = browse or huggingface.browse
+        self.accounts = accounts or apps.Accounts()  # ChatGPT and Claude plans, through Codex and Claude Code
         self._pulling: dict[str, dict] = {}
         self._lock = threading.Lock()
 
@@ -117,6 +119,12 @@ class ModelMenu:
                 host = _host(found["url"])
                 return {"provider": CUSTOM, "model": model, "name": found["name"], "company": host,
                         "here": host in LOOPBACK}
+        if provider in apps.APPS:
+            status = self.accounts.status(provider)
+            found = next((item for item in status["models"] if item["id"] == model), None)
+            if found:
+                return {"provider": provider, "model": model, "name": found["name"],
+                        "company": f"{status['plan']}, through {status['app']}", "here": False}
         company = cloud.load_providers().get(provider)
         if company and self.keys.saved_key(provider):
             return {"provider": provider, "model": model, "name": cloud.find_option(provider, model).name,
@@ -133,6 +141,8 @@ class ModelMenu:
             return LocalModel(self.ollama, model, f"{system}\n\nRight now your answers are written by {name}, "
                                                   "on this computer.")
         where = f"Right now your answers are written by {name} from {chosen['company']}, over the internet."
+        if chosen["provider"] in apps.APPS:
+            return self.accounts.talker(chosen["provider"], model, f"{system}\n\n{where}")
         if chosen["provider"] == CUSTOM:
             found = next(item for item in self._custom() if item["id"] == model)
             company = cloud.Provider(CUSTOM, name, chosen["company"], "openai", found["url"], "", ())
@@ -170,7 +180,7 @@ class ModelMenu:
                    "hidden": f"{CUSTOM}/{item['id']}" in hidden} for item in self._custom()]
         known = find_model(own) if own else None
         return {"own": known.name if known else own or "Elaina's model", "current": self.chosen(),
-                "local": local, "providers": companies, "custom": custom}
+                "local": local, "accounts": self.accounts.overview(), "providers": companies, "custom": custom}
 
     def hide(self, provider: str, model: str, hidden: bool) -> dict:
         """Edit models: what shows in the menu. Nothing is removed by this."""
@@ -194,6 +204,26 @@ class ModelMenu:
         if self.keys.key_refused(company, key.strip()):
             return {"error": f"{company.company} didn't accept that key. Check it and try again."}
         self.keys.save_key(provider, key)
+        self.changed()
+        return self.info()
+
+    # -------------------------------------------- plans, through the companies' apps
+
+    def sign_in_account(self, app: str) -> dict:
+        """Open Codex's or Claude Code's own sign-in in a window of its own."""
+        try:
+            self.accounts.sign_in(app)
+        except cloud.CloudError as exc:
+            return {"error": str(exc)}
+        return self.info()
+
+    def install_account(self, app: str) -> dict:
+        self.accounts.install(app)
+        return self.info()
+
+    def check_accounts(self) -> dict:
+        """Look again, after the user signed in or installed something."""
+        self.accounts.overview(fresh=True)
         self.changed()
         return self.info()
 

@@ -54,13 +54,15 @@ class Provider:
     url: str
     keys: str
     models: tuple[CloudOption, ...]
+    note: str = ""  # a short line shown under the name; the company's name stays plain for messages
 
 
 @lru_cache(maxsize=1)
 def load_providers() -> dict[str, Provider]:
     data = yaml.safe_load(CATALOG_PATH.read_text(encoding="utf-8"))
     return {key: Provider(key, item["name"], item["company"], item["kind"], item["url"], item["keys"],
-                          tuple(CloudOption(**model) for model in item["models"]))
+                          tuple(CloudOption(**model) for model in item["models"]),
+                          note=item.get("note", ""))
             for key, item in data["providers"].items()}
 
 
@@ -103,9 +105,10 @@ def _headers(provider: Provider, key: str) -> dict:
 def _problem(provider: Provider, status: int) -> CloudError:
     """Plain words for what went wrong. Never the raw reply, which could hold the key."""
     if status in (401, 403):
-        return CloudError(f"{provider.company} didn't accept the key. Check it in Settings.")
+        return CloudError(f"{provider.company} didn't accept the key. Check it in Models, under API.")
     if status == 402:
-        return CloudError(f"Your {provider.company} account is out of credit.")
+        return CloudError(f"Your {provider.company} account is out of credit. Add some on {provider.company}'s "
+                          "website, or pick a model on this computer in the menu beside the chat box: those are free.")
     if status == 404:
         return CloudError(f"{provider.company} doesn't have that model any more. Please pick another one.")
     if status == 429:
@@ -247,9 +250,10 @@ def live_models(provider: Provider, key: str) -> list[CloudOption]:
 def overview(has_key) -> list[dict]:
     """Every company with its models, for the model menu and Settings. Whether
     a key is saved is in here; the key itself never goes near a page."""
+    companies = load_providers().values()
     return [{"id": p.id, "name": p.name, "company": p.company, "keys": p.keys, "has_key": bool(has_key(p.id)),
-             "models": [{"id": m.id, "name": m.name, "images": m.images} for m in p.models]}
-            for p in load_providers().values()]
+             "note": p.note, "models": [{"id": m.id, "name": m.name, "images": m.images} for m in p.models]}
+            for p in companies]
 
 
 def find_option(provider: str, model: str) -> CloudOption:

@@ -166,7 +166,7 @@ def test_pages_see_only_their_calls():
                    "recipes", "add_recipe", "post_agent",
                    "welcome", "set_welcomed", "measure", "set_spot", "switch_agent",
                    "bring_in_history", "understand_history", "what_i_know", "keep_fact", "forget_history",
-                   "open_export_page", "look_around", "find_downloads",
+                   "open_export_page", "look_around", "find_downloads", "sign_in_account", "install_account", "check_accounts",
                    "pinned_chats", "pin_chat", "search_chats",
                    "reservations", "add_reservation", "remove_reservation", "switch_reservation"}
     assert public(TodayBridge(hub, None)) == chat_calls | jobs | full_window

@@ -9,6 +9,7 @@
 #   url       where its API lives
 #   keys      the page where people get a key
 #   images    false for a model that can't look at pictures (true when left out)
+#   note      a short line shown under the name, instead of the company
 
 providers:
   anthropic:
@@ -95,16 +96,3 @@ providers:
     keys: https://dashboard.cohere.com/api-keys
     models:
       - {id: command-a-plus, name: Command A+}
-
-  openrouter:
-    name: OpenRouter
-    company: OpenRouter, one key for all of these
-    kind: openai
-    url: https://openrouter.ai/api/v1
-    keys: https://openrouter.ai/keys
-    models:
-      - {id: anthropic/claude-opus-5.5, name: Claude Opus 5.5}
-      - {id: openai/gpt-6.1-sol, name: GPT-6.1 Sol}
-      - {id: google/gemini-4-argon, name: Gemini 4 Argon}
-      - {id: x-ai/grok-4.7, name: Grok 4.7}
-      - {id: mistralai/mistral-large-4-0, name: Mistral Large 4}

@@ -13,7 +13,6 @@ window.modelPage = (() => {
   const KINDS = [{ id: "", words: "All" }, { id: "fits", words: "Fits this computer" }, { id: "code", words: "Code" }, { id: "vision", words: "Sees pictures" }];
 
   let models = {}; // what Python says is on offer
-  let menuTab = "local";
   let tab = "discover";
   let sort = "downloads";
   let kind = "";
@@ -46,8 +45,6 @@ window.modelPage = (() => {
     $("privacy").textContent = privacy();
     $("side-model").textContent = !now || now.here ? `${label()} on this computer` : `${now.name}, ${now.company}`;
     app.setModelName(label());
-    if (!now || now.provider === "local" || now.here) menuTab = "local";
-    else menuTab = "api";
   }
 
   async function load(data) {
@@ -82,17 +79,14 @@ window.modelPage = (() => {
     return rows;
   }
 
-  function apiRows() {
+  // Models from a company the user chose to add a key for (optional, on the Models page).
+  function keyedRows() {
     const rows = [];
     for (const company of models.providers || []) {
       const shown = company.models.filter((model) => !model.hidden);
-      if (!shown.length) continue;
-      rows.push(el("div", "pick-label", company.company));
-      for (const model of shown) {
-        rows.push(company.has_key ? pickRow(model.name, "", isHere(company.id, model.id), () => choose(company.id, model.id))
-                                  : pickRow(model.name, "Add key", false, () => open("api", `key-${company.id}`)));
-      }
-      if (!company.has_key) continue;
+      if (!company.has_key || !shown.length) continue;
+      rows.push(el("div", "pick-label", `${company.company}, with your key`));
+      rows.push(...shown.map((model) => pickRow(model.name, "", isHere(company.id, model.id), () => choose(company.id, model.id))));
       const more = button("pick pick-more", "More models", async () => {
         more.textContent = "Asking...";
         const list = await pywebview.api.more_models(company.id);
@@ -103,24 +97,31 @@ window.modelPage = (() => {
     }
     const custom = (models.custom || []).filter((item) => !item.hidden);
     if (custom.length) {
-      rows.unshift(el("div", "pick-label", "Your own"),
-                   ...custom.map((item) => pickRow(item.name, "", isHere("custom", item.id), () => choose("custom", item.id))));
+      rows.push(el("div", "pick-label", "Your own"),
+                ...custom.map((item) => pickRow(item.name, "", isHere("custom", item.id), () => choose("custom", item.id))));
     }
     return rows;
   }
 
+  // A plan the user already has, used through the company's own app: signed in once, no key.
+  function planRows() {
+    const rows = [];
+    for (const plan of models.accounts || []) {
+      rows.push(el("div", "pick-label", `Your ${plan.name} plan`));
+      if (plan.signed_in) rows.push(...plan.models.map((model) => pickRow(model.name, "", isHere(plan.id, model.id), () => choose(plan.id, model.id))));
+      else rows.push(pickRow(`Use ${plan.plan}`, plan.installed ? "Sign in" : `Get ${plan.app}`, false, () => open("api", `plan-${plan.id}`)));
+    }
+    return rows;
+  }
+
+  // One plain list: this computer, then the user's plans, then anything they added a key for.
   function drawMenu() {
-    const pickTab = (id) => {
-      menuTab = id;
-      drawMenu();
-    };
-    const list = el("div", "pick-list", ...(menuTab === "local" ? localRows() : apiRows()));
+    const list = el("div", "pick-list", el("div", "pick-label", "On this computer"), ...localRows(), ...planRows(), ...keyedRows());
     const foot = el("div", "pick-foot",
                     button("pick-link", "Discover", () => open("discover")),
-                    button("pick-link", "Edit models", () => open(menuTab)),
-                    button("pick-link", "Add custom model", () => open(menuTab, "custom-first")));
-    $("model-menu").replaceChildren(tabs([{ id: "local", words: "On this computer" }, { id: "api", words: "API" }], menuTab, pickTab),
-                                    list, foot);
+                    button("pick-link", "Manage models", () => open("local")),
+                    button("pick-link", "Use an API key", () => open("api")));
+    $("model-menu").replaceChildren(list, foot);
   }
 
   // ------------------------------------------------- finding on Hugging Face
@@ -347,8 +348,38 @@ window.modelPage = (() => {
     results.replaceChildren(el("p", "sub", "Free, and everything stays on this computer. The switch shows a model in the menu, or hides it."), ...rows, ...waiting, addLocal());
   }
 
+  // A ChatGPT or Claude plan, used through the company's own app (accounts.py).
+  function planRow(plan) {
+    const row = el("div", "cloud-row", el("div", "cloud-name", `${plan.name} plan`, el("span", "cloud-company", `through ${plan.app}`)));
+    row.id = `plan-${plan.id}`;
+    const note = el("div", "cloud-note");
+    const check = async () => {
+      note.textContent = "Checking...";
+      await load(await pywebview.api.check_accounts());
+      drawTab();
+    };
+    if (plan.signed_in) {
+      row.append(el("span", "cloud-saved", "Signed in"));
+    } else if (plan.installed) {
+      row.append(button("solid-button", "Sign in", async () => {
+        const reply = await pywebview.api.sign_in_account(plan.id);
+        if (reply.error) note.textContent = reply.error;
+        else note.replaceChildren(`${plan.sign_in}. `, button("quiet-button", "I've signed in", check));
+      }));
+    } else {
+      row.append(button("line-button", `Get ${plan.app}`, async () => {
+        await pywebview.api.install_account(plan.id);
+        note.replaceChildren(plan.id === "claude_code" ? "It's installing in the window that opened. When it's done, " : "Get it from OpenAI's page. When it's installed, ",
+                             button("quiet-button", "Check again", check));
+      }));
+    }
+    const lines = plan.signed_in ? plan.models.map((model) => el("div", "model-line", el("span", "", model.name)))
+                                 : [el("div", "model-line", el("span", "", plan.installed ? plan.sign_in : `Needs ${plan.app}, ${plan.name}'s own app`))];
+    return el("div", "cloud-item", row, note, el("div", "model-lines", ...lines));
+  }
+
   function keyRow(company) {
-    const row = el("div", "cloud-row", el("div", "cloud-name", company.name, el("span", "cloud-company", company.company)));
+    const row = el("div", "cloud-row", el("div", "cloud-name", company.name, el("span", "cloud-company", company.note || company.company)));
     const note = el("div", "cloud-note");
     if (company.has_key) {
       row.append(el("span", "cloud-saved", "Key saved"), button("quiet-button", "Remove", async () => {
@@ -428,9 +459,10 @@ window.modelPage = (() => {
                                         el("span", "does", `${item.model} at ${item.url}`))),
                 showSwitch("custom", item.id, item.hidden, item.name), remove);
     });
-    results.replaceChildren(el("p", "hint-line", "If you already pay for one of these, paste your key and pick the model next to the chat box. What you say to Elaina then goes to that company. Keys are kept in Windows' own password store."),
-                            ...(custom.length ? [el("h2", "", "Your own"), ...custom, el("h2", "", "Companies")] : []),
-                            el("div", "cloud-list", ...(models.providers || []).map(keyRow)), addCustom());
+    results.replaceChildren(el("p", "hint-line", "Sign in with a ChatGPT or Claude account and its models are in the menu beside the chat box: no key needed. What you say to Elaina then goes to that company."),
+                            el("h2", "", "Your plans"), el("div", "cloud-list", ...(models.accounts || []).map(planRow)),
+                            ...(custom.length ? [el("h2", "", "Your own"), ...custom] : []),
+                            el("h2", "", "With an API key (optional)"), el("p", "sub", "Only if you already pay a company for its API. Most people never need this."), el("div", "cloud-list", ...(models.providers || []).map(keyRow)), addCustom());
   }
 
   // ------------------------------------------------------------------ the page
@@ -444,7 +476,7 @@ window.modelPage = (() => {
   function drawPage() {
     const counted = (models.local || []).length;
     const top = el("div", "disc-bar", tabs([{ id: "discover", words: "Discover" }, { id: "local", words: "On this computer", count: counted },
-                                            { id: "api", words: "API" }], tab, (id) => {
+                                            { id: "api", words: "Accounts" }], tab, (id) => {
       tab = id;
       drawPage();
       if (id === "discover" && !found.length) search();
