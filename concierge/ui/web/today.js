@@ -1236,8 +1236,11 @@ window.today = (() => {
       chats = event.chats;
       currentChat = event.current;
       drawChats();
+    } else if (event.type === "ElainaDone" || event.type === "Error") {
+      modelPage.loadUsage(); // an answer from a plan or key just used some of it
     }
   });
+  $("usage").addEventListener("click", () => modelPage.openUsage());
 
   // Anything said in the chat turns the window into the chat. A chat emptied by
   // New chat goes back to Help me; opening Chat on purpose stays there.

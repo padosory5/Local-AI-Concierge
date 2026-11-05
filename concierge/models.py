@@ -15,7 +15,7 @@ from collections.abc import Callable
 from urllib.parse import urlsplit
 
 from . import accounts as apps
-from . import cloud, elaina, huggingface
+from . import auto, cloud, elaina, huggingface, usage
 from .catalog import DISK_HEADROOM_GB, find_model, helper_room
 from .ollama import OllamaError
 
@@ -111,6 +111,40 @@ class ModelMenu:
         model otherwise: a deleted model or a removed key must not stop her talking."""
         choice = self._state("talk_model", None) or {}
         provider, model = choice.get("provider", ""), choice.get("model", "")
+        if provider == auto.AUTO:
+            # Auto: her own model for small things, this one for the rest (auto.py).
+            target = self.auto_target()
+            if target is None:
+                return None  # no plan or key left to send hard questions to
+            return {"provider": auto.AUTO, "model": target["model"], "name": "Auto", "company": target["company"],
+                    "here": False, "auto": True, "cloud": target}
+        return self._resolve(provider, model)
+
+    def auto_target(self) -> dict | None:
+        """The plan or key model Auto sends hard questions to: the last one picked in
+        the menu, else a plan's middle model (Sonnet, not Opus: it's about saving the
+        plan), else the first model of a company with a key."""
+        last = self._state("auto_cloud", None) or {}
+        found = self._resolve(last.get("provider", ""), last.get("model", "")) if last else None
+        if found and not found["here"]:
+            return found
+        hidden = self._state("hidden_accounts", [])
+        for status in self.accounts.overview():
+            if status["id"] in hidden or not status["models"]:
+                continue
+            middle = next((m for m in status["models"] if "sonnet" in m["id"]), status["models"][0])
+            return self._resolve(status["id"], middle["id"])
+        for company in cloud.load_providers().values():
+            if self.keys.saved_key(company.id) and company.models:
+                return self._resolve(company.id, company.models[0].id)
+        return None
+
+    def plan_used(self, provider: str) -> float:
+        """How full the plan's fullest window is (0 to 1); 0 for a key, which has none."""
+        windows = usage.summary().get(provider, {}).get("limits", [])
+        return max((w["used"] for w in windows), default=0.0)
+
+    def _resolve(self, provider: str, model: str) -> dict | None:
         if provider == LOCAL and any(item["name"] == model for item in self._installed()):
             return {"provider": LOCAL, "model": model, "name": nice_name(model), "company": "", "here": True}
         if provider == CUSTOM:
@@ -132,10 +166,13 @@ class ModelMenu:
         return None
 
     def talker(self, system: str):
-        """Who writes her answers, or None for her own model."""
+        """Who writes her answers, or None for her own model. With Auto, the model
+        for hard questions: the engine decides each time whether to use it."""
         chosen = self.chosen()
         if chosen is None:
             return None
+        if chosen.get("auto"):
+            chosen = chosen["cloud"]
         name, model = chosen["name"], chosen["model"]
         if chosen["provider"] == LOCAL:
             return LocalModel(self.ollama, model, f"{system}\n\nRight now your answers are written by {name}, "
@@ -154,6 +191,9 @@ class ModelMenu:
 
     def pick(self, provider: str = "", model: str = "") -> dict:
         self._store("talk_model", {"provider": provider, "model": model})
+        picked = self._resolve(provider, model) if provider and provider != auto.AUTO else None
+        if picked and not picked["here"]:
+            self._store("auto_cloud", {"provider": provider, "model": model})  # what Auto asks from now on
         self.changed()
         return self.info()
 
@@ -179,7 +219,9 @@ class ModelMenu:
         custom = [{**item, "has_key": bool(self.keys.saved_key(f"custom-{item['id']}")), "here": _host(item["url"]) in LOOPBACK,
                    "hidden": f"{CUSTOM}/{item['id']}" in hidden} for item in self._custom()]
         known = find_model(own) if own else None
+        target = self.auto_target()
         return {"own": known.name if known else own or "Elaina's model", "current": self.chosen(),
+                "auto": {"cloud": target["name"] if target else "", "company": target["company"] if target else ""},
                 "local": local, "accounts": self._accounts_shown(), "providers": companies, "custom": custom}
 
     def hide(self, provider: str, model: str, hidden: bool) -> dict:
@@ -232,6 +274,10 @@ class ModelMenu:
     def _accounts_shown(self) -> list[dict]:
         hidden = set(self._state("hidden_accounts", []))
         return [{**status, "hidden": status["id"] in hidden} for status in self.accounts.overview()]
+
+    def usage(self) -> dict:
+        """How much of each plan or key her answers used, for the meter (usage.py)."""
+        return usage.summary()
 
     def check_accounts(self) -> dict:
         """Look again, after the user signed in or installed something."""

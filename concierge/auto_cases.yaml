@@ -1,0 +1,74 @@
+# Auto: the questions Elaina must place right (auto.py). "here" means her own model
+# on this computer answers; "cloud" means the plan or key picked for hard questions.
+#
+# Every answer is for the weakest computer we support (a 4B model) with plenty of
+# the plan left, because a call that's right there is right everywhere. `kind` is
+# what the question is, from auto.KINDS. `after` is what Auto chose for the message
+# before, for follow-ups like "why?".
+#
+# Checked by tests/test_auto.py (code only) and, with the real model,
+# `python -m concierge.auto_eval`, which must stay at 100%.
+
+cases:
+  # ---------------------------------------------------- small talk: always here
+  - {text: "hi", expect: here, kind: small_talk}
+  - {text: "thanks!", expect: here, kind: small_talk}
+  - {text: "good morning Elaina", expect: here, kind: small_talk}
+  - {text: "안녕", expect: here, kind: small_talk}
+  - {text: "고마워", expect: here, kind: small_talk}
+  - {text: "ok", expect: here, kind: small_talk}
+  - {text: "tell me a joke", expect: here, kind: small_talk}
+
+  # ---------------------------------------------- quick facts and small jobs: here
+  - {text: "what's the capital of Japan?", expect: here, kind: quick_fact}
+  - {text: "how many ounces in a cup?", expect: here, kind: quick_fact}
+  - {text: "what does \"procrastinate\" mean?", expect: here, kind: quick_fact}
+  - {text: "what's 15% of 80?", expect: here, kind: quick_fact}
+  - {text: "how do you spell necessary", expect: here, kind: quick_fact}
+  - {text: "is a tomato a fruit?", expect: here, kind: quick_fact}
+  - {text: "how long should I boil an egg?", expect: here, kind: quick_fact}
+  - {text: "what year did World War 2 end?", expect: here, kind: quick_fact}
+  - {text: "convert 30 celsius to fahrenheit", expect: here, kind: quick_fact}
+  - {text: "give me a synonym for happy", expect: here, kind: quick_fact}
+  - {text: "translate \"where is the train station\" into Korean", expect: here, kind: rewrite}
+  - {text: "이 문장 영어로 번역해줘: 오늘 날씨 좋다", expect: here, kind: rewrite}
+  - {text: "fix the grammar: me and him goes to school yesterday", expect: here, kind: rewrite}
+  - {text: "make this shorter: I am writing to let you know that I will not be able to attend the meeting tomorrow because of a scheduling conflict.", expect: here, kind: rewrite}
+  - {text: "rewrite this to sound more polite: send me the file now", expect: here, kind: rewrite}
+  - {text: "suggest a name for my cat", expect: here, kind: suggestion}
+  - {text: "what should I eat for dinner?", expect: here, kind: suggestion}
+  - {text: "write a short birthday message for my mom", expect: here, kind: suggestion}
+  - {text: "점심 메뉴 추천해줘", expect: here, kind: suggestion}
+
+  # -------------------------------------------- code: always the plan's model
+  - {text: "write a Python script that renames all the photos in a folder by the date they were taken", expect: cloud, kind: code}
+  - {text: "why does this throw an error? ```TypeError: 'NoneType' object is not subscriptable```", expect: cloud, kind: code}
+  - {text: "Traceback (most recent call last):\n  File \"app.py\", line 12, in <module>\n    name = user['name']\nKeyError: 'name'", expect: cloud, kind: code}
+  - {text: "이 코드 왜 안돼? for i in range(10) print(i)", expect: cloud, kind: code}
+  - {text: "how do I set up a REST API with authentication in Node.js?", expect: cloud, kind: code}
+  - {text: "write SQL to find the top 5 customers by total order amount in the last 90 days", expect: cloud, kind: code}
+  - {text: "design a database schema for a library app with books, members and loans", expect: cloud, kind: code}
+
+  # --------------------------------------------- math that takes steps: the plan
+  - {text: "prove that the square root of 2 is irrational", expect: cloud, kind: math}
+  - {text: "solve the integral of x^2 * e^x dx step by step", expect: cloud, kind: math}
+  - {text: "what's the time complexity of quicksort and why is the worst case n squared?", expect: cloud, kind: math}
+
+  # --------------------- long writing, plans, deep explaining, comparing: the plan
+  # (a 4B model can't do these well; a 14B one keeps writing and plans, see auto.STAY_HERE)
+  - {text: "write a 1000-word essay on the causes of the French Revolution", expect: cloud, kind: writing}
+  - {text: "help me write a cover letter for a junior data analyst job, I have a statistics degree and one internship", expect: cloud, kind: writing}
+  - {text: "보고서 써줘: 우리 회사 신제품 마케팅 전략, 타겟 고객, 예산 계획 포함해서", expect: cloud, kind: writing}
+  - {text: "plan a 5-day trip to Tokyo for two people on a budget, with a day-by-day schedule", expect: cloud, kind: planning}
+  - {text: "make a study plan for my calculus final in 3 weeks", expect: cloud, kind: planning}
+  - {text: "explain the difference between TCP and UDP and when to use each, with examples", expect: cloud, kind: explain}
+  - {text: "리액트에서 useEffect가 두 번 실행되는 이유를 자세히 설명해줘", expect: cloud, kind: explain}
+  - {text: "summarize the main arguments of Kant's categorical imperative and the strongest objections to it", expect: cloud, kind: explain}
+  - {text: "compare these three laptops for programming and tell me which one to buy: MacBook Air M4, Dell XPS 14, ThinkPad X1 Carbon", expect: cloud, kind: analysis}
+  - {text: "analyze the pros and cons of renting vs buying a house in Seoul right now", expect: cloud, kind: analysis}
+  - {text: "review my essay intro and tell me how to make it stronger: Throughout history, technology has changed the way people live. From the printing press to the internet, every invention has brought both benefits and problems. In this essay I will talk about social media and how it affects teenagers. Some people think it is good because it connects friends, but others think it is bad because it causes anxiety and wastes time. I believe that social media has more negative effects than positive ones, and I will explain why in the following paragraphs.", expect: cloud, kind: writing}
+
+  # ------------------------------------------------------------------ follow-ups
+  - {text: "why?", after: cloud, expect: cloud, kind: follow_up}
+  - {text: "thanks, that worked", after: cloud, expect: here, kind: small_talk}
+  - {text: "make it shorter", after: here, expect: here, kind: follow_up}

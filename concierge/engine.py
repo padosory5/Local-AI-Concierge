@@ -12,10 +12,11 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Iterator
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
-from . import activity, elaina, hardware, history, portrait, safety, signs
+from . import activity, auto, cloud, elaina, hardware, history, portrait, safety, signs, usage
+from .accounts import APPS
 from .agents import community, runner, store
 from .agents.blueprint import load_blueprints
 from .agents.builder import AgentBuilder, say
@@ -82,6 +83,10 @@ class ElainaEngine:
         # A diagnosis waiting for "Fix it": (agent name, settings to change, switch it on)
         self.fixing: tuple[str, dict, bool] | None = None
         self.talker_name = ""  # the model writing her answers, if it isn't her own
+        # Auto (auto.py): her own model answers, and this one gets the hard questions.
+        self.auto_cloud = None
+        self.auto_last = ""  # where the last chat answer came from, for "why?" and "go on"
+        self.auto_kind = ""  # what the last one kept here was, counted if asked again
         self.menu = ModelMenu(self.ollama, self._hardware)
         self.menu.changed = self._use_chosen_model
 
@@ -414,25 +419,122 @@ class ElainaEngine:
                 yield Thinking(f"This is a job for {where.agent}.")
                 yield from self._run_agent(where.agent, where.request, text)
             else:
-                yield Thinking(f"This is just a chat, so I'll ask {self.talker_name}." if self.talker_name
-                               else "This is just a chat, so I'll answer it myself.")
+                if not self.auto_cloud:  # with Auto, _reply says who answers and why
+                    yield Thinking(f"This is just a chat, so I'll ask {self.talker_name}." if self.talker_name
+                                   else "This is just a chat, so I'll answer it myself.")
                 if think and not self.chat.can_think and not self.talker_name:
                     yield Thinking("This model can't show its thinking, so here is my answer.")
                 yield from self._reply(text, think)
         except OllamaError as exc:
             yield Error(str(exc))
 
-    def _reply(self, text: str, think: bool) -> Iterator[Event]:
+    def _reply(self, text: str, think: bool, attached_chars: int = 0, where: str = "") -> Iterator[Event]:
+        """where: auto.CLOUD to skip Auto's decision ("Ask Claude instead")."""
+        done = ElainaDone()
+        if self.auto_cloud is not None:
+            done = yield from self._auto_choose(text, attached_chars, where)
+        said = False
+        here = self._writes_here()
+        try:
+            for event in self._answer(text, think):
+                said = said or isinstance(event, ElainaText)
+                yield event
+        except cloud.CloudError as exc:
+            if said or self.chat.talker is self.ollama or not self.auto_cloud:
+                raise
+            # The plan said no (signed out, used up, no internet) before a word was
+            # written: Auto exists to keep her talking, so she answers herself.
+            yield Thinking(f"{self.talker_name} couldn't answer ({exc}), so I'll answer myself.")
+            self.chat.talker = self.ollama
+            self.auto_last = auto.HERE
+            done, here = ElainaDone(by=self._own_name()), True
+            yield from self._answer(text, think)
+        finally:
+            if self.auto_cloud is not None:
+                self.chat.talker = self.ollama  # agents and the router stay here with Auto
+        if note := safety.caution(text):
+            yield ElainaText(f"\n\n{note}")
+        activity.record(activity.ANSWERED)
+        yield self._answered(done, here)
+
+    def _writes_here(self) -> bool:
+        """Whether the model about to answer is on this computer."""
+        if self.chat.talker is self.ollama:
+            return True
+        if self.auto_cloud is not None:
+            return False  # with Auto, anything but her own model is the plan
+        chosen = self.menu.chosen()
+        return not chosen or bool(chosen.get("here"))
+
+    def _answered(self, done: ElainaDone, here: bool) -> ElainaDone:
+        """The reply's ElainaDone with where it was written, for the dot under it:
+        the tokens an answer written here saved (Auto only, since only then was
+        there a plan it would have gone to), or how full the plan is after one from it."""
+        chosen = self.menu.chosen() or {}
+        source = (chosen.get("cloud") or chosen).get("provider", "")
+        if here:
+            saved = 0
+            if self.auto_cloud is not None and source:
+                saved = usage.saved_estimate(source, *getattr(self.ollama, "last_tokens", (0, 0)))
+                usage.record_saved(source, saved)
+            return replace(done, where=auto.HERE, saved=saved)
+        plan_used = self.menu.plan_used(source) if source in APPS else -1.0
+        return replace(done, where=auto.CLOUD, plan_used=plan_used, by=done.by or self.talker_name)
+
+    def _answer(self, text: str, think: bool) -> Iterator[Event]:
         if think and self.chat.can_think:
             for kind, piece in self.chat.think_through(text):
                 yield Thinking(piece, "thought") if kind == "thought" else ElainaText(piece)
         else:
             for chunk in self.chat.send(text):
                 yield ElainaText(chunk)
-        if note := safety.caution(text):
-            yield ElainaText(f"\n\n{note}")
-        activity.record(activity.ANSWERED)
-        yield ElainaDone()
+
+    def _auto_choose(self, text: str, attached_chars: int, where: str):
+        """Auto: her own model or the plan, for this one message. Says which and why,
+        and returns the ElainaDone that names who answered."""
+        chosen = self.menu.chosen() or {}
+        target = chosen.get("cloud") or {}
+        if where == auto.CLOUD:
+            decision = auto.Decision(auto.CLOUD, "asked", "user")
+        else:
+            decision = auto.decide(text, base_model=elaina.load_state().get("base_model", ""), after=self.auto_last,
+                                   plan_used=self.menu.plan_used(target.get("provider", "")),
+                                   attached_chars=attached_chars,
+                                   ask_model=auto.model_form(self.ollama, elaina.ELAINA_MODEL))
+            yield Thinking(auto.say(decision, self.talker_name, plan=target.get("provider") in APPS))
+        self.auto_last = decision.where
+        if decision.where == auto.CLOUD:
+            self.chat.talker = self.auto_cloud
+            return ElainaDone(by=self.talker_name)
+        self.chat.talker = self.ollama
+        self.auto_kind = decision.kind
+        auto.record(decision.kind)
+        return ElainaDone(by=self._own_name(), instead=self.talker_name)
+
+    def _own_name(self) -> str:
+        tag = elaina.load_state().get("base_model", "")
+        model = find_model(tag) if tag else None
+        return model.name if model else "Elaina"
+
+    def ask_again(self) -> Iterator[Event]:
+        """"Ask Claude instead" under an answer Auto kept on this computer: the same
+        question again, from the plan, and counted so wrongly placed kinds show up."""
+        history = self.chat.history if self.chat else []
+        if not self.auto_cloud or len(history) < 2 or history[-1]["role"] != "assistant":
+            yield Error("There's nothing to ask again right now.")
+            return
+        text = history[-2]["content"]
+        del history[-2:]  # replaced by the new answer, so she doesn't remember both
+        auto.record(self.auto_kind or "unclear", asked_again=True)
+
+        def again() -> Iterator[Event]:
+            yield Thinking(f"Asking {self.talker_name} instead.")
+            try:
+                yield from self._reply(text, False, where=auto.CLOUD)
+            except OllamaError as exc:
+                yield Error(str(exc))
+
+        yield from self._full_lists(self.book.record(f"Ask {self.talker_name} instead", again()))
 
     def _with_attachments(self, text: str, attached: Attached, think: bool) -> Iterator[Event]:
         self.deleting = None
@@ -458,7 +560,7 @@ class ElainaEngine:
             read = [name for name in attached.names if name not in attached.unread]
             yield Thinking(f"Read {', '.join(read)}.")
             self.chat.attach(attached.context, images)
-            yield from self._reply(text or NOTHING_SAID, think)
+            yield from self._reply(text or NOTHING_SAID, think, attached_chars=len(attached.context))
         except OllamaError as exc:
             yield Error(str(exc))
 
@@ -468,14 +570,20 @@ class ElainaEngine:
         every highlight: those see whatever the user selects, in any program, so
         that must never leave the computer without them asking each time."""
         chosen = self.menu.chosen()
-        self.talker_name = chosen["name"] if chosen else ""
+        is_auto = bool(chosen and chosen.get("auto"))
+        self.talker_name = (chosen["cloud"]["name"] if is_auto else chosen["name"]) if chosen else ""
+        self.auto_last = ""
         if self.chat is None:
             return
         try:
             system = self.ollama.show(elaina.ELAINA_MODEL).get("system", "") if chosen else ""
         except OllamaError:
             system = ""
-        self.chat.talker = self.menu.talker(system) or self.ollama
+        talker = self.menu.talker(system) or self.ollama
+        # With Auto her own model is the one in use; the plan only answers what
+        # _auto_choose sends it, one message at a time.
+        self.auto_cloud = talker if is_auto else None
+        self.chat.talker = self.ollama if is_auto else talker
 
     def _handle_choice(self, id: str, choice: str) -> Iterator[Event]:
         if id == PICK_AGENT_TO_DELETE:

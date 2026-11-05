@@ -56,7 +56,26 @@ class ElainaText:
 
 @dataclass(frozen=True)
 class ElainaDone:
-    """Elaina's current reply is complete."""
+    """Elaina's current reply is complete.
+
+    With Auto picked in the model menu (auto.py), `by` names the model that wrote
+    this reply; show it under the reply instead of the menu's name. `instead` is
+    set when Auto kept the reply on this computer: the plan or key model the user
+    can ask instead, as a button under the reply calling engine.ask_again().
+    Both are empty otherwise.
+
+    For every chat answer, `where` is "here" (written on this computer) or "cloud"
+    (a plan or key), for the coloured dot under it; empty for her set phrases.
+    `saved`: about how many plan or key tokens an answer written here kept (Auto
+    only, 0 otherwise). `plan_used`: how full the plan's fullest window was right
+    after a cloud answer (0 to 1), or -1 when there's no plan to measure (a key).
+    """
+
+    by: str = ""
+    instead: str = ""
+    where: str = ""
+    saved: int = 0
+    plan_used: float = -1.0
 
 
 @dataclass(frozen=True)
@@ -186,6 +205,12 @@ class TranscriptItem:
     text: str
     agent: str = ""  # for "result": which agent answered
     sources: list[Source] = field(default_factory=list)
+    # For an "elaina" answer, what its ElainaDone said, so a reopened chat shows the
+    # same dot and saved tokens: who wrote it, "here" or "cloud", tokens saved, plan used.
+    by: str = ""
+    where: str = ""
+    saved: int = 0
+    plan_used: float = -1.0
 
 
 @dataclass(frozen=True)

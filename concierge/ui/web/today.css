@@ -2154,6 +2154,43 @@ body.side-over .side {
   color: var(--text);
 }
 
+/* Which model wrote an answer (app.js, whoAnswered): blue on this computer, yellow
+   from a plan or key, turning red as the plan fills up (--hue from 48 down to 0). */
+:root {
+  --here-blue: #6aa8ff;
+}
+
+.who-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: -5px; /* sits close to the words it belongs to */
+  border-radius: 50%;
+  background: hsl(var(--hue, 48) 92% 58%);
+  box-shadow: 0 0 6px hsl(var(--hue, 48) 92% 58% / 0.55);
+}
+
+.who-dot.here {
+  background: var(--here-blue);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--here-blue) 55%, transparent);
+}
+
+.meta-saved {
+  color: var(--here-blue);
+}
+
+/* Auto kept this answer here: always shown, unlike Copy, so people find it. */
+.meta-copy.meta-instead {
+  margin-left: 4px;
+  color: var(--accent);
+  opacity: 1;
+}
+
+.meta-copy.meta-instead:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
 .sent-files {
   display: flex;
   flex-wrap: wrap;
@@ -2318,6 +2355,36 @@ body[data-view="welcome"] .composer {
 
 .composer button.model-pill.cloud {
   color: var(--accent);
+}
+
+/* How much of the plan answering now is used (models.js, drawUsage). A ring that
+   fills like Claude Code's /usage bar, turning amber near the limit. */
+:root {
+  --usage-full: #e6b86a;
+}
+
+.composer button.usage-pill {
+  gap: 6px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-ring {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--used, 0deg), var(--raised) 0);
+  -webkit-mask: radial-gradient(circle, transparent 3.5px, #000 4px);
+  mask: radial-gradient(circle, transparent 3.5px, #000 4px);
+}
+
+.composer button.usage-pill.full {
+  color: var(--usage-full);
+}
+
+.usage-pill.full .usage-ring {
+  background: conic-gradient(var(--usage-full) var(--used, 0deg), var(--raised) 0);
 }
 
 .composer button.think-toggle {
@@ -3159,6 +3226,118 @@ body[data-view="models"] .room-tabs {
 
 .account-note:empty {
   display: none;
+}
+
+/* A plan's windows and the tokens her answers used (models.js, usageBlock). */
+.usage-block {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.meter {
+  display: grid;
+  grid-template-columns: 8.5em minmax(80px, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 0.92rem;
+}
+
+.meter-name {
+  color: var(--text);
+}
+
+.meter-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+.meter.full .meter-fill {
+  background: var(--usage-full);
+}
+
+.meter-used {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.meter.full .meter-used {
+  color: var(--usage-full);
+}
+
+/* Tokens Auto kept on this computer: blue, like the dot under its answers. */
+.meter.saved .meter-fill {
+  background: var(--here-blue);
+}
+
+.meter.saved .meter-used {
+  color: var(--here-blue);
+}
+
+.meter-again {
+  grid-column: 2 / -1;
+  margin-top: -2px;
+  color: var(--faint);
+  font-size: 0.85rem;
+}
+
+/* In the model menu: one thin line per window, under the plan's name. */
+.pick-usage {
+  display: grid;
+  gap: 4px;
+  padding: 2px 10px 6px;
+}
+
+.meter.small {
+  grid-template-columns: 7.5em minmax(50px, 1fr) auto;
+  font-size: 0.8rem;
+}
+
+.meter.small .meter-name {
+  color: var(--faint);
+}
+
+.meter.small .meter-bar {
+  height: 5px;
+}
+
+.usage-line {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.usage-line.faint {
+  color: var(--faint);
+  font-size: 0.85rem;
+}
+
+.cloud-item .usage-block {
+  margin: 4px 0 8px;
+}
+
+@media (max-width: 760px) {
+  .meter {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .meter-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .meter-again {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
 }
 
 /* Set up for someone else: bigger words everywhere. */

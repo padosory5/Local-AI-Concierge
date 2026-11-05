@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from .cloud import CloudError, load_providers, record_sent
+from .usage import claude_limits, claude_tokens, codex_limits, codex_tokens, record_limits, record_tokens
 
 CODEX, CLAUDE_CODE = "codex", "claude_code"
 # What each one is called, where it might live, and how people get it.
@@ -173,6 +174,10 @@ class AppModel:
         command = [program, "exec", "--json", "-m", self.model, "-s", "read-only", "--skip-git-repo-check",
                    "--ephemeral", "-C", folder, "-"]
         for event in self._events(command, prompt, folder):
+            if codex_limits(event):  # only when Codex reports them; nothing is guessed
+                record_limits(CODEX, codex_limits(event))
+            if event.get("type") == "turn.completed":
+                record_tokens(CODEX, self.model, *codex_tokens(event))
             if event.get("type") == "item.completed" and (event.get("item") or {}).get("type") == "agent_message":
                 yield event["item"].get("text", "")
             elif event.get("type") == "turn.failed":
@@ -189,7 +194,11 @@ class AppModel:
             if event.get("type") == "stream_event" and (inner.get("delta") or {}).get("type") == "text_delta":
                 streamed = True
                 yield inner["delta"].get("text", "")
+            elif event.get("type") == "rate_limit_event":
+                # The plan's 5-hour and weekly windows, the same numbers as /usage in Claude Code.
+                record_limits(CLAUDE_CODE, claude_limits(event))
             elif event.get("type") == "result":
+                record_tokens(CLAUDE_CODE, self.model, *claude_tokens(event))
                 if event.get("is_error"):
                     raise CloudError(f"Claude couldn't answer through Claude Code: {_said(str(event.get('result', '')))}")
                 if not streamed:  # an older Claude Code that doesn't send pieces

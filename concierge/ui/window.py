@@ -202,6 +202,10 @@ class ChatBridge:
     def choose(self, id: str, choice: str) -> None:
         self._hub.run(self, "choose", id, choice, user=choice)
 
+    def ask_again(self, words: str = "") -> None:
+        """"Ask Claude instead" under an answer Auto kept on this computer."""
+        self._hub.run(self, "ask_again", user=words or None)
+
     def new_chat(self) -> None:
         self._hub.run(self, "new_chat", dots=False)
 
@@ -388,6 +392,10 @@ class TodayBridge(WatchBridge):
 
     def more_models(self, provider: str) -> list[dict]:
         return self._hub.menu("more", provider, default=[])
+
+    def usage(self) -> dict:
+        """How much of a plan or key her answers used: the meter by the model button."""
+        return self._hub.menu("usage", default={})
 
     def open_key_page(self, provider: str) -> None:
         """Only a page from our own list, never an address a page hands us."""
