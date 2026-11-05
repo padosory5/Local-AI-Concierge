@@ -21,6 +21,7 @@ from pathlib import Path
 import requests
 import yaml
 
+from . import usage
 from .ollama import OllamaError
 
 CATALOG_PATH = Path(__file__).with_name("cloud_models.yaml")
@@ -144,8 +145,26 @@ def request_for(provider: Provider, model: str, system: str, messages: list[dict
             body["system"] = system
         return f"{provider.url}/messages", body
     turns = [{"role": "system", "content": system}] if system else []
-    return f"{provider.url}/chat/completions", {"model": model, "stream": True,
-                                                "messages": turns + [_openai_message(m) for m in messages]}
+    body = {"model": model, "stream": True, "messages": turns + [_openai_message(m) for m in messages]}
+    if provider.id == "openai":
+        # Asks for the token count at the end, for the usage meter. Only OpenAI itself:
+        # other services that talk its way may refuse a setting they don't know.
+        body["stream_options"] = {"include_usage": True}
+    return f"{provider.url}/chat/completions", body
+
+
+def tokens_in(provider: Provider, event: dict) -> tuple[int, int]:
+    """Tokens read and written that one piece of a streamed reply reports, if any.
+    Anthropic says what was read at the start and what was written at the end;
+    OpenAI-style services put both in a last piece, when they send one."""
+    if provider.kind == "anthropic":
+        used = (event.get("message") or {}).get("usage") if event.get("type") == "message_start" else event.get("usage")
+        used = used or {}
+        read = (used.get("input_tokens") or 0) + (used.get("cache_creation_input_tokens") or 0) \
+            + (used.get("cache_read_input_tokens") or 0)
+        return (read, 0) if event.get("type") == "message_start" else (0, used.get("output_tokens") or 0)
+    used = event.get("usage") or {}
+    return used.get("prompt_tokens") or 0, used.get("completion_tokens") or 0
 
 
 def text_in(provider: Provider, event: dict) -> str:
@@ -165,6 +184,7 @@ class CloudModel:
     def chat(self, model: str, messages: list[dict], think=None, options=None, keep_alive=None) -> Iterator[str]:
         url, body = request_for(self.provider, self.option.id, self.system, messages)
         record_sent(self.provider.company, self.option.name)
+        read = wrote = 0
         try:
             with requests.post(url, json=body, headers=_headers(self.provider, self.key), stream=True,
                                timeout=REPLY_TIMEOUT) as reply:
@@ -175,12 +195,17 @@ class CloudModel:
                         continue
                     data = line[5:].strip()
                     if data == b"[DONE]":
-                        return
-                    piece = text_in(self.provider, json.loads(data))
+                        break
+                    event = json.loads(data)
+                    more_read, more_wrote = tokens_in(self.provider, event)
+                    read, wrote = read + more_read, wrote + more_wrote
+                    piece = text_in(self.provider, event)
                     if piece:
                         yield piece
         except requests.RequestException as exc:
             raise CloudError(f"I couldn't reach {self.provider.company}. Check your internet connection.") from exc
+        if read or wrote:  # some services never say; then there's nothing true to count
+            usage.record_tokens(self.provider.id, self.option.name, read, wrote)
 
     def chat_parts(self, model: str, messages: list[dict], think=None, options=None,
                    keep_alive=None) -> Iterator[tuple[str, str]]:

@@ -80,7 +80,7 @@ class ChatBook:
                 if isinstance(event, ElainaText):
                     reply.append(event.text)
                 elif isinstance(event, ElainaDone):
-                    self._add("elaina", "".join(reply))
+                    self._add("elaina", "".join(reply), answered=event)
                     reply = []
                 elif isinstance(event, Question):
                     self._add("elaina", event.text)
@@ -99,14 +99,18 @@ class ChatBook:
         if is_new:
             yield self.chat_list()
 
-    def _add(self, role: str, text: str, agent: str = "", sources: list[Source] | None = None) -> None:
+    def _add(self, role: str, text: str, agent: str = "", sources: list[Source] | None = None,
+             answered: ElainaDone | None = None) -> None:
         text = text.strip()
         if not text:
             return
         now = _now()
         if self.current is None:
             self.current = Conversation(_new_id(), title_from(text), now, now)
-        item = TranscriptItem(role, text, agent, list(sources or []))
+        # Who wrote an answer goes along with it, so a reopened chat shows the same dot.
+        who = {"by": answered.by, "where": answered.where, "saved": answered.saved,
+               "plan_used": answered.plan_used} if answered else {}
+        item = TranscriptItem(role, text, agent, list(sources or []), **who)
         self.current.items.append(asdict(item))
         self.current.updated = now
 
@@ -140,8 +144,9 @@ class ChatBook:
         if self.current is None:
             return Transcript(None, [])
         items = [
-            TranscriptItem(i["role"], i["text"], i.get("agent", ""), [Source(**s) for s in i.get("sources", [])])
-            for i in self.current.items
+            TranscriptItem(i["role"], i["text"], i.get("agent", ""), [Source(**s) for s in i.get("sources", [])],
+                           i.get("by", ""), i.get("where", ""), i.get("saved", 0), i.get("plan_used", -1.0))
+            for i in self.current.items  # chats saved before this have none of those: no dot
         ]
         return Transcript(self.current.id, items)
 

@@ -27,7 +27,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import asdict
 
-from . import hardware, savings
+from . import auto, hardware, usage
 from .agents import community
 from .agents.recipe import CUSTOM, WHILE_ON, describe
 from .agents.starters import asks_for, load_starters
@@ -117,10 +117,11 @@ class FakeEngine:
         self.draft: dict = {}
         self.waiting_for: str | None = None  # which typed answer we expect next
         self.deleting: str | None = None
+        self.auto_last = ""  # Auto's last choice, for follow-ups
         self.answered = ""  # the last plain chat reply, which Shorter and More detail can follow
-        self.saved: dict | None = None  # practice: a job kept here although a cloud model is picked
         self.book = ChatBook(None)
         self.settings: dict = {"base_model": "qwen3.5:4b"}  # practice only: nothing touches the real ones
+        usage.in_memory()  # practice numbers never reach the real usage file
         self.menu = ModelMenu(PracticeOllama(), lambda: (hardware.detect(), 3.0), load=lambda: dict(self.settings),
                               save=self._keep_settings, keys=PracticeKeys(), browse=practice_models,
                               accounts=PracticeAccounts())
@@ -146,43 +147,79 @@ class FakeEngine:
         yield self.book.chat_list()
 
     def send(self, text: str, think: bool = False) -> Iterator[Event]:
+        from .events import Thinking
         self.answered = ""
-        self.saved = None
 
         def with_thinking():
+            chosen = self.menu.chosen()
+            here = not chosen or chosen.get("here")
+            if chosen and chosen.get("auto"):
+                # Auto in practice: decided by code only, no model asked (auto.py).
+                cloud = chosen["cloud"]["name"]
+                decision = auto.decide(text, base_model=self.settings.get("base_model", ""), after=self.auto_last)
+                self.auto_last = decision.where
+                yield Thinking(auto.say(decision, cloud, plan=chosen["cloud"]["provider"] in ("codex", "claude_code")))
+                if decision.where == auto.CLOUD:
+                    yield from self._say(f"Practice: this is where {cloud} would answer.", self._practice_done(False, cloud))
+                    return
+                done = self._practice_done(True, "Qwen 3.5 4B", instead=cloud)
+            else:
+                done = self._practice_done(bool(here), "" if here else chosen["name"])
             if think:
-                from .events import Thinking
                 yield Thinking("This is normal conversation, so I'll answer myself.")
                 for word in "The user is saying hello, so a short friendly reply fits.".split(" "):
                     yield Thinking(word + " ", "thought")
-            yield from self._reply(text)
+            for event in self._reply(text):
+                yield done if done and isinstance(event, ElainaDone) else event
         yield from self.book.record(text, with_thinking())
+
+    def ask_again(self) -> Iterator[Event]:
+        from .events import Thinking
+        chosen = self.menu.chosen() or {}
+        cloud = (chosen.get("cloud") or {}).get("name", "")
+        if not cloud:
+            yield Error("There's nothing to ask again right now.")
+            return
+
+        def again():
+            yield Thinking(f"Asking {cloud} instead.")
+            yield from self._say(f"Practice: this is where {cloud} would answer.", self._practice_done(False, cloud))
+        yield from self.book.record(f"Ask {cloud} instead", again())
+
+    def _practice_done(self, here: bool, by: str, instead: str = "") -> ElainaDone:
+        """The end of a practice answer, with made-up numbers kept in memory, so the
+        dot under it and the saved tokens look the way they will for real."""
+        chosen = self.menu.chosen() or {}
+        source = (chosen.get("cloud") or chosen).get("provider", "")
+        if here:
+            saved = 0
+            if chosen.get("auto"):
+                saved = usage.saved_estimate(source, 900, 60)
+                usage.record_saved(source, saved)
+            return ElainaDone(by=by, instead=instead, where=auto.HERE, saved=saved)
+        if source in ("codex", "claude_code"):
+            # The practice plan counts its tokens and limits. Never a key's model:
+            # that one would really go to the company.
+            list(self.menu.talker("").chat())
+        used = self.menu.plan_used(source) if source in ("codex", "claude_code") else -1.0
+        return ElainaDone(by=by, where=auto.CLOUD, plan_used=used)
 
     def choose(self, id: str, choice: str) -> Iterator[Event]:
         self.answered = ""
-        self.saved = None
         yield from self.book.record(choice, self._choice(id, choice))
 
     def follow_up(self, which: str, think: bool = False) -> Iterator[Event]:
         if which not in FOLLOW_UPS:
             return
-        if which == "cloud":
-            if self.saved is None:
-                return
-            self.answered = f"Practice: the answer from {self.saved['model']} would come here."
-            self.saved = None
-        else:
-            self.answered = ("Practice: the short version would come here." if which == "shorter"
-                             else "Practice: more detail would come here, going further than before.")
-        yield from self.book.record(self.follow_up_words(which), self._say(self.answered))
+        self.answered = ("Practice: the short version would come here." if which == "shorter"
+                         else "Practice: more detail would come here, going further than before.")
+        yield from self.book.record(FOLLOW_UPS[which], self._say(self.answered))
 
     def follow_up_words(self, which: str) -> str:
-        picked = self.menu.chosen()
-        return FOLLOW_UPS.get(which, "").format(model=picked["name"] if picked else "the model I picked")
+        return FOLLOW_UPS.get(which, "")
 
     def after_answer(self, reply: str) -> dict:
-        answered = bool(self.answered) and reply.strip() == self.answered
-        return {"follow_ups": answered, "places": False, "saved": self.saved if answered else None}
+        return {"follow_ups": bool(self.answered) and reply.strip() == self.answered, "places": False}
 
     def pictures(self, reply: str) -> list[dict]:
         return []  # the practice app looks nothing up
@@ -357,12 +394,6 @@ class FakeEngine:
             else:
                 yield from self._say(f"{starter.name} is ready. Use its switch to turn it on.")
             yield self._agent_list()
-        elif (job := savings.local_job(text)) and (picked := self.menu.chosen()) and not picked["here"]:
-            # A cloud model is picked, but this job stays here: the saved line and its button.
-            self.answered = (f"Practice: I'd {savings.JOB_WORDS[job]} myself, right here, and "
-                             f"{picked['name']} would stay out of it.")
-            self.saved = {"tokens": 640, "model": picked["name"]}
-            yield from self._say(self.answered)
         elif any(word in lowered for word in ("translate", "shortcut", "screenshot", "idea")):
             yield IdeaCard(
                 "idea", "Highlight translator",
@@ -426,11 +457,11 @@ class FakeEngine:
         else:
             yield Error(f"Nothing is waiting for an answer to {id!r}.")
 
-    def _say(self, text: str) -> Iterator[Event]:
+    def _say(self, text: str, done: ElainaDone | None = None) -> Iterator[Event]:
         for word in text.split(" "):
             time.sleep(self.delay)
             yield ElainaText(word + " ")
-        yield ElainaDone()
+        yield done or ElainaDone()
 
     def _card(self) -> AgentCard:
         kinds = {"PDF only": "PDF files", "Word only": "Word files"}
@@ -534,11 +565,23 @@ class PracticeAccounts:
         pass
 
     def talker(self, app: str, model: str, system: str):
+        def counted():
+            # Made-up numbers in memory, so the practice app's usage meter moves.
+            used = usage.summary().get(app, {}).get("limits") or [{"id": "five_hour", "used": 0.12},
+                                                                 {"id": "seven_day", "used": 0.31}]
+            now = time.time()
+            usage.record_limits(app, [{"id": w["id"], "used": min(1.0, w["used"] + 0.04),
+                                       "resets_at": now + (5 * 3600 if w["id"] == "five_hour" else 4 * 86400)}
+                                      for w in used])
+            usage.record_tokens(app, model, 21_400, 180)
+
         class Practice:
             def chat(self, *args, **kwargs):
+                counted()
                 yield "Practice: this is where your plan's model would answer."
 
             def chat_parts(self, *args, **kwargs):
+                counted()
                 yield "text", "Practice: this is where your plan's model would answer."
 
             def capabilities(self, name):

@@ -157,7 +157,39 @@ window.app = (() => {
     row.append(line);
   }
 
+  function tokens(count) {
+    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+    if (count >= 10000) return `${Math.round(count / 1000)}k`;
+    return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
+  }
+
+  // Which model wrote an answer, as a dot at the start of the line under it: blue
+  // on this computer, yellow from a plan or key, turning red as the plan fills up.
+  // `info` is the ElainaDone, or a saved transcript item (both have where, by,
+  // saved, plan_used). Set phrases and chats saved before this have no `where`.
+  function whoAnswered(row, info) {
+    if (!info || !info.where) return;
+    const line = row.lastElementChild; // the line details() just added
+    const dot = el("span", `who-dot ${info.where}`);
+    const used = info.plan_used >= 0 ? Math.min(info.plan_used, 1) : 0;
+    if (info.where === "cloud") dot.style.setProperty("--hue", String(Math.round(48 - 48 * used)));
+    const by = info.by || modelName;
+    dot.title = info.where === "here" ? `Written on this computer${by ? ` by ${by}` : ""}`
+      : `Written by ${by || "a model over the internet"}`
+        + (info.plan_used >= 0 ? `. Your plan was ${Math.round(info.plan_used * 100)}% used after it.` : "");
+    dot.setAttribute("role", "img");
+    dot.setAttribute("aria-label", dot.title);
+    line.prepend(dot);
+    if (info.where === "here" && info.saved > 0) {
+      const saved = el("span", "meta-saved", `Saved about ${tokens(info.saved)} tokens`);
+      saved.title = "Answered on this computer instead of your plan. About what it would have used, "
+        + "counting the instructions its app sends with every question.";
+      line.querySelector(".meta-copy") ? line.insertBefore(saved, line.querySelector(".meta-copy")) : line.append(saved);
+    }
+  }
+
   function sentBy(user, files) {
+    messages.querySelectorAll(".meta-instead").forEach((old) => old.remove()); // it would ask the wrong question now
     clearAfter();
     const node = message("user", user);
     if (files && files.length) {
@@ -191,11 +223,32 @@ window.app = (() => {
     return group;
   }
 
-  function finishBubble() {
+  // Auto kept this answer on the computer: one click asks the plan's model instead.
+  // Only the newest answer has it, because it asks the last question again.
+  function askInstead(row, name) {
+    messages.querySelectorAll(".meta-instead").forEach((old) => old.remove());
+    const again = el("button", "meta-copy meta-instead", `Ask ${name} instead`);
+    again.type = "button";
+    again.title = `Ask the same question again, answered by ${name}. Uses some of your plan.`;
+    again.addEventListener("click", () => {
+      if (busy) return;
+      again.remove();
+      const words = `Ask ${name} instead`;
+      sentBy(words);
+      run(() => api.ask_again(words));
+    });
+    row.lastElementChild.append(again); // the line details() just added
+  }
+
+  function finishBubble(done) {
     if (bubble && !bubble.textContent.trim()) bubble.parentElement.remove();
     else if (bubble) {
       const took = Math.max(1, Math.round((Date.now() - turnStarted) / 1000));
-      details(bubble.parentElement, [clock(), modelName, `${took}s`].filter(Boolean).join(" · "), bubbleText);
+      // With Auto, the reply says which model wrote it; the menu only says "Auto".
+      const who = (done && done.by) || modelName;
+      details(bubble.parentElement, [clock(), who, `${took}s`].filter(Boolean).join(" · "), bubbleText);
+      whoAnswered(bubble.parentElement, done);
+      if (done && done.instead) askInstead(bubble.parentElement, done.instead);
       afterAnswer(bubble.parentElement, bubble, bubbleText);
     }
     bubble = null;
@@ -207,7 +260,7 @@ window.app = (() => {
   // Shorter and More detail, so more is one click away instead of a question
   // tacked on the end. Only under the newest answer, and only under a real answer
   // (the engine says which: a setup's message has nothing to shorten).
-  const FOLLOW_UPS = { shorter: "Shorter, please.", more: "Tell me more.", cloud: "Ask {model} instead." }; // the same words as engine.FOLLOW_UPS
+  const FOLLOW_UPS = { shorter: "Shorter, please.", more: "Tell me more." }; // the same words as engine.FOLLOW_UPS
   const SHORTER_FROM_WORDS = 30;
 
   async function afterAnswer(row, node, text) {
@@ -221,30 +274,17 @@ window.app = (() => {
       buttons.append(followButton("more", "More detail"));
       (row.querySelector(".meta") || row).append(buttons);
     }
-    if (can.saved) savedLine(row, can.saved);
     const photos = photosSetting();
     if (photos === "on") showPictures(node, await api.pictures(text));
     else if (photos === null && can.places) askAboutPhotos(row, node, text);
   }
 
-  // A job done on this computer although a cloud model is picked: what it kept off
-  // the user's plan, and one click to ask that model after all (savings.py).
-  function savedLine(row, saved) {
-    // The line under the answer named the picked model; this answer was made here.
-    const meta = row.querySelector(".meta");
-    if (meta && meta.firstChild) meta.firstChild.textContent = meta.firstChild.textContent.replace(saved.model, "This computer");
-    const line = el("div", "saved after");
-    line.append(el("span", "", `Answered here. Saved about ${saved.tokens.toLocaleString("en-US")} tokens of ${saved.model}.`),
-                followButton("cloud", `Ask ${saved.model} instead`, saved.model));
-    follow(() => row.append(line));
-  }
-
-  function followButton(which, label, model = "") {
+  function followButton(which, label) {
     const button = el("button", "follow-up", label);
     button.type = "button";
     button.addEventListener("click", () => {
       if (busy) return;
-      sentBy(FOLLOW_UPS[which].replace("{model}", model));
+      sentBy(FOLLOW_UPS[which]);
       run(() => api.follow_up(which, thinkMode));
     });
     return button;
@@ -355,8 +395,8 @@ window.app = (() => {
       follow(() => bubble.replaceChildren(...rich(bubbleText)));
     },
 
-    ElainaDone() {
-      finishBubble();
+    ElainaDone(e) {
+      finishBubble(e);
     },
 
     Question(e) {
@@ -459,7 +499,10 @@ window.app = (() => {
         else {
           const who = item.role === "user" ? "user" : item.role === "error" ? "error" : "elaina";
           const node = message(who, item.text);
-          if (who === "elaina") details(node.parentElement, "", item.text);
+          if (who === "elaina") {
+            details(node.parentElement, item.by || "", item.text);
+            whoAnswered(node.parentElement, item); // the same dot as when it was written
+          }
         }
       }
       messages.scrollTop = messages.scrollHeight;

@@ -277,11 +277,6 @@ class ElainaChat:
             except Exception:
                 pass  # Ollama is restarting; try again on the next beat.
 
-    def recent_messages(self) -> list[dict]:
-        """What goes to the model with the next message, or went with the last one:
-        how much a cloud call costs (savings.py)."""
-        return self._recent()
-
     def _recent(self) -> list[dict]:
         """The latest messages that fit in HISTORY_CHARS, always starting with the user."""
         kept, size = [], 0

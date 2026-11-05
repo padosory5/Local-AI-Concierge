@@ -157,7 +157,9 @@ class Ollama:
             body["think"] = think
         if options:
             body["options"] = options
+        self.last_tokens = (0, 0)
         for event in self._stream("/api/chat", body, timeout=600):
+            self._count(event)
             message = event.get("message", {})
             if message.get("thinking"):
                 yield "thought", message["thinking"]
@@ -184,10 +186,20 @@ class Ollama:
             body["think"] = think
         if options:
             body["options"] = options
+        self.last_tokens = (0, 0)
         for event in self._stream("/api/chat", body, timeout=300):
+            self._count(event)
             text = event.get("message", {}).get("content", "")
             if text:
                 yield text
+
+    # Tokens the last chat() or chat_parts() read and wrote, from Ollama's own count in
+    # its last piece. For "tokens saved" under answers written on this computer.
+    last_tokens: tuple[int, int] = (0, 0)
+
+    def _count(self, event: dict) -> None:
+        if event.get("done"):
+            self.last_tokens = (event.get("prompt_eval_count") or 0, event.get("eval_count") or 0)
 
     def chat_json(
         self,

@@ -13,6 +13,7 @@ window.modelPage = (() => {
   const KINDS = [{ id: "", words: "All" }, { id: "fits", words: "Fits this computer" }, { id: "code", words: "Code" }, { id: "vision", words: "Sees pictures" }];
 
   let models = {}; // what Python says is on offer
+  let usage = {}; // how much each plan or key has used (usage.py)
   let tab = "discover";
   let keysOpen = false; // "Have an API key instead?" was pressed
   let sort = "downloads";
@@ -36,6 +37,10 @@ window.modelPage = (() => {
   function privacy() {
     const now = models.current;
     if (!now || now.here) return "Everything stays on this computer.";
+    if (now.auto) {
+      return `Small questions stay on this computer. Harder ones go to ${now.company}. `
+        + "Highlights and your document agents stay on this computer.";
+    }
     return `What you say to Elaina goes to ${now.company}. Highlights and your document agents stay on this computer.`;
   }
 
@@ -44,15 +49,19 @@ window.modelPage = (() => {
     $("model-name").textContent = label();
     $("model").classList.toggle("cloud", Boolean(now) && !now.here);
     // Only models on this computer can show their thinking.
-    $("think").hidden = Boolean(now) && now.provider !== "local";
+    // With Auto her own model answers small things, and it can.
+    $("think").hidden = Boolean(now) && now.provider !== "local" && !now.auto;
     $("privacy").textContent = privacy();
-    $("side-model").textContent = !now ? "Elaina · on this computer" : now.here ? `${now.name} on this computer` : `${now.name}, ${now.company}`;
+    $("side-model").textContent = !now ? "Elaina · on this computer" : now.here ? `${now.name} on this computer`
+      : now.auto ? `Auto: ${models.own} or ${now.cloud.name}` : `${now.name}, ${now.company}`;
     app.setModelName(label());
+    drawUsage();
   }
 
   async function load(data) {
     models = data || (await pywebview.api.models()) || {};
     drawNames();
+    loadUsage();
     today.redraw();
   }
 
@@ -111,20 +120,160 @@ window.modelPage = (() => {
     const rows = [];
     for (const plan of models.accounts || []) {
       rows.push(el("div", "pick-label", `Your ${plan.name} plan`));
+      const limits = plan.signed_in && usage[plan.id] ? usage[plan.id].limits : [];
+      if (limits.length) rows.push(el("div", "pick-usage", ...limits.map((window) => meter(window, true))));
       if (plan.signed_in) rows.push(...plan.models.map((model) => pickRow(model.name, "", isHere(plan.id, model.id), () => choose(plan.id, model.id))));
       else rows.push(pickRow(`Use ${plan.plan}`, plan.installed ? "Sign in" : `Get ${plan.app}`, false, () => open("api", `plan-${plan.id}`)));
     }
     return rows;
   }
 
-  // One plain list: this computer, then the user's plans, then anything they added a key for.
+  // Auto (auto.py): Elaina answers small things herself and sends the rest to a plan
+  // or key. Only offered once there's a plan or key to send things to.
+  function autoRows() {
+    const target = models.auto || {};
+    if (!target.cloud) return [];
+    const row = pickRow("Auto", `${models.own} or ${target.cloud}`, Boolean(models.current && models.current.auto),
+                        () => choose("auto", ""));
+    row.title = `Small questions stay on this computer. Code, long writing and harder questions go to ${target.cloud}, `
+      + "to save your plan. Pick another plan model below, then Auto again, to change which one.";
+    return [row];
+  }
+
+  // One plain list: Auto, this computer, then the user's plans, then anything they added a key for.
   function drawMenu() {
-    const list = el("div", "pick-list", el("div", "pick-label", "On this computer"), ...localRows(), ...planRows(), ...keyedRows());
+    const list = el("div", "pick-list", ...autoRows(), el("div", "pick-label", "On this computer"), ...localRows(),
+                    ...planRows(), ...keyedRows());
     const foot = el("div", "pick-foot",
                     button("pick-link", "Discover", () => open("discover")),
                     button("pick-link", "Manage models", () => open("local")),
                     button("pick-link", "Use an API key", () => open("keys")));
     $("model-menu").replaceChildren(list, foot);
+  }
+
+  // ------------------------------------------------------- how much is used
+  // The plan's own numbers (the same ones /usage shows in Claude Code) when its app
+  // reports them, and the tokens her answers used, counted here (usage.py).
+
+  function tokens(count) {
+    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+    if (count >= 10000) return `${Math.round(count / 1000)}k`;
+    return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
+  }
+
+  function whenAgain(seconds) {
+    if (!seconds) return "";
+    const at = new Date(seconds * 1000);
+    const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const sameDay = at.toDateString() === new Date().toDateString();
+    return sameDay ? time : `${at.toLocaleDateString([], { weekday: "short" })} ${time}`;
+  }
+
+  // The usage of whatever is answering now, or null for a model on this computer.
+  function usageNow() {
+    const now = models.current;
+    if (!now || now.here) return null;
+    const source = now.auto ? now.cloud.provider : now.provider; // Auto spends the plan it sends to
+    return { source, ...(usage[source] || { limits: [] }) };
+  }
+
+  // One window of a plan: a name, a bar, and when it starts again.
+  function meter(window, small) {
+    const used = Math.round(window.used * 100);
+    const bar = el("span", "meter-bar", el("span", "meter-fill"));
+    bar.firstChild.style.width = `${Math.max(used, used ? 2 : 0)}%`;
+    const again = whenAgain(window.resets_at);
+    const row = el("div", `meter ${window.nearly_full ? "full" : ""} ${small ? "small" : ""}`,
+                   el("span", "meter-name", window.name), bar, el("span", "meter-used", `${used}% used`));
+    if (!small && again) row.append(el("span", "meter-again", `starts again ${again}`));
+    row.title = `${window.name}: ${used}% of your plan used${again ? `, starts again ${again}` : ""}`;
+    return row;
+  }
+
+  // Tokens her answers used, in plain words.
+  function tokenLines(mine, viaApp) {
+    const lines = [];
+    const today = mine.today || {};
+    if (today.answers) {
+      lines.push(el("div", "usage-line", `Today: ${today.answers} ${today.answers === 1 ? "answer" : "answers"}, `
+                    + `${tokens(today.read)} tokens read, ${tokens(today.wrote)} written`));
+    }
+    if (mine.week && mine.week.answers > (today.answers || 0)) {
+      lines.push(el("div", "usage-line", `This week: ${tokens(mine.week.read)} read, ${tokens(mine.week.wrote)} written`));
+    }
+    if (mine.last) {
+      // The apps send their own long instructions with every question, so most of
+      // what's read is theirs: worth saying, or the numbers look wrong.
+      const why = viaApp ? ` (most of that is ${viaApp}'s own instructions, sent each time)` : "";
+      lines.push(el("div", "usage-line faint", `Last answer: ${tokens(mine.last.read)} read, ${tokens(mine.last.wrote)} written${why}`));
+    }
+    return lines;
+  }
+
+  // Tokens Auto kept off this plan or key by answering on this computer, as a blue
+  // bar: how much of everything this week's questions took stayed here.
+  function savedMeter(mine) {
+    const week = mine.week || {};
+    if (!week.saved) return null;
+    const spent = (week.read || 0) + (week.wrote || 0);
+    const share = Math.round((100 * week.saved) / (week.saved + spent));
+    const bar = el("span", "meter-bar", el("span", "meter-fill"));
+    bar.firstChild.style.width = `${Math.max(share, 2)}%`;
+    const today = (mine.today || {}).saved || 0;
+    const row = el("div", "meter saved", el("span", "meter-name", "Saved this week"), bar,
+                   el("span", "meter-used", `${tokens(week.saved)} tokens`),
+                   el("span", "meter-again", `${share}% of this week's tokens stayed on this computer`
+                      + (today ? `, ${tokens(today)} of them today` : "")));
+    row.title = "Answered on this computer by Auto instead of being sent here. About what those answers would "
+      + "have used, counting the instructions the plan's app sends with every question.";
+    return row;
+  }
+
+  // The block on the Accounts page, like /usage in Claude Code.
+  function usageBlock(source, viaApp) {
+    const mine = usage[source];
+    if (!mine) return el("div", "usage-block", el("div", "usage-line faint", "Nothing used through Elaina yet."));
+    const parts = mine.limits.map((window) => meter(window, false));
+    if (viaApp && !mine.limits.length) {
+      parts.push(el("div", "usage-line faint", `${viaApp} hasn't said how much of your plan is left yet.`));
+    }
+    const saved = savedMeter(mine);
+    return el("div", "usage-block", ...parts, ...(saved ? [saved] : []), ...tokenLines(mine, viaApp));
+  }
+
+  // The small meter beside the model button: the fullest window of the plan answering
+  // now, or today's tokens for an API key. Hidden for models on this computer.
+  function drawUsage() {
+    const pill = $("usage");
+    if (!pill) return;
+    const now = usageNow();
+    const fullest = now && now.limits.length ? now.limits.reduce((a, b) => (b.used > a.used ? b : a)) : null;
+    const today = now && now.today && now.today.answers ? now.today : null;
+    pill.hidden = !fullest && !today;
+    if (pill.hidden) return;
+    pill.classList.toggle("full", Boolean(fullest && fullest.nearly_full));
+    if (fullest) {
+      const used = Math.round(fullest.used * 100);
+      pill.style.setProperty("--used", `${used * 3.6}deg`);
+      pill.querySelector(".usage-ring").hidden = false;
+      pill.querySelector(".usage-words").textContent = `${used}%`;
+      const all = now.limits.map((w) => `${w.name}: ${Math.round(w.used * 100)}% used`).join("\n");
+      pill.title = `${all}\nClick for more`;
+    } else {
+      pill.querySelector(".usage-ring").hidden = true;
+      pill.querySelector(".usage-words").textContent = `${tokens(today.read + today.wrote)} today`;
+      pill.title = `Tokens used today: ${tokens(today.read)} read, ${tokens(today.wrote)} written\nClick for more`;
+    }
+  }
+
+  async function loadUsage() {
+    try {
+      usage = (await pywebview.api.usage()) || {};
+    } catch {
+      usage = {};
+    }
+    drawUsage();
+    if (document.body.dataset.view === "models" && tab === "api") drawTab();
   }
 
   // ------------------------------------------------- finding on Hugging Face
@@ -383,7 +532,12 @@ window.modelPage = (() => {
     }
     const list = company.models.map((model) => el("div", "model-line", el("span", "", model.name),
                                                   showSwitch(company.id, model.id, model.hidden, model.name)));
-    return el("div", "cloud-item", row, note, el("div", "model-lines", ...list));
+    // A key has no plan limits to show, only what her answers used; what's left is
+    // credit on the company's own website.
+    const mine = company.has_key && usage[company.id];
+    const kept = mine ? savedMeter(mine) : null;
+    const used = mine ? el("div", "usage-block", ...(kept ? [kept] : []), ...tokenLines(mine, "")) : "";
+    return el("div", "cloud-item", row, note, used, el("div", "model-lines", ...list));
   }
 
   function addCustom() {
@@ -444,7 +598,9 @@ window.modelPage = (() => {
       act.title = `Stop using it in Elaina. You stay signed in to ${plan.app}.`;
       act.setAttribute("aria-label", act.title);
     }
-    const row = el("div", `account-row ${connected ? "" : "clickable"}`, el("div", "account-words", title, el("span", "", about), note), act);
+    const words = el("div", "account-words", title, el("span", "", about), note);
+    if (connected) words.append(usageBlock(plan.id, plan.app));
+    const row = el("div", `account-row ${connected ? "" : "clickable"}`, words, act);
     row.id = `plan-${plan.id}`;
     if (!connected) {
       row.addEventListener("click", async (event) => {
@@ -569,5 +725,14 @@ window.modelPage = (() => {
     watch();
   }
 
-  return { load, privacy, drawMenu, open, label };
+  // The meter was clicked: the plan's row on Accounts, or the keys page for a key.
+  function openUsage() {
+    const now = models.current;
+    const source = now && (now.auto ? now.cloud.provider : now.provider);
+    const plan = now && (models.accounts || []).some((item) => item.id === source);
+    if (plan) open("api", `plan-${source}`);
+    else open("keys");
+  }
+
+  return { load, privacy, drawMenu, open, label, loadUsage, openUsage };
 })();
