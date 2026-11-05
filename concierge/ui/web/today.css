@@ -35,6 +35,7 @@
   --note-text: #c4b4cc;
   --shadow: none;
   --serif: "Instrument Serif", "Batang", "Malgun Gothic", serif;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
   color-scheme: dark;
   font-family: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
   font-size: clamp(16px, 14px + 0.2vw, 17.5px);
@@ -84,137 +85,129 @@ button:focus-visible {
   fill: none;
   stroke: currentColor;
   stroke-width: 8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
 }
 
-/* The side list */
+/* The side list: a table of contents. The four places with small line icons, then
+   the sessions, pinned first and the rest grouped by day, each with dotted leaders
+   out to its time. Labels and times are in a mono face. */
 
 .side {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 30px 14px 12px;
+  padding: 24px 12px 12px;
   background: var(--sidebar);
 }
 
-.side-brand {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  padding: 2px 6px 16px;
-  font-family: var(--serif);
-  font-size: 1.65rem;
-  font-style: italic;
-}
-
 .side-toggle {
+  position: absolute;
+  top: 6px;
+  right: 8px;
   display: grid;
-  flex: none;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  margin-left: auto;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
   background: none;
-  color: var(--faint);
+  color: #3a3340;
   cursor: pointer;
 }
 
 .side-toggle:hover {
-  background: #151318;
   color: var(--text);
 }
 
-#mark {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: #000;
-}
-
-.new-chat {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  margin-bottom: 6px;
-  padding: 0 12px;
-  border: 1px solid #2c2732;
-  border-radius: 10px;
-  background: var(--panel);
-  color: var(--text);
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 0.14s ease;
-}
-
-.new-chat:hover {
-  border-color: var(--accent);
+.side-toggle .icon {
+  width: 14px;
+  height: 14px;
 }
 
 .side-item {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
   position: relative;
   width: 100%;
-  min-height: 40px;
-  padding: 0 12px;
+  min-height: 34px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 9px;
   background: none;
-  color: var(--accent);
+  color: var(--muted);
+  font-size: 0.95rem;
   text-align: left;
   cursor: pointer;
-  transition: background 0.14s ease;
+}
+
+.side-item .icon {
+  width: 15px;
+  height: 15px;
+  color: var(--faint);
+  stroke-width: 7;
+}
+
+.side-item:hover {
+  color: var(--text);
+}
+
+.side-item.now {
+  color: var(--text);
+}
+
+.side-item.now .icon {
+  color: var(--accent);
+}
+
+.side-item.start {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.side-item.start .icon {
+  color: var(--accent);
+}
+
+.side-hint {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.4px;
+  color: var(--faint);
 }
 
 .only-rail {
   display: none;
 }
 
-.side-item:hover {
-  background: #151318;
-}
-
-.side-item.now {
-  background: var(--raised);
-  color: var(--text);
+.count {
+  margin-left: auto;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 400;
+  line-height: 1;
 }
 
 .quiet-count {
-  background: var(--raised);
-  color: var(--accent);
-}
-
-.count {
-  min-width: 18px;
-  margin-left: auto;
-  padding: 0 6px;
-  border-radius: 9px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 18px;
-  text-align: center;
-}
-
-.count:not(.quiet-count) {
-  background: var(--accent);
-  color: #000;
+  color: var(--faint);
 }
 
 .side-label {
   flex: none;
-  flex: none;
-  margin: 16px 12px 5px;
-  font-size: 0.82rem;
+  margin: 14px 10px 4px;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 1.6px;
   color: var(--faint);
+  text-transform: uppercase;
 }
 
 .side-sessions {
@@ -222,7 +215,7 @@ button:focus-visible {
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  margin-top: 14px;
+  margin-top: 10px;
   overflow-y: auto;
   scrollbar-color: #3a3340 transparent;
   scrollbar-width: thin;
@@ -232,25 +225,21 @@ button:focus-visible {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 9px;
-  height: 38px;
-  padding: 0 11px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
   color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.4px;
 }
 
-.side-search:focus-within {
-  border-color: #3a3340;
+.search-slash {
+  color: #3a3340;
 }
 
-.search-mark {
-  display: grid;
-}
-
-.search-mark .icon {
-  width: 16px;
-  height: 16px;
+.side-search:focus-within .search-slash {
+  color: var(--accent);
 }
 
 .side-search input {
@@ -261,7 +250,6 @@ button:focus-visible {
   background: none;
   color: var(--text);
   font: inherit;
-  font-size: 0.92rem;
 }
 
 .side-search input::placeholder {
@@ -272,7 +260,6 @@ button:focus-visible {
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 1px;
   min-height: 0;
   margin: 0;
   padding: 0;
@@ -285,11 +272,6 @@ button:focus-visible {
   display: flex;
   flex: none;
   align-items: center;
-  border-radius: 9px;
-}
-
-.side .chats li.current {
-  background: var(--raised);
 }
 
 .side .chats li:hover {
@@ -297,40 +279,54 @@ button:focus-visible {
 }
 
 .side .chats li.muted {
-  padding: 3px 11px;
+  padding: 3px 10px;
   color: var(--faint);
+  font-size: 0.82rem;
 }
 
 .side .chats .item-main {
   display: flex;
   flex: 1;
   align-items: baseline;
-  gap: 8px;
   min-width: 0;
-  min-height: 38px;
-  padding: 6px 4px 6px 12px;
+  min-height: 30px;
+  padding: 4px 4px 4px 10px;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--muted);
   text-align: left;
 }
 
 .side .chats li.current .item-main {
+  background: none; /* the open session is told by its white title and lilac time, not a box */
   color: var(--text);
 }
 
 .item-title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.item-lead {
+  flex: 1;
+  min-width: 12px;
+  margin: 0 6px;
+  border-bottom: 1px dotted var(--border);
+  transform: translateY(-4px);
+}
+
 .item-when {
   flex: none;
-  font-size: 0.8rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
   color: var(--faint);
+}
+
+.side .chats li.current .item-when {
+  color: var(--accent);
 }
 
 .side .chats .item-delete,
@@ -339,7 +335,6 @@ button:focus-visible {
   flex: none;
   padding: 3px 5px;
   border: 0;
-  border-radius: 6px;
   background: none;
   color: var(--faint);
   cursor: pointer;
@@ -347,8 +342,8 @@ button:focus-visible {
 
 .side .chats .item-pin .icon {
   display: block;
-  width: 15px;
-  height: 15px;
+  width: 13px;
+  height: 13px;
 }
 
 .side .chats .item-pin:hover,
@@ -361,7 +356,8 @@ button:focus-visible {
   display: block;
 }
 
-.side .chats li:hover .item-when {
+.side .chats li:hover .item-when,
+.side .chats li:hover .item-lead {
   display: none;
 }
 
@@ -416,19 +412,24 @@ button:focus-visible {
 .side-foot {
   flex: none;
   margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
+  padding-top: 10px;
 }
 
 .side-model {
   display: block;
-  padding: 2px 12px 0;
+  padding: 0 10px;
   overflow: hidden;
-  font-size: 0.8rem;
-  line-height: 1.4;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.3px;
+  line-height: 1.5;
   color: var(--faint);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.side-model::before {
+  content: "\2014  ";
 }
 
 /* The main area */
@@ -457,16 +458,11 @@ body.rail:not(.side-over) .side {
   padding-inline: 11px;
 }
 
-body.rail:not(.side-over) .side-brand {
-  flex-direction: column;
-  padding: 2px 0 12px;
-}
-
 body.rail:not(.side-over) .side-toggle {
-  margin-left: 0;
+  position: static;
+  margin: 0 auto 10px;
 }
 
-body.rail:not(.side-over) .new-chat,
 body.rail:not(.side-over) .side-item {
   justify-content: center;
   padding: 0;
@@ -523,7 +519,10 @@ body.side-over .side {
   border: 0;
   background: none;
   color: var(--accent);
-  font-size: 0.9rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
@@ -575,11 +574,14 @@ body.side-over .side {
   color: var(--muted);
 }
 
-.view h2 {
+.view h2:not(.hero-name):not(.disc-title) {
   margin: 30px 0 8px;
-  font-size: 0.88rem;
-  font-weight: 500;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  font-weight: 400;
+  letter-spacing: 1.6px;
   color: var(--faint);
+  text-transform: uppercase;
 }
 
 /* Help me: the first thing the user sees */
@@ -2805,9 +2807,14 @@ body[data-view="help"] .composer button#send:disabled {
   padding: 34px max(44px, calc((100% - var(--page)) / 2)) 0;
 }
 
-/* The tabs start where the page under them starts, and Agents and Models are wider. */
-body[data-view="agents"] .room-tabs,
-body[data-view="models"] .room-tabs {
+/* Every page of the room is as wide as Agents and Models, so the tabs and the
+   words under them stay put when the user moves between tabs. */
+.room-tabs,
+.agent-page,
+#view-reservations,
+#view-privacy,
+#view-about,
+#view-settings {
   --page: 1040px;
 }
 
@@ -2817,11 +2824,14 @@ body[data-view="models"] .room-tabs {
   gap: 6px;
   padding: 3px 0 7px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-bottom: 1px solid transparent;
   background: none;
   color: var(--muted);
-  font-size: 1.02rem;
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 400;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
@@ -2892,21 +2902,24 @@ body[data-view="models"] .room-tabs {
 .steps {
   display: flex;
   flex-wrap: wrap;
-  gap: 34px;
+  gap: 28px;
   margin-bottom: 34px;
   color: var(--faint);
-  font-size: 0.95rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 
 .steps b {
   display: inline-grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   margin-right: 8px;
-  border-radius: 50%;
   background: var(--raised);
-  font-size: 0.8rem;
+  font-size: 0.68rem;
+  font-weight: 400;
 }
 
 .steps .now {

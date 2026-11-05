@@ -11,14 +11,14 @@
 window.today = (() => {
   const $ = (id) => document.getElementById(id);
   const ICONS = {
-    today: "M-50,-46 H50 V50 H-50 Z M-50,-16 H50 M-24,-62 V-34 M24,-62 V-34",
-    plus: "M0,-44 V44 M-44,0 H44",
-    panel: "M-52,-44 H52 V44 H-52 Z M-16,-44 V44",
+    today: "M-52,-40 H52 V52 H-52 Z M-52,-10 H52 M-26,-58 V-24 M26,-58 V-24",
+    plus: "M0,-48 V48 M-48,0 H48",
+    panel: "M-52,-44 H52 V44 H-52 Z M-16,-44 V44 M-44,-20 H-24 M-44,0 H-24",
     agents: "M-14,-28 A20,20 0 1 1 -14,-27.9 Z M-50,50 C-50,16 -32,6 -14,6 C4,6 22,16 22,50 M26,-46 A20,20 0 0 1 26,-8 M34,8 C50,14 56,28 56,50",
     clock: "M54,0 A54,54 0 1 1 -54,0 A54,54 0 1 1 54,0 Z M0,-30 V0 L22,16",
-    chat: "M-54,-42 H54 V30 H-14 L-36,50 V30 H-54 Z",
-    search: "M30,-12 A36,36 0 1 1 -42,-12 A36,36 0 1 1 30,-12 Z M18,16 L50,48",
-    pin: "M-6,-54 L48,0 L24,4 L4,24 L0,48 L-48,0 L-24,-4 L-4,-24 Z M-24,24 L-54,54",
+    chat: "M-54,-44 H54 V28 H-12 L-36,52 V28 H-54 Z",
+    search: "M-54,-54 H12 V12 H-54 Z M12,12 L54,54",
+    pin: "M-32,-56 H32 V-40 L18,-30 V4 L40,24 V36 H-40 V24 L-18,4 V-30 L-32,-40 Z M0,36 V62",
     file: "M-38,-56 H14 L38,-30 V56 H-38 Z M14,-56 V-30 H38",
     folder: "M-56,-40 H-16 L-2,-24 H56 V44 H-56 Z",
     picture: "M-56,-42 H56 V42 H-56 Z M-56,24 L-20,-8 L12,20 L28,6 L56,30 M24,-16 A8,8 0 1 1 23.9,-16 Z",
@@ -26,8 +26,8 @@ window.today = (() => {
     cube: "M0,-56 L50,-28 V28 L0,56 L-50,28 V-28 Z M-50,-28 L0,0 L50,-28 M0,0 V56",
     back: "M18,-40 L-22,0 L18,40",
     forward: "M-18,-40 L22,0 L-18,40",
-    spark: "M0,-58 L12,-12 L58,0 L12,12 L0,58 L-12,12 L-58,0 L-12,-12 Z",
-    room: "M-52,-10 L0,-54 L52,-10 V52 H-52 Z M-16,52 V16 H16 V52",
+    spark: "M0,-58 V-18 M0,18 V58 M-58,0 H-18 M18,0 H58 M-14,-14 H14 V14 H-14 Z",
+    room: "M-54,-4 L0,-54 L54,-4 V54 H-54 Z M-14,54 V12 H14 V54",
     gear: "M30,0 A30,30 0 1 1 -30,0 A30,30 0 1 1 30,0 Z M0,-58 V-30 M0,30 V58 M-58,0 H-30 M30,0 H58 M-41,-41 L-21,-21 M21,21 L41,41 M41,-41 L21,-21 M-21,21 L-41,41",
   };
   // What each kind of job is called on Today: (verb, one, many).
@@ -145,7 +145,8 @@ window.today = (() => {
 
   function markSide() {
     document.querySelectorAll(".side-item").forEach((item) => {
-      const here = item.dataset.view === (ROOM.includes(view) ? "room" : view);
+      // New chat opens Help me, so it is the row lit while Help me is open.
+      const here = item.id === "start" ? view === "help" : item.dataset.view === (ROOM.includes(view) ? "room" : view);
       item.classList.toggle("now", here);
     });
   }
@@ -172,13 +173,23 @@ window.today = (() => {
 
   // ------------------------------------------------------------ sessions
 
+  function daysAgo(moment) {
+    return Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(moment).setHours(0, 0, 0, 0)) / 86400000);
+  }
+
   // "12:43", "Yesterday" or "Oct 30": enough to find a chat by.
   function whenWas(moment) {
     const then = new Date(moment);
-    const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(then).setHours(0, 0, 0, 0)) / 86400000);
+    const days = daysAgo(moment);
     if (days <= 0) return then.toLocaleTimeString(LOCALE, { hour: "numeric", minute: "2-digit" });
     if (days === 1) return "Yesterday";
     return then.toLocaleDateString(LOCALE, { month: "short", day: "numeric" });
+  }
+
+  // Which group of the list a chat falls into, by its last message.
+  function groupOf(moment) {
+    const days = daysAgo(moment);
+    return days <= 0 ? "Today" : days === 1 ? "Yesterday" : days < 7 ? "Earlier this week" : "Older";
   }
 
   function chatRow(chat) {
@@ -188,7 +199,7 @@ window.today = (() => {
       if (chat.id === currentChat) show("chat");
       else app.openChat(chat.id);
     });
-    open.append(el("span", "item-title", chat.title), el("span", "item-when", whenWas(chat.updated)));
+    open.append(el("span", "item-title", chat.title), el("span", "item-lead"), el("span", "item-when", whenWas(chat.updated)));
     open.title = `${chat.title}\nLast message ${new Date(chat.updated).toLocaleString(LOCALE)}`;
     const pinned = pins.has(chat.id);
     const pin = button(`item-pin ${pinned ? "on" : ""}`, "", async () => {
@@ -222,10 +233,17 @@ window.today = (() => {
     const shown = chats.filter((chat) => !words || chat.title.toLowerCase().includes(words) || found.has(chat.id));
     const top = shown.filter((chat) => pins.has(chat.id));
     const rest = shown.filter((chat) => !pins.has(chat.id));
-    $("pinned").replaceChildren(...top.map(chatRow));
-    $("pinned").hidden = $("pinned-label").hidden = !top.length;
-    const empty = words ? "Nothing found" : "No sessions yet";
-    $("chats").replaceChildren(...(rest.length ? rest.map(chatRow) : top.length ? [] : [el("li", "muted", empty)]));
+    $("pinned").replaceChildren(...(top.length ? top.map(chatRow) : [el("li", "muted", "Pin a chat to keep it here")]));
+    const groups = [];
+    for (const chat of rest) {
+      const name = groupOf(chat.updated);
+      let group = groups.find((one) => one.name === name);
+      if (!group) groups.push((group = { name, chats: [] }));
+      group.chats.push(chat);
+    }
+    const parts = groups.flatMap((group) => [el("div", "side-label", group.name), el("ul", "chats", ...group.chats.map(chatRow))]);
+    if (!parts.length) parts.push(el("div", "side-label", "Sessions"), el("ul", "chats", el("li", "muted", words ? "Nothing found" : "No sessions yet")));
+    $("chats").replaceChildren(...parts);
   }
 
   // Titles match as the user types; the words inside chats follow a moment later.
@@ -538,6 +556,10 @@ window.today = (() => {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeMenus();
+    if (event.ctrlKey && !event.altKey && (event.key === "n" || event.key === "N")) {
+      event.preventDefault();
+      $("start").click();
+    }
   });
   window.addEventListener("resize", placeSide);
   try {
@@ -559,7 +581,6 @@ window.today = (() => {
   $("composer").addEventListener("submit", aimAtAgent);
   $("quit").addEventListener("click", () => pywebview.api.quit_app());
 
-  dots($("mark"), 26, 26, 2.2, (x, y) => (Math.hypot(x - 13, y - 13) < 12 ? Math.max(0, 0.95 - Math.hypot(x - 9, y - 8) / 16) : 0));
   dots($("corner"), 260, 170, 7, (x, y) => Math.max(0, 1 - Math.hypot(270 - x, y + 10) / 150) ** 1.6);
 
   window.addEventListener("page-shown", refresh);

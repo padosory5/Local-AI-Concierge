@@ -260,11 +260,19 @@ counted there.
 
 ## The full window
 
-`today.html` opens with the app. The side list has New chat, Today, Help me,
-Chat and Elaina's room, then the sessions (search, pinned, the rest) and which
-model is answering. Elaina's room has tabs (`#room-tabs`): About you, Agents, Models,
-Reservations, What I see and Settings, so a beginner only meets the first four
-items.
+`today.html` opens with the app. The side list is a plain contents column with no
+brand on top: Today, New chat (Ctrl N, in bold; it opens Help me, which has no row of
+its own) and Elaina's room, each with
+a small hairline icon (`ICONS` in `today.js`, viewBox -70..70, square corners), then
+"/ search sessions", Pinned (a hint while nothing is pinned, the pin on each row's
+hover), the sessions grouped Today, Yesterday, Earlier this week and Older
+(`groupOf`), each title joined to its time by dotted leaders (`.item-lead`), and a
+foot line naming the model answering. Labels, times, the search and the foot are in
+the mono stack (`--mono` in `today.css`: Cascadia or Consolas, so it works offline),
+and the same small mono caps label Today's sections, the room tabs and the welcome
+steps, so every page reads as one design. Elaina's room has tabs (`#room-tabs`):
+About you, Agents, Models, Reservations, What I see and Settings, so a beginner only
+meets the first four items.
 
 The very first time, it opens on the first two minutes (`view-welcome`): she
 times three real jobs on this computer (`Engine.measure`, never guessed), then
@@ -283,7 +291,8 @@ it, "Who are you?" (`ROLES`) offers which lines to switch on, and "Setting this
 up for someone else" makes every word bigger. Switches go through
 `Engine.switch_agent`, which adds and switches agents with nothing said in the
 chat. Picking a line that sends words, or typing, turns the window into an
-ordinary chat. New chat comes back to Help me; opening Chat on purpose stays there.
+ordinary chat. New chat comes back to Help me; clicking the open session in the
+side list goes back to its chat.
 
 Today starts with what she did this week (`concierge/activity.py`: only the kind
 of job and when, never the words, kept a month), then what's running, what she

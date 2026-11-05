@@ -9,24 +9,18 @@
 </head>
 <!-- The full window. It opens on "Help me": a rolling list of what the user can
      make an agent for, with one line to write on. Picking one turns this into a
-     normal chat. Its ids are the ones app.js draws into. -->
+     normal chat. The side list is a table of contents: the four places with small
+     line icons, then the sessions, pinned first and the rest grouped by day. Its ids
+     are the ones app.js draws into. -->
 <body class="quiet" data-view="help">
   <nav class="side" aria-label="Main">
-    <div class="side-brand">
-      <canvas id="mark" width="52" height="52" aria-hidden="true"></canvas>
-      <span class="side-word">Elaina</span>
-      <button id="side-toggle" class="side-toggle" type="button" data-icon="panel"
-              aria-label="Open or close the side list" title="Open or close the side list"></button>
-    </div>
-    <button id="start" class="new-chat" type="button" data-icon="plus" title="New chat"><span class="side-word">New chat</span></button>
+    <button id="side-toggle" class="side-toggle" type="button" data-icon="panel"
+            aria-label="Open or close the side list" title="Open or close the side list"></button>
     <button class="side-item" type="button" data-view="today" data-icon="today" title="Today">
       <span class="side-word">Today</span><span id="today-count" class="count" hidden></span>
     </button>
-    <button class="side-item" type="button" data-view="help" data-icon="spark" title="Help me">
-      <span class="side-word">Help me</span>
-    </button>
-    <button class="side-item" type="button" data-view="chat" data-icon="chat" title="Chat">
-      <span class="side-word">Chat</span>
+    <button id="start" class="side-item start" type="button" data-icon="plus" title="New chat (Ctrl N)">
+      <span class="side-word">New chat</span><kbd class="side-hint side-word">Ctrl N</kbd>
     </button>
     <button class="side-item" type="button" data-view="room" data-icon="room" title="Elaina's room">
       <span class="side-word">Elaina's room</span>
@@ -35,13 +29,12 @@
 
     <div class="side-sessions">
       <label class="side-search">
-        <span class="search-mark" data-icon="search" aria-hidden="true"></span>
-        <input id="chat-search" type="search" placeholder="Search sessions" aria-label="Search sessions">
+        <span class="search-slash" aria-hidden="true">/</span>
+        <input id="chat-search" type="search" placeholder="search sessions" aria-label="Search sessions">
       </label>
-      <div id="pinned-label" class="side-label" hidden>Pinned</div>
-      <ul id="pinned" class="chats" hidden></ul>
-      <div class="side-label">Sessions</div>
-      <ul id="chats" class="chats"><li class="muted">No sessions yet</li></ul>
+      <div id="pinned-label" class="side-label">Pinned</div>
+      <ul id="pinned" class="chats"></ul>
+      <div id="chats"></div>
     </div>
 
     <div class="side-foot">
