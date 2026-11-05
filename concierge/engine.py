@@ -218,18 +218,18 @@ class ElainaEngine:
         """What can go under a reply the page just showed. Only her answer in the chat
         gets Shorter and More detail, not a setup's message or a switch's note; and only
         a plan that names places gets the one-time question about photos."""
-        if not self._answered(reply):
+        if not self._is_her_answer(reply):
             return {"follow_ups": False, "places": False}
         return {"follow_ups": True, "places": pictures.worth_asking(self._question(), self.chat.history[-1]["content"])}
 
     def pictures(self, reply: str) -> list[dict]:
         """Photos of the places her answer names, for beside their lines (pictures.py).
         The page asks only once the user said yes to photos."""
-        if not self._answered(reply):
+        if not self._is_her_answer(reply):
             return []
         return pictures.for_answer(self._question(), self.chat.history[-1]["content"])
 
-    def _answered(self, reply: str) -> bool:
+    def _is_her_answer(self, reply: str) -> bool:
         history = self.chat.history if self.chat else []
         return bool(reply.strip() and history and history[-1]["role"] == "assistant"
                     and reply.strip().startswith(history[-1]["content"]))
@@ -481,7 +481,7 @@ class ElainaEngine:
                                    else "This is just a chat, so I'll answer it myself.")
                 if think and not self.chat.can_think and not self.talker_name:
                     yield Thinking("This model can't show its thinking, so here is my answer.")
-                yield from self._reply(text, think, here=bool(job))
+                yield from self._reply(text, think)
         except OllamaError as exc:
             yield Error(str(exc))
 
