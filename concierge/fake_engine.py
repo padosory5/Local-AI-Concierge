@@ -120,7 +120,8 @@ class FakeEngine:
         self.book = ChatBook(None)
         self.settings: dict = {"base_model": "qwen3.5:4b"}  # practice only: nothing touches the real ones
         self.menu = ModelMenu(PracticeOllama(), lambda: (hardware.detect(), 3.0), load=lambda: dict(self.settings),
-                              save=self._keep_settings, keys=PracticeKeys(), browse=practice_models)
+                              save=self._keep_settings, keys=PracticeKeys(), browse=practice_models,
+                              accounts=PracticeAccounts())
 
     def _keep_settings(self, settings: dict) -> None:
         self.settings = settings
@@ -472,3 +473,42 @@ def _practice_computer() -> list[dict]:
             fact(2, "tool", "Makes things in Unity", "Unity Hub is installed"),
             fact(3, "tool", "Writes code, mostly in Python and C#", "5 folders with code, like puzzle-cat"),
             fact(4, "study", "Keeps school files: lectures and assignments", "48 files named like lectures or assignments")]
+
+
+class PracticeAccounts:
+    """ChatGPT and Claude plans for the practice app: Sign in "works" after a moment,
+    answers are made up, and no app is started."""
+
+    def __init__(self):
+        self.signed = set()
+
+    def overview(self, fresh: bool = False) -> list[dict]:
+        return [self.status(app) for app in ("codex", "claude_code")]
+
+    def status(self, app: str, fresh: bool = False) -> dict:
+        name, program = ("ChatGPT", "Codex") if app == "codex" else ("Claude", "Claude Code")
+        models = [{"id": "practice-1", "name": f"{name} (practice)"}] if app in self.signed else []
+        return {"id": app, "name": name, "app": program, "plan": f"your {name} plan", "installed": True,
+                "signed_in": app in self.signed, "sign_in": "Pretend to sign in, then come back", "models": models}
+
+    def sign_in(self, app: str) -> None:
+        self.signed.add(app)
+
+    def install(self, app: str) -> None:
+        pass
+
+    def talker(self, app: str, model: str, system: str):
+        class Practice:
+            def chat(self, *args, **kwargs):
+                yield "Practice: this is where your plan's model would answer."
+
+            def chat_parts(self, *args, **kwargs):
+                yield "text", "Practice: this is where your plan's model would answer."
+
+            def capabilities(self, name):
+                return ["completion"]
+
+            def refresh(self, name, keep_alive):
+                pass
+
+        return Practice()

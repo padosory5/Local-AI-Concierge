@@ -372,6 +372,17 @@ class TodayBridge(WatchBridge):
     def forget_key(self, provider: str) -> dict:
         return self._hub.menu("forget_key", provider, default={})
 
+    # A ChatGPT or Claude plan, through Codex or Claude Code (accounts.py).
+
+    def sign_in_account(self, app: str) -> dict:
+        return self._hub.menu("sign_in_account", app, default={"error": "I can't sign in here."})
+
+    def install_account(self, app: str) -> dict:
+        return self._hub.menu("install_account", app, default={})
+
+    def check_accounts(self) -> dict:
+        return self._hub.menu("check_accounts", default={})
+
     def more_models(self, provider: str) -> list[dict]:
         return self._hub.menu("more", provider, default=[])
 
