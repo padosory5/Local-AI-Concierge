@@ -50,20 +50,22 @@ def test_the_planner_is_told_the_date_and_stale_years_are_corrected():
 
 
 def test_gather_reads_pages_once_each_and_skips_what_it_cannot_read():
-    rows = {"q1": [{"title": "A", "href": "https://a.example.com", "body": "a"},
-                   {"title": "P", "href": "https://p.example.com/x.pdf", "body": "p"},
-                   {"title": "B", "href": "https://b.example.com", "body": "b"},
-                   {"title": "C", "href": "https://c.example.com", "body": "c"}],
-            "q2": [{"title": "A", "href": "https://a.example.com", "body": "a"},
-                   {"title": "D", "href": "https://d.example.com", "body": "snippet only"}]}
-    pages = researcher.gather(["q1", "q2"], search=lambda q: rows[q],
-                              read=lambda url: "" if "d.example" in url else f"Words of {url}")
-    assert [page.site for page in pages] == ["a.example.com", "b.example.com", "d.example.com"]  # two per search, no PDF, no repeat
-    assert pages[2].text == "snippet only"  # a page that won't open keeps its snippet
+    rows = {"q1": [{"title": "A", "href": "https://a.example.com", "body": "about the question"},
+                   {"title": "P", "href": "https://p.example.com/x.pdf", "body": "about the question"},
+                   {"title": "B", "href": "https://b.example.com", "body": "about the question"},
+                   {"title": "C", "href": "https://c.example.com", "body": "about the question"}],
+            "q2": [{"title": "A", "href": "https://a.example.com", "body": "about the question"},
+                   {"title": "D", "href": "https://d.example.com", "body": "about the question, snippet only"}]}
+    long = "Words of the page about the question. " * 20
+    pages, choices = researcher.gather("the question", ["q1", "q2"], search=lambda q: rows[q],
+                                       read=lambda url: "" if "d.example" in url else long + url)
+    assert [page.site for page in pages] == ["a.example.com", "b.example.com", "c.example.com"]  # no PDF, no repeat
+    thin = next(c for c in choices if c.site == "d.example.com")
+    assert not thin.picked and thin.why_not.startswith("the page wouldn't open")  # a thin page is swapped out, never read
     # At most two pages from one site, so a brief never leans on a single source.
     same = [{"title": f"S{i}", "href": f"https://same.example.com/{i}", "body": "s"} for i in range(4)]
-    pages = researcher.gather(["q1", "q2"], search=lambda q: same, read=lambda url: "words")
-    assert len(pages) == 2
+    pages, choices = researcher.gather("q", ["q1", "q2"], search=lambda q: same, read=lambda url: long)
+    assert len(pages) == 2 and sum(1 for c in choices if c.why_not == "a third page from the same site") == 2
     # A search the burst refused is retried alone only when too few answered.
     calls = []
 
@@ -73,10 +75,10 @@ def test_gather_reads_pages_once_each_and_skips_what_it_cannot_read():
             raise OSError("refused")
         return [{"title": q, "href": f"https://{q}.example.com", "body": q}]
 
-    researcher.gather(["bad", "fine"], search=flaky, read=lambda url: "w")
+    researcher.gather("q", ["bad", "fine"], search=flaky, read=lambda url: long)
     assert calls.count("bad") == 2  # only one of two answered, so "bad" was tried again
     calls.clear()
-    researcher.gather(["ok1", "ok2", "bad"], search=flaky, read=lambda url: "w")
+    researcher.gather("q", ["ok1", "ok2", "bad"], search=flaky, read=lambda url: long)
     assert calls.count("bad") == 1  # two answered: enough, no retry
 
 
@@ -157,20 +159,19 @@ def test_the_job_runs_plan_workers_merge_and_counts_the_saving(engine, monkeypat
     engine.talker_name = "Claude Opus 5.5"
     engine.menu.chosen = lambda: {"provider": "auto", "name": "Auto", "cloud": {"provider": "claude_code", "model": "opus"}}
     engine.menu.fast_talker = lambda system: None  # no faster model on this plan: the picked one merges
-    monkeypatch.setattr(researcher, "gather", lambda queries: [researcher.Page(p.url, p.title, p.text) for p in PAGES])
+    monkeypatch.setattr(researcher, "gather", lambda question, queries, judge=None: ([researcher.Page(p.url, p.title, p.text) for p in PAGES], []))
     monkeypatch.setattr(researcher, "plan_tokens_after", lambda source, before: (19000, 150))
     monkeypatch.setattr(usage, "saved_estimate", lambda source, read, wrote: 18000 + read + wrote)
     events = list(engine.send("research what's new in python 3.15"))
     steps = [e.text for e in events if isinstance(e, Thinking)]
     assert steps[0].startswith("Research job: Qwen 3.5 4B plans the searches and reads each page on this computer, then Claude Opus 5.5 merges")
     assert steps[1] == "Qwen 3.5 4B asked for 2 searches: python 3.15 release; python 3.15 features. Goal: What is new."
-    assert steps[2] == "Found 2 pages to read: python.org, blog.python.org."
-    assert steps[3].startswith("Worker 1 (Qwen 3.5 4B) read python.org: 812 tokens in, 60 out. - Python 3.15.2 was released")
-    assert steps[4].endswith("Nothing relevant on that page.")
-    assert steps[5] == "Claude Opus 5.5 merges 1 summaries, checks them against each other and writes the brief."
-    assert steps[6].startswith("Tokens on your plan: 1 call to Claude Opus 5.5, 19,000 read and 150 written, 19,150 in all.")
-    assert steps[7].startswith("On this computer: 3 calls to Qwen 3.5 4B, 1,924 read and 160 written, free.")
-    assert "Saved about" in steps[9]
+    assert steps[2].startswith("Worker 1 (Qwen 3.5 4B) read python.org: 812 tokens in, 60 out. - Python 3.15.2 was released")
+    assert steps[3].endswith("Nothing relevant on that page.")
+    assert steps[4] == "Claude Opus 5.5 merges 1 summaries, checks them against each other and writes the brief."
+    assert steps[5].startswith("Tokens on your plan: 1 call to Claude Opus 5.5, 19,000 read and 150 written, 19,150 in all.")
+    assert steps[6].startswith("On this computer: 3 calls to Qwen 3.5 4B, 1,924 read and 160 written, free.")
+    assert "Saved about" in steps[8]
     assert not [e for e in events if isinstance(e, Error)]
     assert "".join(e.text for e in events if isinstance(e, ElainaText)).startswith("Python 3.15.2 is the newest release")
     done = next(e for e in events if isinstance(e, ElainaDone))
@@ -188,7 +189,7 @@ def test_with_auto_the_plans_fast_model_merges(engine, monkeypatch):
     engine.menu.chosen = lambda: {"provider": "auto", "name": "Auto", "cloud": {"provider": "claude_code", "model": "opus"}}
     engine.menu.fast_talker = lambda system: (fast, {"provider": "claude_code", "model": "claude-sonnet-5-5",
                                                      "name": "Claude Sonnet 5.5", "company": "Anthropic", "here": False})
-    monkeypatch.setattr(researcher, "gather", lambda queries: [researcher.Page(p.url, p.title, p.text) for p in PAGES[:1]])
+    monkeypatch.setattr(researcher, "gather", lambda question, queries, judge=None: ([researcher.Page(p.url, p.title, p.text) for p in PAGES[:1]], []))
     monkeypatch.setattr(researcher, "plan_tokens_after", lambda source, before: (12000, 150))
     events = list(engine.send("research what's new in python 3.15"))
     steps = [e.text for e in events if isinstance(e, Thinking)]
@@ -232,7 +233,7 @@ def test_the_menu_finds_the_plans_fast_model_only_under_auto():
 def test_with_no_plan_her_own_model_does_every_step(engine, monkeypatch):
     research.allow(True)
     engine.menu.chosen = lambda: None
-    monkeypatch.setattr(researcher, "gather", lambda queries: [researcher.Page(p.url, p.title, p.text) for p in PAGES[:1]])
+    monkeypatch.setattr(researcher, "gather", lambda question, queries, judge=None: ([researcher.Page(p.url, p.title, p.text) for p in PAGES[:1]], []))
     events = list(engine.send("look into python 3.15 for me"))
     steps = [e.text for e in events if isinstance(e, Thinking)]
     assert steps[0].startswith("Research job with no plan connected, so Qwen 3.5 4B does every step")

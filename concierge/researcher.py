@@ -26,7 +26,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
-from . import research, usage, voice
+from . import research, sources, usage, voice
 from .elaina import without_closing_filler
 from .events import Source
 
@@ -45,6 +45,8 @@ SINGLE_ASK_WRITTEN = 400  # about what one plain answer is, for the comparison l
 SEARCH_WAIT = 10  # seconds for all the searches together, then all the page reads
 ENOUGH_SEARCHES = 2  # searches that answered before a refused one is retried alone
 PAGES_PER_SITE = 2  # three of six pages from one supplement site made one brief lean on it
+SPARE_PAGES = 2  # picked beyond MAX_PAGES, in case a page turns out thin once read
+MIN_PAGE_CHARS = 400  # a blocked page gave a worker 140 tokens of nothing
 # Her model doesn't know the date: left to itself it searched "Seattle housing 2024" in
 # November 2026 and the brief could only say the pages were two years old.
 PLAN_NOTE = (
@@ -67,8 +69,8 @@ MERGE_NOTE = (
     "web page, each with the page it came from, and the question. Write the brief for the user:\n"
     "- Start with the answer in one or two plain sentences, then the points that matter, each starting with "
     "its key words in bold, at most 8.\n"
-    "- Use only what the summaries say. Drop a claim only one weak page makes if a stronger one contradicts "
-    "it, and say so in one line where sources disagree.\n"
+    "- Use only what the summaries say. Each page is marked official, reference, the subject's own site, or "
+    "other: where they disagree, trust the higher kind and say so in one line.\n"
     "- Name a source by its site in brackets after the point it supports, like (python.org).\n"
     "- End with one line starting \"Not found:\" for anything the question asked that the pages didn't say, "
     "or leave it out if nothing is missing.\n"
@@ -84,6 +86,7 @@ class Page:
     summary: str = ""
     read: int = 0
     wrote: int = 0
+    kind: str = ""  # official, reference, the subject's own site, content farm, or "" for other
 
     @property
     def site(self) -> str:
@@ -173,11 +176,16 @@ def _all_at_once(jobs: dict, call, wait: float) -> dict:
     return done
 
 
-def gather(queries: list[str], search=research.search, read=research.read_page) -> list[Page]:
-    """The pages the searches find, read, without repeats, at most MAX_PAGES. All the
-    searches run at once, then all the page reads: one after another they were a third
-    of the job. A search that answered nothing to the burst is tried once more alone,
-    since the free path sometimes refuses several at a time."""
+def gather(question: str, queries: list[str], search=research.search, read=research.read_page,
+           judge=None) -> tuple[list[Page], list[sources.Choice]]:
+    """The pages worth reading, read: every search's results go to the picker
+    (sources.py), which scores them by the kind of site and how much of the question
+    their snippet holds, with her model breaking ties; the best are read, all at once,
+    and a page that turns out thin is swapped for the next. All the searches run at
+    once too: one after another they were a third of the job. A search that answered
+    nothing to the burst is tried once more alone when too few did, since the free
+    path sometimes refuses several at a time. Returns the pages and every choice,
+    picked or not, with its reasons."""
     found = _all_at_once({query: query for query in queries}, search, SEARCH_WAIT)
     if sum(1 for query in queries if found.get(query)) < ENOUGH_SEARCHES:
         for query in queries:  # too few answered: the refused ones once more, alone
@@ -186,30 +194,22 @@ def gather(queries: list[str], search=research.search, read=research.read_page) 
                     found[query] = search(query)
                 except Exception:
                     found[query] = []
-    chosen: list[tuple[str, dict]] = []  # (url, row) in the order the searches rank them
-    seen: set[str] = set()
-    per_site: dict[str, int] = {}
-    for query in queries:
-        taken = 0
-        for row in found.get(query) or []:
-            url = row.get("href") or ""
-            site = re.sub(r"^www\.", "", re.sub(r"^https?://", "", url).split("/")[0])
-            if (not url or url in seen or research.SKIP_PAGES.search(url) or len(chosen) >= MAX_PAGES
-                    or per_site.get(site, 0) >= PAGES_PER_SITE):
-                continue
-            seen.add(url)
-            per_site[site] = per_site.get(site, 0) + 1
-            chosen.append((url, row))
-            taken += 1
-            if taken >= PAGES_PER_QUERY:
-                break
-    words = _all_at_once({url: url for url, _ in chosen}, read, SEARCH_WAIT)
-    pages = []
-    for url, row in chosen:
-        text = (words.get(url) or "") or (row.get("body") or "")
-        if text.strip():
-            pages.append(Page(url, (row.get("title") or "").strip(), text))
-    return pages
+    rows = [row for query in queries for row in (found.get(query) or [])
+            if row.get("href") and not research.SKIP_PAGES.search(row["href"])]
+    choices = sources.pick(question, rows, wanted=MAX_PAGES + SPARE_PAGES, per_site=PAGES_PER_SITE, judge=judge)
+    picked = [choice for choice in choices if choice.picked]
+    words = _all_at_once({c.row["href"]: c.row["href"] for c in picked}, read, SEARCH_WAIT)
+    pages: list[Page] = []
+    for choice in picked:
+        url = choice.row["href"]
+        text = (words.get(url) or "").strip()
+        if len(pages) >= MAX_PAGES:
+            choice.picked, choice.why_not = False, "enough pages already"
+        elif len(text) < MIN_PAGE_CHARS:
+            choice.picked, choice.why_not = False, "the page wouldn't open, or had almost nothing on it"
+        else:
+            pages.append(Page(url, (choice.row.get("title") or "").strip(), text, kind=choice.kind))
+    return pages, choices
 
 
 def summarise(ollama, model: str, question: str, page: Page) -> Page:
@@ -227,7 +227,8 @@ def merge(talk, question: str, goal: str, pages: list[Page], when: str) -> Itera
     streams the reply; it comes out in Elaina's shape."""
     words = voice.BUDGETS["plan"][0]
     useful = [page for page in pages if page.useful]
-    notes = "\n\n".join(f"[{number}] {page.site} ({page.url})\n{page.summary}" for number, page in enumerate(useful, 1))
+    notes = "\n\n".join(f"[{number}] {page.site}, {page.kind or 'other'} ({page.url})\n{page.summary}"
+                        for number, page in enumerate(useful, 1))
     user = f"QUESTION: {question}\nWHAT THE BRIEF MUST ANSWER: {goal}\n\nSUMMARIES:\n{notes}"
     chunks = talk(MERGE_NOTE.format(when=when, words=words), user)
     yield from voice.tidy(without_closing_filler(chunks))
@@ -296,7 +297,8 @@ def sources_of(pages: list[Page]) -> list[Source]:
 
 
 __all__ = ["RESEARCH", "RESEARCH_WORDS", "MAX_QUERIES", "PAGES_PER_QUERY", "MAX_PAGES", "SUMMARY_LINES",
-           "SINGLE_ASK_WRITTEN", "SEARCH_WAIT", "ENOUGH_SEARCHES", "PAGES_PER_SITE", "PLAN_NOTE", "PLAN_SCHEMA",
+           "SINGLE_ASK_WRITTEN", "SEARCH_WAIT", "ENOUGH_SEARCHES", "PAGES_PER_SITE", "SPARE_PAGES", "MIN_PAGE_CHARS",
+           "PLAN_NOTE", "PLAN_SCHEMA",
            "STALE_YEAR", "WORKER_NOTE", "MERGE_NOTE", "Page", "Account", "wants_research", "fresh_queries",
            "plan", "gather", "summarise", "merge", "plan_tokens_after", "last_plan_answer", "settle",
            "account_lines", "when_now", "sources_of"]

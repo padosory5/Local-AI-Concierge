@@ -16,7 +16,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from . import (activity, auto, cloud, elaina, hardware, history, pictures, portrait, research, researcher, safety, signs,
-               usage, voice)
+               sources, usage, voice)
 from .accounts import APPS
 from .agents import community, runner, store
 from .agents.blueprint import load_blueprints
@@ -665,13 +665,18 @@ class ElainaEngine:
             queries, goal = researcher.plan(form, text)
             yield Thinking(f"{own} asked for {len(queries)} search{'es' if len(queries) != 1 else ''}: "
                            f"{'; '.join(queries)}. Goal: {goal}")
-            yield Progress(f"Running {len(queries)} search{'es' if len(queries) != 1 else ''} at once and reading the pages...")
-            pages = researcher.gather(queries)
+            yield Progress(f"Running {len(queries)} search{'es' if len(queries) != 1 else ''} at once, picking the "
+                           "pages worth reading...")
+            pages, choices = researcher.gather(text, queries, judge=sources.judge_with(form))
+            picked_line, dropped_line = sources.said(choices)
+            if choices:
+                yield Thinking(picked_line)
+            if dropped_line:
+                yield Thinking(dropped_line)
             if not pages:
                 yield Thinking("The searches found no page I could read, so this is from memory.")
                 yield from self._reply(text, think)
                 return
-            yield Thinking(f"Found {len(pages)} pages to read: {', '.join(dict.fromkeys(p.site for p in pages))}.")
             for number, page in enumerate(pages, 1):
                 yield Progress(f"Worker {number} of {len(pages)} reads {page.site}...")
                 researcher.summarise(self.ollama, elaina.ELAINA_MODEL, text, page)

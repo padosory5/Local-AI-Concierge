@@ -316,12 +316,24 @@ model turns the request into 2 to 4 searches as a form forced by the schema
 in a sixth of the time and for none of the plan). The note tells it today's date and
 code puts this year into any query that names an older one when the question named
 none (`fresh_queries`): her model's sense of "now" stops at its training, and it
-searched "Seattle housing 2024" in November 2026. Code runs all the searches at once,
-then reads all the pages at once, up to two per search, two per site and six in all
-(`gather`, `SEARCH_WAIT`, `PAGES_PER_SITE`; one after another they were a third of the
-job, three pages from one supplement site made a brief lean on it, and a search the
-burst refused is tried once more alone only when fewer than `ENOUGH_SEARCHES`
-answered); her own model reads each page and writes up to
+searched "Seattle housing 2024" in November 2026. Code runs all the searches at once
+(`gather`, `SEARCH_WAIT`; one after another they were a third of the job, and a search
+the burst refused is tried once more alone only when fewer than `ENOUGH_SEARCHES`
+answered), then a picker chooses which results are worth reading (`concierge/sources.py`,
+the judge every other app puts between the search and the model): the kind of site
+from `sources.yaml` (official, reference, content farm; promoting, never banning), the
+subject's own site counted as official (only for a proper name in the question, since
+creatine.my is a seller's site and not creatine's), a name that looks made for search
+engines as a farm, how many of the question's words the snippet holds, a date for a
+current question, and her own model's yes or no over all the snippets in one form as
+the tie-break. Pages about the question come first whatever their kind (an fda.gov
+page about something else once outranked every page that was about it), with the rest
+filling in only when fewer than three were. The best six are read at once, at most two from one site (`PAGES_PER_SITE`:
+three pages from one supplement site made a brief lean on it), with two spare picks
+swapped in for a page that turns out thin once read (`SPARE_PAGES`, `MIN_PAGE_CHARS`: a
+blocked page once gave a worker 140 tokens of nothing). Every pick and drop is said in
+her thinking with its reason, and each summary goes to the reviewer marked with its
+kind, which is told to trust the higher kind where pages disagree; her own model reads each page and writes up to
 six lines of what it says about the question, one page per call (`summarise`), the
 part that eats the most tokens and the kind of job a 4B model does well; then the
 plan model merges the summaries into one brief, checks them against each other,
@@ -744,7 +756,8 @@ variables inside a function do not need listing.
 | `concierge/reservations.py` | Engine | `SORT`, `RUN`, `TURN_ON`, `TURN_OFF`, `ONCE`, `DAILY`, `WEEKLY`, `CHECK_SECONDS`, `STEPS`, `ReservationError`, `Reservation`, `Reservations` |
 | `concierge/events.py` | Both (contract) | `Thinking`, `SystemInfo`, `ElainaText`, `ElainaDone`, `Question`, `AgentCard`, `Progress`, `Source`, `Picture`, `Result`, `AgentList`, `Error`, `IdeaStep`, `IdeaCard`, `ChatSummary`, `ChatList`, `TranscriptItem`, `Transcript`, `Event`, `to_dict`, `Engine` |
 | `concierge/research.py` | Engine | `SETTINGS`, `WEB_QUESTION`, `YES_LOOK`, `NO_LOOK`, `WEB`, `WEATHER`, `SEARCH`, `IMAGES`, `PRICE`, `MAX_RESULTS`, `MAX_IMAGES`, `SNIPPET_CHARS`, `EXTRACT_CHARS`, `FINDINGS_CHARS`, `TIMEOUT`, `USER_AGENT`, `GEOCODE`, `FORECAST`, `WHERE_AM_I`, `WIKIPEDIA`, `MAX_PAGES`, `PAGE_CHARS`, `PAGE_BYTES`, `PAGE_TIMEOUT`, `SKIP_PAGES`, `BRAVE_SEARCH`, `SEARCH_KEY`, `SEARCH_KEY_PAGE`, `TAGS_TO_DROP`, `TAG`, `BLOCK_END`, `YAHOO_SEARCH`, `YAHOO_CHART`, `COINGECKO_SEARCH`, `COINGECKO_PRICE`, `BROWSER_AGENT`, `CHANGING`, `TIMELESS`, `WEATHER_WORDS`, `IMAGE_WORDS`, `PRICE_WORDS`, `CRYPTO_WORDS`, `PRICE_FILLER`, `QUESTION`, `PLACE_AFTER`, `PLACE_BEFORE`, `PLACE_KO`, `SKY`, `SEARCH_ENGINES`, `Findings`, `wants_lookup`, `unsure`, `model_form`, `settings_path`, `allowed`, `allow`, `lookups`, `place_in`, `weather`, `price_subject`, `price`, `search_key`, `set_search_key`, `brave`, `search`, `page_text`, `read_page`, `images`, `wikipedia`, `look_up`, `note` |
-| `concierge/researcher.py` | Engine | `RESEARCH`, `RESEARCH_WORDS`, `MAX_QUERIES`, `PAGES_PER_QUERY`, `MAX_PAGES`, `SUMMARY_LINES`, `SINGLE_ASK_WRITTEN`, `SEARCH_WAIT`, `ENOUGH_SEARCHES`, `PAGES_PER_SITE`, `PLAN_NOTE`, `PLAN_SCHEMA`, `STALE_YEAR`, `WORKER_NOTE`, `MERGE_NOTE`, `Page`, `Account`, `wants_research`, `fresh_queries`, `plan`, `gather`, `summarise`, `merge`, `plan_tokens_after`, `last_plan_answer`, `settle`, `account_lines`, `when_now`, `sources_of` |
+| `concierge/sources.py` | Engine | `TIERS_PATH`, `PRIMARY`, `REFERENCE`, `ORDINARY`, `FARM`, `TIER_WORDS`, `TIER_POINTS`, `SUBJECT_POINTS`, `MODEL_POINTS`, `FRESH_POINTS`, `MIN_SNIPPET_MATCH`, `CURRENT_WORDS`, `STOPWORDS`, `FARM_LOOKS`, `JUDGE_NOTE`, `JUDGE_SCHEMA`, `Choice`, `load_tiers`, `site_of`, `words_of`, `tier_of`, `relevance`, `pick`, `judge_with`, `said`; tiers in `sources.yaml` |
+| `concierge/researcher.py` | Engine | `RESEARCH`, `RESEARCH_WORDS`, `MAX_QUERIES`, `PAGES_PER_QUERY`, `MAX_PAGES`, `SUMMARY_LINES`, `SINGLE_ASK_WRITTEN`, `SEARCH_WAIT`, `ENOUGH_SEARCHES`, `PAGES_PER_SITE`, `SPARE_PAGES`, `MIN_PAGE_CHARS`, `PLAN_NOTE`, `PLAN_SCHEMA`, `STALE_YEAR`, `WORKER_NOTE`, `MERGE_NOTE`, `Page`, `Account`, `wants_research`, `fresh_queries`, `plan`, `gather`, `summarise`, `merge`, `plan_tokens_after`, `last_plan_answer`, `settle`, `account_lines`, `when_now`, `sources_of` |
 | `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `FOLLOW_UPS`, `ElainaEngine` (adds `follow_up`, `follow_up_words`, `after_answer`, `pictures`, and `pending_lookup`, `found` for the web; outside the contract: `ask_again` for Auto) |
 | `concierge/fake_engine.py` | Engine | `FakeEngine`, `PracticeOllama`, `PracticeKeys`, `PracticeAccounts`, `practice_models` |
 | `concierge/cli.py` | Engine | `DIM`, `PLAIN`, `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `cmd_history`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure, history]`; in the chat `/think` turns thinking on or off |
