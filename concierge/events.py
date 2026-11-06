@@ -55,6 +55,23 @@ class ElainaText:
 
 
 @dataclass(frozen=True)
+class Source:
+    path: str
+    quote: str = ""
+
+
+@dataclass(frozen=True)
+class Picture:
+    """A picture found on the web for an answer: where it is, a small copy, what it
+    shows, and the page it came from."""
+
+    url: str
+    thumbnail: str = ""
+    title: str = ""
+    source: str = ""
+
+
+@dataclass(frozen=True)
 class ElainaDone:
     """Elaina's current reply is complete.
 
@@ -69,6 +86,10 @@ class ElainaDone:
     `saved`: about how many plan or key tokens an answer written here kept (Auto
     only, 0 otherwise). `plan_used`: how full the plan's fullest window was right
     after a cloud answer (0 to 1), or -1 when there's no plan to measure (a key).
+
+    An answer she looked up on the web (research.py) names its `sources` (path: the
+    address, quote: the page's title), shown small under it as links, and may bring
+    `images` to show under it. Both empty otherwise.
     """
 
     by: str = ""
@@ -76,6 +97,8 @@ class ElainaDone:
     where: str = ""
     saved: int = 0
     plan_used: float = -1.0
+    sources: list[Source] = field(default_factory=list)
+    images: list[Picture] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -117,12 +140,6 @@ class Progress:
     Progress line; clear it when any other event arrives."""
 
     text: str
-
-
-@dataclass(frozen=True)
-class Source:
-    path: str
-    quote: str = ""
 
 
 @dataclass(frozen=True)
@@ -211,6 +228,8 @@ class TranscriptItem:
     where: str = ""
     saved: int = 0
     plan_used: float = -1.0
+    images: list[Picture] = field(default_factory=list)  # pictures an answer brought from the web
+    when: str = ""  # ISO date and time it was said, for the line under it; empty in older chats
 
 
 @dataclass(frozen=True)

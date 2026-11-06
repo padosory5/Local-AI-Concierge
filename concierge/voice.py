@@ -21,12 +21,19 @@ from collections.abc import Iterator
 BUDGETS = {
     "small_talk": (30, 0),
     "fact": (40, 0),
-    "chat": (60, 2),
-    "explain": (70, 2),
+    # Plain chat and explanations get no points: offered "up to 2", a 4B model made two
+    # up every time ("230 million sq km of urban sprawl"), and a greeting got advice
+    # about memory. An explanation is paragraphs; steps, options and plans are lists.
+    "chat": (60, 0),
+    "explain": (110, 0),
     "decide": (90, 3),
     "how-to": (90, 4),
     "code": (120, 4),
     "plan": (170, 8),
+    # Maths is worked through step by step with the formulas in LaTeX; science gets
+    # the why and the key equation. Both are the long answers the user asked for.
+    "math": (220, 0),
+    "science": (180, 0),
     # The two buttons under an answer. "Shorter" is sized from the answer before it.
     "shorter": (40, 2),
     "more": (220, 6),
@@ -40,13 +47,32 @@ KIND_WORDS = (
     ("small_talk", r"^\s*(hi|hello|hey|yo|hiya|thanks?|thank you|thx|ty|ok(ay)?|cool|nice|great|awesome|perfect|"
                    r"good (morning|night|evening|afternoon)|bye|see (you|ya)|lol|haha|안녕\S*|고마워\S*|감사\S*|ㅋ+|ㅎ+|응|네|좋아\S*)"
                    r"([\s,!.~]+[\w']+){0,3}[\s!.~]*$"),  # a few words at most, and never a question
+    # "hey how are you doing today?" is small talk too, though it ends in a question mark:
+    # answered as a question, it got two bullet points about this computer's memory.
+    ("small_talk", r"^\s*((hi|hello|hey|yo|hiya|good (morning|evening|afternoon))[\s,!.~]*)?"
+                   r"(how('s| is| are| r|s)? (it going|things|you|u|ya|life|your day)|what'?s up|sup|"
+                   r"how( have|'ve) you been|how do you do|잘 지내\S*|뭐 ?해\S*)(?!\s+with\b)"
+                   r"([\s,!.~?]+[\w']+){0,3}[\s!.~?]*$"),
     ("plan", r"\b(plan|itinerary|schedule|routine|timetable)\b|계획|일정"),
+    # Working something out comes before how-to: "how do I solve x^2 = 4" is maths.
+    ("math", r"\b(solve|calculate|compute|evaluate|simplify|factor|factorise|factorize|expand|integral|integrate|"
+             r"derivative|differentiate|limit of|equation|prove|proof|theorem|probability|odds|sqrt|square root|"
+             r"logarithm|log of|sine|cosine|tangent|matrix|matrices|vector|fraction|percent of|percentage|"
+             r"times|divided by|plus|minus|sum of|average of|mean of|remainder|modulo|polynomial|quadratic)\b"
+             r"|\d\s*[-+*/×÷^=]\s*\d|\^\d|\bx\s*[=^]|\b(sin|cos|tan|ln)\s*\(|풀어|계산|방정식|미분|적분|확률|증명"),
+    ("science", r"\b(physics|chemistry|biology|forces?|velocity|acceleration|momentum|inertia|kinetic|potential "
+                r"energy|energy|gravity|gravitational|friction|torque|voltage|volts?|amps?|current|resistor|"
+                r"resistance|circuit|ohm'?s?|capacitor|magnet|magnetic|electric|electrons?|protons?|neutrons?|"
+                r"photons?|wave|wavelength|frequency|quantum|relativity|atoms?|atomic|molecules?|molecular|"
+                r"chemical|reaction|acid|alkali|enzyme|cells?|dna|rna|protein|evolution|orbit|planets?|stars?|"
+                r"galaxy|black hole|thermodynamics|entropy|optics|refraction|newton'?s|einstein)\b"
+                r"|물리|화학|생물|가속도|중력|마찰|전압|전류|회로|파동|원자|분자|반응|에너지"),
     ("decide", r"\bshould i\b|\bwhich (is|one|should)\b|\bbetter\b|\bvs\.?\b|\bor\b.*\?\s*$|추천|뭐가 (나아|좋아)"),
     ("how-to", r"^\s*how (do|can|should|to)\b|\bhow to\b|\bsteps?\b|방법|어떻게"),
     ("code", r"error|exception|traceback|\bbug\b|\bcode\b|python|javascript|\bsql\b|function|에러|오류|코드"),
     ("fact", r"\b(capital|population|how (many|much|old|tall|far|long)|when (is|was|did)|who (is|was|wrote|made))\b"
              r"|언제|누구|몇"),
-    ("explain", r"^\s*(what|why)\b|\bexplain\b|\bmean(s|ing)?\b|뭐야|무엇|왜|설명|의미"),
+    ("explain", r"^\s*(what|why)\b|\bexplain\b|\bmean(s|ing)?\b|\btell me about\b|\bdescribe\b|뭐야|무엇|왜|설명|의미"),
 )
 STYLE = (
     "How to answer (Elaina's way):\n"
@@ -64,6 +90,7 @@ SMALL_TALK_STYLE = (
     "How to answer (Elaina's way):\n"
     "- This is small talk, not a question. Reply as yourself in one or two warm, natural sentences.\n"
     "- Don't answer an earlier question again, don't list what you can do, and don't explain how you answer.\n"
+    "- Nothing about this computer, your model, or what you know about the user.\n"
     "- One short friendly question back is fine. No headings, lists or emoji.\n"
     "- Keep it under {words} words, in the same language as the user."
 )
@@ -74,14 +101,41 @@ POINTS = ("- Then, only if it helps, up to {points} short points, one line each,
           "(or \"1.\", \"2.\" for steps in order). Start each point with its key words in bold, like "
           "\"- **Whole screen:** ...\", so someone who reads only the bold still gets it.")
 NO_POINTS = "- That's all it needs: no list and no extra facts."
+# An explanation is prose, as long as it needs and no longer: "no list" alone made
+# her clip a real explanation to one line.
+EXPLAIN_SHAPE = ("- Then explain in plain words, in as many short paragraphs as it needs, usually one or two. "
+                 "No list: write it as sentences.")
 EXTRA = {
-    "code": " If code helps, one short code block.",
+    "code": " If code helps, one short code block, with its language after the opening ```.",
     "plan": " For a plan, a bold label for each day or part that names its main place, then its short points.",
     "decide": " Say which one first, then one point per option starting \"**Pick X if**\".",
     "how-to": " Write keys like Win + Shift + S.",
     "shorter": " Say your last answer again, keeping only what matters most.",
     "more": " Go further than your last answer: the why, an example or the next step. Don't repeat it.",
 }
+# Maths and science have shapes of their own: the working, and the why with its equation.
+MATH_STYLE = (
+    "How to answer (Elaina's way):\n"
+    "- Work it through step by step, one short numbered step per line, and say what each step does.\n"
+    "- Write every formula and calculation in LaTeX between $...$, and the main equation or result on a line of "
+    "its own between $$...$$. Never write maths as plain words or ASCII like x^2, sqrt() or 3/4.\n"
+    "- End with the answer on its own line in bold.\n"
+    "- No headings, tables or emoji. Keep it under {words} words, in the same language as the user."
+)
+SCIENCE_STYLE = (
+    "How to answer (Elaina's way):\n"
+    "- Start with the answer itself in one or two plain sentences, then explain why in a short paragraph or two.\n"
+    "- Write any formula in LaTeX between $...$ (the key one on a line of its own between $$...$$), never as "
+    "plain words or ASCII.\n"
+    "- A list only if the answer has separate parts, up to 3 points, each starting with its key words in bold.{extra}\n"
+    "- No headings, tables or emoji. Keep it under {words} words, in the same language as the user."
+)
+# Only a model that draws well is asked to: her own 4B model's drawings came out
+# black on black and off the edge, so hers draw only when the user asks for a drawing.
+DRAWING = (" If a simple drawing would make it clearer (forces on a body, a circuit, a graph's shape), add one as "
+           "SVG in a ```svg code block: viewBox 0 0 480 300, black lines on white, arrows and short labels, "
+           "nothing decorative.")
+DRAW_WORDS = re.compile(r"\b(draw|diagram|sketch|illustrate|graph it|plot)\b|그려|그림|도식", re.IGNORECASE)
 # Openers that say nothing. Only ever taken off the very start of an answer.
 OPENER = re.compile(
     r"^\s*(?:(?:great|good|excellent|nice) question[.!]*|(?:sure|certainly|of course|absolutely|okay|ok)[!.,]"
@@ -89,6 +143,9 @@ OPENER = re.compile(
     re.IGNORECASE,
 )
 QUOTE = re.compile(r"^\s*>\s?")  # "> Note:" shows as a stray mark
+# "**- Right side:** ..." has the bullet inside the bold, so it drew as bold text with a
+# dash instead of a point; the dash comes out in front.
+BOLD_BULLET = re.compile(r"^(\s*)\*\*\s*[-•*]\s*(.+?)\*\*")
 # A whole line that only echoes the note on how to answer: "No special conditions are
 # needed for this answer.", "That's all it needs.", "Word count: 38". Dropped, since it
 # tells the user nothing. A line that merely starts with "No" waits to be whole first
@@ -110,21 +167,33 @@ FIRST_SENTENCE = re.compile(r"[.!?。]\s")
 
 def kind_of(question: str) -> str:
     lowered = question.strip().lower()
-    return next((kind for kind, words in KIND_WORDS if re.search(words, lowered)), "chat")
+    kind = next((kind for kind, words in KIND_WORDS if re.search(words, lowered)), "chat")
+    # "what?", "why?" or "and then?" after an answer is a follow-up to it, not a new
+    # question to explain at length: told to explain with points, her model made some up.
+    if kind not in ("small_talk", "fact") and len(lowered.split()) <= 3:
+        return "chat"
+    return kind
 
 
-def guide(question: str, kind: str = "", before: str = "") -> str:
+def guide(question: str, kind: str = "", before: str = "", draws: bool = False) -> str:
     """The note that goes with a question: how to answer it, and in how many words.
     `kind` is set when code already knows it (the Shorter and More detail buttons);
-    `before` is her previous answer, which Shorter halves."""
+    `before` is her previous answer, which Shorter halves. `draws`: the model answering
+    draws well, so a science answer may bring a drawing; any model may when asked to."""
     kind = kind if kind in BUDGETS else kind_of(question)
     words, points = BUDGETS[kind]
+    drawing = DRAWING if draws or DRAW_WORDS.search(question) else ""
     if kind == "small_talk":
         return SMALL_TALK_STYLE.format(words=words)
+    if kind == "math":
+        return MATH_STYLE.format(words=words)
+    if kind == "science":
+        return SCIENCE_STYLE.format(words=words, extra=drawing)
     if kind == "shorter" and before:
         words = max(15, min(words, int(len(before.split()) * SHORTER_SHARE)))
-    more = POINTS.format(points=points) if points else NO_POINTS
-    return STYLE.format(more=more, words=words, extra=EXTRA.get(kind, ""))
+    more = EXPLAIN_SHAPE if kind == "explain" else POINTS.format(points=points) if points else NO_POINTS
+    extra = EXTRA.get(kind, "") + (drawing if kind in ("explain", "chat", "how-to") else "")
+    return STYLE.format(more=more, words=words, extra=extra)
 
 
 def tidy(chunks: Iterator[str]) -> Iterator[str]:
@@ -146,6 +215,7 @@ def tidy(chunks: Iterator[str]) -> Iterator[str]:
         if RULE.match(line) or RULE_ECHO.match(line):
             return None
         line = QUOTE.sub("", line, count=1)
+        line = BOLD_BULLET.sub(r"\1- **\2**", line, count=1)
         if heading := HEADING.match(line):
             line = f"**{heading.group(1).strip('*').rstrip(':')}**"
         if not line.strip():

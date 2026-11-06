@@ -221,7 +221,11 @@ class Ollama:
             body["think"] = think
         if keep_alive is not None:
             body["keep_alive"] = keep_alive
-        content = self._post("/api/chat", body)["message"]["content"]
+        reply = self._post("/api/chat", body)
+        # Counted like a streamed answer, so a form her model fills (a research plan)
+        # shows up in the tokens a job used.
+        self.last_tokens = (reply.get("prompt_eval_count") or 0, reply.get("eval_count") or 0)
+        content = reply["message"]["content"]
         try:
             return json.loads(content)
         except ValueError as exc:

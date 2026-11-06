@@ -19,7 +19,7 @@ window.roomPage = (() => {
   ];
   const NEVER = [
     ["Take pictures of your screen", "Only you can, with the + button."],
-    ["Send anything off this computer without you choosing to", "Only when you pick a cloud model or turn on photos of places, and it's counted below."],
+    ["Send anything off this computer without you choosing to", "Only when you pick a cloud model, turn on photos of places or let me look things up on the web, and it's counted below."],
     ["Delete your files", "I only move them, and Undo puts them back for a week."],
     ["Learn from your chats for anyone else", "Everything stays in your own folder on this computer."],
   ];
@@ -59,6 +59,49 @@ window.roomPage = (() => {
     photoToggle.setAttribute("aria-pressed", String(photos === "on"));
     const photoRow = el("div", "noticed", el("div", "ask-words", el("b", "", "Photos of places"),
                         el("span", "", "When my answer names a place, I show its photo from Wikipedia. Only the place's name is looked up, never what you typed.")), photoToggle);
+    // Looking things up on the web: the engine keeps the choice (research.py), with
+    // how many times it was used, so it's read and set through Python.
+    const webOn = data.web === true;
+    const webToggle = button(`toggle ${webOn ? "on" : ""}`, "", async () => {
+      await pywebview.api.set_web(!webOn);
+      drawPrivacy();
+    });
+    webToggle.append(el("span", "track"), webOn ? "On" : "Off");
+    webToggle.setAttribute("aria-pressed", String(webOn));
+    const looked = data.lookups ? ` Looked up ${data.lookups} time${data.lookups === 1 ? "" : "s"} so far.` : "";
+    const webRow = el("div", "noticed", el("div", "ask-words", el("b", "", "Looking things up on the web"),
+                      el("span", "", `For answers that change, like the weather, prices, the news or who holds a job. Only your question goes out, never your files.${looked}`)), webToggle);
+    // An optional search key: the free search path is flaky, a key makes it steady. The
+    // key goes to Python and into Windows' password store; the page only learns if one is saved.
+    const keyWords = el("div", "ask-words", el("b", "", "Search key (optional)"),
+                        el("span", "", data.search_key
+                          ? "A Brave Search key is saved, so searches go through Brave."
+                          : "Without one, searches use the free path, which sometimes finds nothing. A free Brave Search key fixes that."));
+    const keyRow = el("div", "noticed key-row", keyWords);
+    if (data.search_key) {
+      keyRow.append(button("quiet-button", "Remove", async () => {
+        await pywebview.api.set_search_key("");
+        drawPrivacy();
+      }));
+    } else {
+      const keyInput = el("input", "cloud-key small-key");
+      keyInput.type = "password";
+      keyInput.placeholder = "Paste the key";
+      keyInput.setAttribute("aria-label", "Brave Search key");
+      const save = button("quiet-button", "Save", async () => {
+        if (!keyInput.value.trim()) return;
+        await pywebview.api.set_search_key(keyInput.value);
+        drawPrivacy();
+      });
+      const get = el("a", "key-link", "Get a free key");
+      get.href = data.search_key_page || "https://brave.com/search/api/";
+      get.addEventListener("click", (event) => {
+        event.preventDefault();
+        pywebview.api.open_link(get.href);
+      });
+      keyWords.append(get);
+      keyRow.append(keyInput, save);
+    }
     $("view-privacy").replaceChildren(
       el("h1", "", "What I see"),
       el("p", "sub", "Everything I can look at, and what I never do."),
@@ -68,6 +111,8 @@ window.roomPage = (() => {
          el("div", "", el("h2", "", "What I never do"), ...list(NEVER, false))),
       el("h2", "", "Leaving this computer"),
       el("div", "nothing", left),
+      webRow,
+      keyRow,
       photoRow,
       el("h2", "", "How you answered my questions"),
       ...(answered.length ? answered : [el("div", "nothing", "I haven't asked anything yet.")]),

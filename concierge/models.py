@@ -165,6 +165,25 @@ class ModelMenu:
                     "company": company.company, "here": False}
         return None
 
+    def fast_talker(self, system: str):
+        """For a job where care matters more than depth and speed matters (merging a
+        research job): the plan's fast model, when Auto would otherwise send it to a
+        slower one. (talker, its menu entry), or None when the user picked a model on
+        purpose, Auto isn't on, or the plan has no faster model."""
+        chosen = self.chosen()
+        if not chosen or not chosen.get("auto"):
+            return None
+        target = chosen["cloud"]
+        if target["provider"] != apps.CLAUDE_CODE or "sonnet" in target["model"]:
+            return None  # only Claude's plan has a known fast model; Sonnet already is it
+        status = next((s for s in self.accounts.overview() if s["id"] == target["provider"]), None)
+        fast = next((m for m in (status or {}).get("models") or [] if "sonnet" in m["id"]), None)
+        found = self._resolve(target["provider"], fast["id"]) if fast else None
+        if not found:
+            return None
+        where = f"Right now your answers are written by {found['name']} from {found['company']}, over the internet."
+        return self.accounts.talker(target["provider"], fast["id"], f"{system}\n\n{where}"), found
+
     def talker(self, system: str):
         """Who writes her answers, or None for her own model. With Auto, the model
         for hard questions: the engine decides each time whether to use it."""

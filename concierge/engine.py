@@ -15,7 +15,8 @@ from collections.abc import Iterator
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from . import activity, auto, cloud, elaina, hardware, history, pictures, portrait, safety, signs, usage, voice
+from . import (activity, auto, cloud, elaina, hardware, history, pictures, portrait, research, researcher, safety, signs,
+               usage, voice)
 from .accounts import APPS
 from .agents import community, runner, store
 from .agents.blueprint import load_blueprints
@@ -26,7 +27,7 @@ from .agents.starters import Starter, asks_for, install
 from .attachments import NOTHING_SAID, Attached, read_attachments
 from .catalog import find_model, recommend
 from .conversations import ChatBook
-from .events import (AgentList, ElainaDone, ElainaText, Error, Event, IdeaCard, Question, Result, SystemInfo,
+from .events import (AgentList, ElainaDone, ElainaText, Error, Event, IdeaCard, Progress, Question, Result, SystemInfo,
                      Thinking)
 from .models import ModelMenu
 from .ollama import Ollama, OllamaError
@@ -90,6 +91,10 @@ class ElainaEngine:
         self.auto_cloud = None
         self.auto_last = ""  # where the last chat answer came from, for "why?" and "go on"
         self.auto_kind = ""  # what the last one kept here was, counted if asked again
+        # Looking things up on the web (research.py): the message waiting for the user's
+        # first yes, and what the last lookup found, for the sources under the answer.
+        self.pending_lookup: tuple[str, bool, str] | None = None
+        self.found: research.Findings | None = None
         self.menu = ModelMenu(self.ollama, self._hardware)
         self.menu.changed = self._use_chosen_model
 
@@ -112,6 +117,11 @@ class ElainaEngine:
             if not self.ollama.has_model(elaina.ELAINA_MODEL):
                 yield Error("Elaina is not set up yet. Run: python -m concierge setup")
                 return
+            if model and self.ollama.has_model(model.tag) and elaina.needs_configure(self.ollama, model, rec, report):
+                # Her prompt changed with the program (how she talks is part of it), so
+                # she is rebuilt from the same base model before the first message. It
+                # takes a moment, and without it a fix to her words never reaches the app.
+                elaina.configure(self.ollama, model, rec, report)
             self.chat = elaina.ElainaChat(self.ollama)
             self.chat.about = portrait.about_you(portrait.load())
             self._use_chosen_model()
@@ -421,6 +431,7 @@ class ElainaEngine:
             yield Thinking("This sounds serious, so I'm answering with care, not guessing.")
             yield from say(safety.crisis_reply(text))
             return
+        yield from self._waking()
         try:
             # An agent setup or an idea in progress gets the message first; if
             # the user moved on, it hands the message back for normal routing.
@@ -456,6 +467,14 @@ class ElainaEngine:
                 return
             if WANTS_IDEAS.search(text):
                 yield from say(describe_ideas(*self._hardware(), self.blueprints))
+                return
+            if researcher.wants_research(text):
+                yield from self._with_lookup(text, think, researcher.RESEARCH)
+                return
+            if lookup := self._lookup_kind(text):
+                # A question that needs the web is a chat: the router's model call
+                # would only say so, a second or two later.
+                yield from self._with_lookup(text, think, lookup)
                 return
             evidence = {a.name: runner.matching_words(a, text) for a in agents}
             where = route(self.ollama, elaina.ELAINA_MODEL, text, self.blueprints, agents,
@@ -512,6 +531,9 @@ class ElainaEngine:
         if note := safety.caution(text):
             yield ElainaText(f"\n\n{note}")
         activity.record(activity.ANSWERED)
+        if getattr(self, "found", None) is not None:  # the sources and pictures go under this answer
+            done = replace(done, sources=list(self.found.sources), images=list(self.found.images))
+            self.found = None
         yield self._answered(done, here)
 
     def _writes_here(self) -> bool:
@@ -538,8 +560,170 @@ class ElainaEngine:
         plan_used = self.menu.plan_used(source) if source in APPS else -1.0
         return replace(done, where=auto.CLOUD, plan_used=plan_used, by=done.by or self.talker_name)
 
+    # ----------------------------------------------------------- the web
+
+    def _lookup_kind(self, text: str) -> str | None:
+        """Whether this message needs the web, and for what. Code decides from the
+        words; only a question code can't place is put to her model, as one word."""
+        kind = research.wants_lookup(text)
+        if kind is None and research.allowed() is not False and research.unsure(text):
+            kind = research.SEARCH if research.model_form(self.ollama, elaina.ELAINA_MODEL)(text) else None
+        return kind
+
+    def _with_lookup(self, text: str, think: bool, kind: str) -> Iterator[Event]:
+        """Answer from the web: after the user's one-time yes, look it up, hand her what
+        was found along with the question, and put the sources under her answer."""
+        may = research.allowed()
+        if may is None:
+            self.pending_lookup = (text, think, kind)
+            yield Thinking("This can change from day to day, so I'd rather look it up than guess.")
+            yield Question(research.WEB, research.WEB_QUESTION, [research.YES_LOOK, research.NO_LOOK])
+            return
+        if not may:
+            yield Thinking("This may have changed since I learned it, and you've asked me not to look things "
+                           "up on the web, so this is from memory.")
+            yield from self._reply(text, think)
+            return
+        if kind == researcher.RESEARCH:
+            yield from self._research_job(text, think)
+            return
+        what = {research.WEATHER: "the weather", research.IMAGES: "pictures", research.PRICE: "the price"}.get(kind, "this")
+        yield Thinking(f"This changes from day to day, so I'm looking {what} up on the web.")
+        yield Progress("Looking it up on the web...")
+        try:
+            self.found = research.look_up(text, kind)
+        except Exception as exc:  # the web, not Ollama: whatever failed, she still answers
+            self.found = None
+            yield Thinking(f"The web didn't answer ({type(exc).__name__}), so this is from memory and may be "
+                           "out of date.")
+            yield from self._reply(text, think)
+            return
+        self.chat.attach(research.note(self.found), [])
+        # With Auto, pages worth of findings go to the plan, which reads long text far
+        # better than her 4B model; the weather or a price is short and stays here.
+        yield from self._reply(text, think, attached_chars=len(self.found.text))
+
+    def _research_job(self, text: str, think: bool) -> Iterator[Event]:
+        """"Research X" (researcher.py): the plan model plans the searches and at the end
+        merges the summaries and checks them; her own model reads each page. Every step
+        is said in her thinking with its tokens, and the end counts what the plan paid
+        against what it would have paid doing every step itself."""
+        chosen = self.menu.chosen() or {}
+        target = chosen.get("cloud") or chosen
+        talker = self.auto_cloud or (self.chat.talker if self.chat.talker is not self.ollama else None)
+        model = target.get("model", "")
+        boss = self.talker_name
+        if talker is not None and self.auto_cloud is not None:
+            # With Auto, the plan's fast model merges: care matters here, depth doesn't,
+            # and the slow one took 15 of the first job's 37 seconds.
+            try:
+                system = self.ollama.show(elaina.ELAINA_MODEL).get("system", "")
+            except OllamaError:
+                system = ""
+            if fast := self.menu.fast_talker(system):
+                talker, found = fast
+                model, boss = found["model"], found["name"]
+        source = target.get("provider", "") if talker is not None else ""
+        own = self._own_name()
+        boss = boss if talker is not None else own
+        account = researcher.Account(source=source)
+
+        def talk(system: str, user: str) -> Iterator[str]:
+            """One call to the reviewer, streamed, its tokens counted once it ends."""
+            if talker is None:
+                messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+                yield from self.ollama.chat(elaina.ELAINA_MODEL, messages, think=False, keep_alive=elaina.KEEP_ALIVE)
+                read, wrote = getattr(self.ollama, "last_tokens", (0, 0))
+                account.local_calls, account.local_read, account.local_wrote = (
+                    account.local_calls + 1, account.local_read + read, account.local_wrote + wrote)
+                return
+            # The plan's apps take one question at a time and drop system messages
+            # (accounts.transcript), so the note goes in front of the question.
+            before = researcher.last_plan_answer(source)
+            yield from talker.chat(model, [{"role": "user", "content": f"{system}\n\n{user}"}])
+            read, wrote = researcher.plan_tokens_after(source, before)
+            account.plan_calls, account.plan_read, account.plan_wrote = (
+                account.plan_calls + 1, account.plan_read + read, account.plan_wrote + wrote)
+
+        def form(system: str, user: str, schema: dict) -> dict:
+            """Her own model fills the plan: as good as the plan model's, six times faster, free."""
+            messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+            filled = self.ollama.chat_json(elaina.ELAINA_MODEL, messages, schema, think=False)
+            read, wrote = getattr(self.ollama, "last_tokens", (0, 0))
+            account.local_calls, account.local_read, account.local_wrote = (
+                account.local_calls + 1, account.local_read + read, account.local_wrote + wrote)
+            return filled
+
+        try:
+            if talker is None:
+                yield Thinking(f"Research job with no plan connected, so {own} does every step: plan the searches, "
+                               "read each page, then merge and check.")
+            else:
+                yield Thinking(f"Research job: {own} plans the searches and reads each page on this computer, "
+                               f"then {boss} merges the summaries and checks them.")
+            yield Progress("Planning the searches...")
+            queries, goal = researcher.plan(form, text)
+            yield Thinking(f"{own} asked for {len(queries)} search{'es' if len(queries) != 1 else ''}: "
+                           f"{'; '.join(queries)}. Goal: {goal}")
+            yield Progress(f"Running {len(queries)} search{'es' if len(queries) != 1 else ''} at once and reading the pages...")
+            pages = researcher.gather(queries)
+            if not pages:
+                yield Thinking("The searches found no page I could read, so this is from memory.")
+                yield from self._reply(text, think)
+                return
+            yield Thinking(f"Found {len(pages)} pages to read: {', '.join(dict.fromkeys(p.site for p in pages))}.")
+            for number, page in enumerate(pages, 1):
+                yield Progress(f"Worker {number} of {len(pages)} reads {page.site}...")
+                researcher.summarise(self.ollama, elaina.ELAINA_MODEL, text, page)
+                account.local_calls, account.local_read, account.local_wrote = (
+                    account.local_calls + 1, account.local_read + page.read, account.local_wrote + page.wrote)
+                first = page.summary.splitlines()[0][:120] if page.summary else ""
+                yield Thinking(f"Worker {number} ({own}) read {page.site}: {page.read:,} tokens in, {page.wrote:,} out. "
+                               f"{first if page.useful else 'Nothing relevant on that page.'}")
+            useful = [page for page in pages if page.useful]
+            if not useful:
+                yield Thinking("None of the pages said anything about it, so this is from memory.")
+                yield from self._reply(text, think)
+                return
+            yield Thinking(f"{boss} merges {len(useful)} summaries, checks them against each other and writes the brief.")
+            yield Progress("Writing the brief...")
+            said: list[str] = []
+            for piece in researcher.merge(talk, text, goal, useful, researcher.when_now()):
+                said.append(piece)
+                yield ElainaText(piece)
+        except cloud.CloudError as exc:
+            yield Error(f"{boss} couldn't finish the research ({exc}). Try again, or pick another model.")
+            return
+        brief = "".join(said).strip()
+        if note := safety.caution(text):  # health and money, the same plain note as any answer
+            yield ElainaText(f"\n\n{note}")
+        researcher.settle(account, text)
+        for line in researcher.account_lines(account, boss, own):
+            yield Thinking(line)
+        self.chat.remember(text, brief)
+        activity.record(activity.ANSWERED)
+        activity.record(activity.READ, len(useful))
+        if source and account.saved:
+            usage.record_saved(source, account.saved)
+        yield ElainaDone(by=boss, where=auto.CLOUD if source else auto.HERE, saved=account.saved,
+                         plan_used=self.menu.plan_used(source) if source in APPS else -1.0,
+                         sources=researcher.sources_of(useful))
+
+    def _waking(self) -> Iterator[Event]:
+        """Her model isn't in memory yet (the first message after the app opens, or after
+        a while away), so the first word takes a few seconds longer: say so, or the window
+        sits silent and looks stuck."""
+        try:
+            loaded = {m["name"].split(":")[0] for m in self.ollama.loaded()}
+        except Exception:
+            return  # Ollama didn't answer; the message itself will say what's wrong
+        if elaina.ELAINA_MODEL not in loaded:
+            yield Thinking("Loading my model into memory first, which takes a few seconds.")
+
     def _answer(self, text: str, think: bool) -> Iterator[Event]:
-        if think and self.chat.can_think:
+        # Small talk gets no thinking: her model thought to its limit over "how are you",
+        # then wrote the answer a second time, so a greeting took the longest of all.
+        if think and self.chat.can_think and voice.kind_of(text) != "small_talk":
             for kind, piece in self.chat.think_through(text):
                 yield Thinking(piece, "thought") if kind == "thought" else ElainaText(piece)
         else:
@@ -558,7 +742,10 @@ class ElainaEngine:
                                    plan_used=self.menu.plan_used(target.get("provider", "")),
                                    attached_chars=attached_chars,
                                    ask_model=auto.model_form(self.ollama, elaina.ELAINA_MODEL))
-            yield Thinking(auto.say(decision, self.talker_name, plan=target.get("provider") in APPS))
+            if getattr(self, "found", None) is not None and decision.where == auto.CLOUD:
+                yield Thinking(f"Auto: there's a lot to read from the web, so {self.talker_name} reads it.")
+            else:
+                yield Thinking(auto.say(decision, self.talker_name, plan=target.get("provider") in APPS))
         self.auto_last = decision.where
         if decision.where == auto.CLOUD:
             self.chat.talker = self.auto_cloud
@@ -596,6 +783,7 @@ class ElainaEngine:
     def _with_attachments(self, text: str, attached: Attached, think: bool) -> Iterator[Event]:
         self.deleting = None
         self.fixing = None
+        yield from self._waking()
         try:
             for name in attached.unread:
                 yield Thinking(f"I couldn't read {name}.")
@@ -641,9 +829,22 @@ class ElainaEngine:
         # _auto_choose sends it, one message at a time.
         self.auto_cloud = talker if is_auto else None
         self.chat.talker = self.ollama if is_auto else talker
+        # A plan or key model draws well enough to add a drawing unasked; her own 4B
+        # model only draws when asked to (voice.DRAW_WORDS).
+        self.chat.draws = talker is not self.ollama and not is_auto
 
     def _handle_choice(self, id: str, choice: str) -> Iterator[Event]:
-        if id == PICK_AGENT_TO_DELETE:
+        if id == research.WEB:
+            research.allow(choice == research.YES_LOOK)
+            pending, self.pending_lookup = self.pending_lookup, None
+            if pending:
+                try:
+                    yield from self._with_lookup(*pending)
+                except OllamaError as exc:
+                    yield Error(str(exc))
+            else:
+                yield from say("Okay." if choice == research.YES_LOOK else "Okay, I'll answer from what I know.")
+        elif id == PICK_AGENT_TO_DELETE:
             yield from self._confirm_delete(choice) if store.find_agent(choice) else say("Okay, nothing deleted.")
         elif id == DELETE_AGENT:
             yield from self._finish_delete(choice)

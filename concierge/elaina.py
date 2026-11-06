@@ -29,10 +29,13 @@ NUM_CTX = 4096
 # Roughly 2,500 tokens of past conversation, leaving room for the system
 # prompt and the reply inside NUM_CTX.
 HISTORY_CHARS = 9000
-# Usual thinking runs to about 6,000 characters. A small model can also think on
-# until it runs out of room and never answer, which it did one time in four on a
-# question about a file, so past this it's stopped and asked to just answer.
-MAX_THOUGHT_CHARS = 8000
+# A small model can think on until it runs out of room and never answer, so past
+# this it's stopped and asked to just answer. Measured on a greeting and simple
+# questions, her 4B model reached 8,000 characters on nine messages in ten, mostly
+# checking the answer rules over and over, and finished under 7,000 on the rest:
+# the cap is the wait, about 12 seconds on an RTX 5080 and over a minute on a
+# slow first load, so it's kept short.
+MAX_THOUGHT_CHARS = 4000
 # Elaina stays in graphics memory while the program is open, and leaves it
 # when the program closes.
 #
@@ -52,7 +55,7 @@ def system_prompt(base: ModelEntry, rec: Recommendation, report: HardwareReport)
     where = "graphics card" if rec.device == "gpu" else "processor" if rec.device == "cpu" else "chip"
     return (
         f"{persona}\n\n"
-        f"FACTS ABOUT THIS COMPUTER (read by code, exact)\n{facts}\n"
+        f"FACTS ABOUT THIS COMPUTER (only when asked; read by code, exact)\n{facts}\n"
         f"- Your own brain is {base.name} ({base.tag}), running on the {where}: {rec.device_name}. "
         f"It was chosen to stay small so the computer keeps running smoothly."
     )
@@ -132,6 +135,7 @@ class ElainaChat:
         self._asked = ""  # the user's own words this time, without any file added to them
         self.kind = ""  # the kind of answer, when code already knows it (voice.BUDGETS); used once
         self.about = ""  # what she knows about the user and they kept (portrait.about_you)
+        self.draws = False  # the model answering draws well enough to add SVG drawings unasked
         self._persona = None
         self._closed = threading.Event()
         # Held while checking in and while unloading, so a check-in cannot
@@ -158,7 +162,7 @@ class ElainaChat:
         # cloud one, answers her way, and her memory of the chat keeps just the words.
         kind, self.kind = self.kind, ""
         before = next((m["content"] for m in reversed(self.history[:-1]) if m["role"] == "assistant"), "")
-        note = voice.guide(self._asked, kind, before)
+        note = voice.guide(self._asked, kind, before, draws=getattr(self, "draws", False))
         messages[-1] = {**messages[-1], "content": f"{messages[-1]['content']}\n\n{note}"}
         if self.about and self.talker is self.ollama and self.persona():
             # Only her own model on this computer reads about the user. A system

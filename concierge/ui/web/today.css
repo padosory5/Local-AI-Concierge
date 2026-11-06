@@ -37,7 +37,7 @@
   --serif: "Instrument Serif", "Batang", "Malgun Gothic", serif;
   --mono: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
   color-scheme: dark;
-  font-family: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", system-ui, sans-serif, "Segoe UI Emoji";
   font-size: clamp(16px, 14px + 0.2vw, 17.5px);
 }
 
@@ -2126,6 +2126,166 @@ body.side-over .side {
   white-space: pre;
 }
 
+/* A code block: its language and Copy on a thin line above the code, which
+   highlight.js colours; the colours sit on the app's own panel, not its theme's. */
+
+.bubble pre.code {
+  padding: 0;
+  border: 1px solid var(--border);
+}
+
+.bubble pre.code code {
+  display: block;
+  padding: 11px 13px;
+  background: transparent;
+  font-size: 0.86em;
+  line-height: 1.5;
+}
+
+.bubble pre.code code.hljs {
+  background: transparent;
+}
+
+.code-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 13px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.code-copy {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.code-copy:hover {
+  color: var(--text);
+}
+
+/* Maths: a formula in the line, or one on a line of its own, drawn by KaTeX. */
+
+.bubble .math {
+  font-size: 1.02em;
+}
+
+.bubble .math-block {
+  margin: 0.5em 0 0.8em;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.bubble .katex-display {
+  margin: 0;
+}
+
+/* A drawing she made (SVG on a white card), and pictures found on the web. */
+
+.bubble .drawing {
+  margin: 0.5em 0 0.9em;
+  padding: 10px;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.bubble .drawing svg {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  margin: 0 auto;
+}
+
+.found {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.found-picture {
+  width: 160px;
+  margin: 0;
+}
+
+.found-picture img {
+  display: block;
+  width: 160px;
+  height: 110px;
+  border-radius: 9px;
+  background: var(--raised);
+  object-fit: cover;
+}
+
+.found-picture figcaption {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sources-line {
+  margin-top: 6px;
+  color: var(--faint);
+  font-size: 0.8rem;
+}
+
+/* The optional search key on What I see: a short box and Save beside the words. */
+
+.key-row .small-key {
+  width: 220px;
+  flex: none;
+  margin-left: auto;
+}
+
+.key-row .quiet-button {
+  flex: none;
+}
+
+.key-link {
+  width: fit-content;
+  color: var(--accent);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.key-link:hover {
+  text-decoration: underline;
+}
+
+.bubble a,
+.sources-line a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.bubble a:hover,
+.sources-line a:hover {
+  text-decoration: underline;
+}
+
+.bubble em {
+  font-style: italic;
+}
+
+.row.user .meta {
+  justify-content: flex-end;
+}
+
 /* Keys drawn as keys */
 
 .keys {
@@ -2190,24 +2350,14 @@ body.side-over .side {
   line-height: 1.3;
 }
 
-/* Under the newest answer, on a row of their own: Ask X instead, Shorter, More detail,
-   and the one question about photos. The facts line above never breaks inside an item. */
+/* Under the newest answer, on a row of their own: Shorter, and the one question about
+   photos. The facts line above never breaks inside an item. */
 
 .follow-ups {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
-}
-
-.follow-instead {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.follow-instead:hover {
-  border-color: var(--accent-hover);
-  color: var(--accent-hover);
 }
 
 .follow-up {

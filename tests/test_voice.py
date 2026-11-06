@@ -129,3 +129,7 @@ def test_lines_that_only_echo_the_answer_rules_are_dropped():
 def test_a_real_answer_starting_with_no_still_goes_through():
     said = "".join(voice.tidy(iter(["No, the capital of Australia is Canberra, not Sydney.\n", "It has been since 1913.\n"])))
     assert said == "No, the capital of Australia is Canberra, not Sydney.\nIt has been since 1913.\n"
+
+
+def test_a_bullet_inside_the_bold_comes_out_in_front():
+    assert tidied("Use it.\n**- Right side:** keeps all rows.\n**Tip:** stir.") == "Use it.\n- **Right side:** keeps all rows.\n**Tip:** stir."

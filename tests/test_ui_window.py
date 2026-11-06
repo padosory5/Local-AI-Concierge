@@ -158,7 +158,7 @@ def test_pages_see_only_their_calls():
                   "new_chat", "open_chat", "delete_chat", "delete_agent", "toggle_agent"}
     hub = ChatHub(FakeEngine())
     assert public(ChatBridge(hub)) == chat_calls
-    jobs = {"today", "answer", "undo_sorting", "set_noticing", "privacy", "activity"}
+    jobs = {"today", "answer", "undo_sorting", "set_noticing", "privacy", "activity", "set_web", "open_link", "set_search_key"}
     full_window = {"quit_app", "agent_details", "send_files", "pick_files", "pick_images", "pick_folder", "screenshot", "paste_text",
                    "follow_up", "after_answer", "pictures",
                    "models", "pick_model", "save_key", "forget_key", "more_models", "open_key_page",

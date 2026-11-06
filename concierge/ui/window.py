@@ -28,7 +28,7 @@ import traceback
 import webbrowser
 from pathlib import Path
 
-from .. import events
+from .. import events, research
 from ..cloud import load_providers, sent_recently
 from ..elaina import data_dir
 from ..engine import FOLLOW_UPS, ElainaEngine
@@ -260,11 +260,25 @@ class WatchBridge(ChatBridge):
         return self._hub.ask("activity", default={})
 
     def privacy(self) -> dict:
-        """What the What I see page shows: the switch, how her questions were
+        """What the What I see page shows: the switches, how her questions were
         answered, and when words left the computer (never what they were)."""
         watch = self._overlay.watch
         return {"noticing": watch.noticing if watch else None, "answers": watch.answers() if watch else {},
-                "sent": sent_recently()}
+                "sent": sent_recently(), "web": research.allowed(), "lookups": research.lookups(),
+                "search_key": bool(research.search_key()), "search_key_page": research.SEARCH_KEY_PAGE}
+
+    def set_web(self, on: bool) -> None:
+        """Whether she may look things up on the web (research.py)."""
+        research.allow(bool(on))
+
+    def set_search_key(self, key: str) -> None:
+        """An optional Brave Search key, into Windows' password store; empty forgets it."""
+        research.set_search_key(str(key or ""))
+
+    def open_link(self, address: str) -> None:
+        """A link in her answer opens in the user's own browser, and only a web address."""
+        if isinstance(address, str) and address.startswith(("http://", "https://")):
+            webbrowser.open(address)
 
 
 class TodayBridge(WatchBridge):

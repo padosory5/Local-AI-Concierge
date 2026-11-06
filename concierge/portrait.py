@@ -185,7 +185,9 @@ def about_you(made: dict) -> str:
     language = next(iter(made.get("languages", {})), "")
     if not kept and not kinds:
         return ""
-    lines = ["WHAT YOU KNOW ABOUT THE USER (from their past chats with other AI tools, kept by them)"]
+    # The last clause, because a greeting came back as "How are things with your pet data?"
+    lines = ["WHAT YOU KNOW ABOUT THE USER (from their past chats with other AI tools, kept by them; "
+             "use it only when it helps with what they ask, and never bring it up or list it on your own)"]
     lines += [f"- {fact}" for fact in kept]
     if kinds:
         lines.append("- Asked other AI tools most for: " + ", ".join(kind["words"].lower() for kind in kinds))

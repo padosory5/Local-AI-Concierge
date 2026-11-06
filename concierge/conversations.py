@@ -25,6 +25,7 @@ from .events import (
     Error,
     Event,
     IdeaCard,
+    Picture,
     Question,
     Result,
     Source,
@@ -107,10 +108,13 @@ class ChatBook:
         now = _now()
         if self.current is None:
             self.current = Conversation(_new_id(), title_from(text), now, now)
-        # Who wrote an answer goes along with it, so a reopened chat shows the same dot.
+        # Who wrote an answer goes along with it, so a reopened chat shows the same dot,
+        # and so do the sources and pictures of one she looked up on the web.
         who = {"by": answered.by, "where": answered.where, "saved": answered.saved,
-               "plan_used": answered.plan_used} if answered else {}
-        item = TranscriptItem(role, text, agent, list(sources or []), **who)
+               "plan_used": answered.plan_used, "images": list(answered.images)} if answered else {}
+        if answered and answered.sources and not sources:
+            sources = answered.sources
+        item = TranscriptItem(role, text, agent, list(sources or []), when=now, **who)
         self.current.items.append(asdict(item))
         self.current.updated = now
 
@@ -145,8 +149,9 @@ class ChatBook:
             return Transcript(None, [])
         items = [
             TranscriptItem(i["role"], i["text"], i.get("agent", ""), [Source(**s) for s in i.get("sources", [])],
-                           i.get("by", ""), i.get("where", ""), i.get("saved", 0), i.get("plan_used", -1.0))
-            for i in self.current.items  # chats saved before this have none of those: no dot
+                           i.get("by", ""), i.get("where", ""), i.get("saved", 0), i.get("plan_used", -1.0),
+                           [Picture(**p) for p in i.get("images", [])], i.get("when", ""))
+            for i in self.current.items  # chats saved before this have none of those: no dot, no time
         ]
         return Transcript(self.current.id, items)
 

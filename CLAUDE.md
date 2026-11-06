@@ -45,7 +45,7 @@ stream).
 | `SystemInfo` | Header or "about this computer": the hardware lines, recommended model, model in use and device; `note` if set |
 | `Thinking` | Elaina working it out, shown faded ("fog") above her answer. `kind` "step": one of her real decisions, a line of its own; "thought": her model's own thinking, streamed, only when Think is on. Fold it into one line ("Thought for 12s") as soon as any other event arrives; clicking reopens it |
 | `ElainaText` | Append to Elaina's current message bubble (many small pieces) |
-| `ElainaDone` | Her reply is finished; re-enable the input. With Auto, `by` names the model that wrote it (show it under the reply), and `instead` is the plan model to offer as "Ask … instead", calling `ask_again()`; both empty otherwise. Every chat answer also has `where` ("here" or "cloud": a blue dot, or yellow turning red with `plan_used`, the plan's fullest window after it) and `saved` (tokens Auto kept off the plan, shown as "Saved about 29k tokens"); empty for set phrases |
+| `ElainaDone` | Her reply is finished; re-enable the input. With Auto, `by` names the model that wrote it (show it under the reply), and `instead` is the plan model to offer as "Ask … instead", calling `ask_again()`; both empty otherwise. Every chat answer also has `where` ("here" or "cloud": a blue dot, or yellow turning red with `plan_used`, the plan's fullest window after it) and `saved` (tokens Auto kept off the plan, shown as "Saved about 29k tokens"); empty for set phrases. An answer looked up on the web (research.py) names its `sources` (path: address, quote: title), shown as small links under it, and may bring `images` (`Picture`: url, thumbnail, title, source) shown under its words |
 | `Question` | Elaina's question; `choices` as buttons, which call `choose(id, choice)`. The user may also type an answer, which goes to `send()` |
 | `AgentCard` | A card with name, kind, what it reads, can do, cannot do, runs on, and `actions` as buttons calling `choose(id, action)`. When an existing agent is being changed, the first action is "Save changes" instead of "Create it" |
 | `Progress` | One status line ("Reading 23 files..."); each new one replaces the last, cleared by any other event |
@@ -53,7 +53,7 @@ stream).
 | `AgentList` | The user's agents, for a sidebar or menu, each with a delete button calling `delete_agent(name)`. Agents in `switchable` work outside the chat while switched on: show an on/off switch calling `toggle_agent(name)`; `active` lists the ones on. Sent again whenever it changes |
 | `Error` | A friendly error message; the text is already written for the user |
 | `ChatList` | Saved conversations, newest first, with `current` marking the open one. Clicking one calls `open_chat(id)`; each has a delete button calling `delete_chat(id)` after a confirm |
-| `Transcript` | Replace the whole chat area with these items (`role`: user, elaina, result, error). Empty after New chat or deleting the open chat. An elaina item keeps its answer's `by`, `where`, `saved` and `plan_used`, so a reopened chat shows the same dot |
+| `Transcript` | Replace the whole chat area with these items (`role`: user, elaina, result, error). Empty after New chat or deleting the open chat. An elaina item keeps its answer's `by`, `where`, `saved` and `plan_used`, so a reopened chat shows the same dot, its `sources` and `images`, and every item has `when` (ISO), so a reopened chat shows the time, and the day, under each message |
 | `IdeaCard` | Elaina's verdict on a helper idea: `title`, each step with its `status` (ready, not_built, not_possible, unclear) and `note`, the `difficulty` line, the `verdict`, and `actions` as buttons calling `choose(id, action)`. `level` is the overall answer, for a colour or icon |
 
 Build the UI against `FakeEngine` (`concierge/fake_engine.py`). It needs no
@@ -236,10 +236,24 @@ the user's plan, or one with a key (`concierge/voice.py`). The answer comes firs
 one or two plain sentences, then a few short points only if they help, at most one
 tip, and no greeting, headings, tables or closing offer. Two halves, because a
 model's habits win over a polite request. Code picks the kind of question
-(`kind_of`: small_talk, fact, chat, explain, decide, how-to, code, plan) and its word and point
-budget (`BUDGETS`). Small talk ("hello", "thanks!") gets a note of its own (`SMALL_TALK_STYLE`):
-told to answer first with no greeting, her model listed what it can do, or answered the
-last question again. A whole line that only echoes the note ("No special conditions are
+(`kind_of`: small_talk, fact, chat, explain, decide, how-to, code, plan, math, science) and its
+word and point budget (`BUDGETS`), so the shape of an answer follows the question: a fact is one
+or two sentences, an explanation is prose (`EXPLAIN_SHAPE`, never a forced list), steps and
+options are lists, maths is worked through step by step with every formula in LaTeX between
+$...$ and the result between $$...$$ (`MATH_STYLE`), and science gets the answer, the why and
+the key equation (`SCIENCE_STYLE`). A model that draws well (a plan or key model,
+`ElainaChat.draws`) may add a drawing as SVG in a ```svg block (`DRAWING`); her own 4B model's
+drawings came out black on black and off the edge, so it only draws when asked to
+(`DRAW_WORDS`). Small talk ("hello", "thanks!", "hey how are you doing today?") gets a note
+of its own (`SMALL_TALK_STYLE`): told to answer first with no greeting, her model listed what it
+can do, or answered the last question again, and it says nothing about this computer, her model
+or what she knows about the user, because "how are you" once came back as advice about memory.
+Plain chat gets no points at all: offered "up to 2", a 4B model made two up every time. A
+message of three words or fewer ("what?", "why?") is a follow-up to the last answer, so it is
+chat, not something to explain with points. Her persona keeps the facts about this computer for
+when the user asks about it or about her, never to bring up on her own; the app rebuilds her
+model at startup whenever that prompt changed with the program (`needs_configure`), so a fix
+to her words reaches the app without running setup. A whole line that only echoes the note ("No special conditions are
 needed for this answer.", `RULE_ECHO`) is dropped by `tidy`, and `guide` goes with that one question only, so her memory of
 the chat keeps just the words. Then `tidy` shapes every reply as it streams: it
 drops "Great question!", turns headings into bold lines, tables into short lines,
@@ -250,13 +264,93 @@ answer (`ANSWERED_SENTENCES`); a question she needs to ask stays. Every model tr
 seven questions asked of her own model, GPT through Codex and Claude through Claude
 Code.
 
-Under her newest answer, on a row of pills of their own below the facts line, Ask X
-instead (Auto), Shorter and More detail. Shorter and More detail (`FOLLOW_UPS`) skip the router and
-set the answer's kind in code. Keys are drawn as keys (`keys` in `app.js`). A photo of a
+Under her newest answer, on a row of its own below the facts line, one pill: Shorter,
+only under an answer of 30 words or more. It skips the router and sets the answer's kind in
+code (`FOLLOW_UPS`). The engine also answers More detail and "Ask X instead" (`ask_again`),
+but the window no longer shows them: the user found them unnecessary. Keys are drawn as keys (`keys` in `app.js`). A photo of a
 place she names goes beside its line (`pictures.py`: Wikipedia pages with map
 coordinates whose title is the name she wrote). Nothing is looked up until the user says
 yes once, under the first plan that names places or on What I see, and each lookup is
 counted there.
+
+## Looking things up on the web
+
+A small model's knowledge stops at its training date, so `concierge/research.py` looks
+things up for answers that change. Code decides from the words (`wants_lookup`): weather
+words go to Open-Meteo (no key; the place from the question, or else the city of the
+internet connection, and the answer says it's a guess; weekdays spelled out, since her
+model called a Saturday Tuesday), a share or coin price to Yahoo Finance or CoinGecko
+(`price`: the pages a search finds have the number but their snippets don't, and she then
+said she was offline), "show me a picture" to an image search, and changing words (today, latest, price, news, who is the president, a year
+from 2025 on, 오늘, 환율...) to a web search; timeless words (history, prove, explain,
+physics, how do I, translate...) never go anywhere. A question neither list places is
+put to her own model as one word, yes or no (`model_form`, forced by the schema; 16 of
+16 right in the check), and doubt means no lookup. Nothing leaves the computer until the
+user says yes once: the first time, she asks with a Question (id `web`), and What I see
+has the switch and the count (`research.json`); every lookup is also counted under
+"Leaving this computer" through `cloud.record_sent`. The search goes through a Brave
+Search key when one is saved (optional, on What I see, kept in Windows' password store
+like the model keys; the free path finds nothing now and then), else the `ddgs` package
+with engines tried in turn (`SEARCH_ENGINES`). After the search the first two pages are
+read as well (`read_page`, `MAX_PAGES`, never a PDF or a video) and go with the snippets,
+because a snippet names the page that has the number while the page has it: that is how
+the other apps get real answers. A who/what question not about the latest anything also
+gets the first lines of its Wikipedia page and that page's picture. What was found goes with the question as
+plain text headed "FOUND ON THE WEB just now (time)" that also tells her she is not offline
+for this answer, so she answers from it and says so,
+and the sources and pictures ride on the `ElainaDone` and into the saved chat. A lookup
+that fails says so in her thinking and she answers from memory. With Auto, pages' worth of
+findings count as a document and go to the plan model, which reads long text far better
+than her 4B model; the weather or a price is short and stays here. Under a looked-up
+answer the window says "As of 12:16 AM, from open-meteo.com", because such an answer
+goes stale. The Spot and
+agents never look anything up.
+
+## Research jobs
+
+"Research X", "look into", "write me a report on" (`researcher.RESEARCH_WORDS`) is more
+than one lookup, and it is the first piece of the shape the product is heading for:
+the plan model as reviewer, her own model as the workers, code in between. Her own
+model turns the request into 2 to 4 searches as a form forced by the schema
+(`plan`, `PLAN_SCHEMA`: its queries were as good as Claude's in the first live run,
+in a sixth of the time and for none of the plan). The note tells it today's date and
+code puts this year into any query that names an older one when the question named
+none (`fresh_queries`): her model's sense of "now" stops at its training, and it
+searched "Seattle housing 2024" in November 2026. Code runs all the searches at once,
+then reads all the pages at once, up to two per search, two per site and six in all
+(`gather`, `SEARCH_WAIT`, `PAGES_PER_SITE`; one after another they were a third of the
+job, three pages from one supplement site made a brief lean on it, and a search the
+burst refused is tried once more alone only when fewer than `ENOUGH_SEARCHES`
+answered); her own model reads each page and writes up to
+six lines of what it says about the question, one page per call (`summarise`), the
+part that eats the most tokens and the kind of job a 4B model does well; then the
+plan model merges the summaries into one brief, checks them against each other,
+names each point's site and ends with what wasn't found (`merge`). With Auto that is
+the plan's fast model (`ModelMenu.fast_talker`: Sonnet on a Claude plan), since a
+merge needs care more than depth and Opus took 15 of the first job's 37 seconds; a
+model the user picked on purpose is used as it is. Every step is said in her
+thinking with its tokens (`ElainaEngine._research_job`), and the end counts what the
+plan was charged (the apps report read and written exactly, `usage` keeps the last
+answer) against what it would have been charged doing every step itself: each local
+step as one plan call, her model's tokens plus the app's measured per-call overhead
+(`usage.saved_estimate`, the same count as the Saved line), so it's "about", since the
+plan's tokenizer counts a little differently. The saving goes on the `ElainaDone` and
+into the week's total, and the brief carries its sources. The plan's apps drop system
+messages (`accounts.transcript`), so the notes ride in front of the question. A brief
+about health or money gets the same plain note as any answer. Without a plan, her own
+model does every step and the thinking says so.
+
+Measured against the others: Perplexity answers a plain question in 3 to 8 seconds
+and a Pro Search (several queries, then a synthesis) in 15 to 30, and the deep-research
+modes of every company take minutes. Elaina's job takes 19 to 30 seconds, half of it
+the plan's app starting and writing; her Ollama serves one request at a time (four at
+once took as long as four in a row), so the workers can't run side by side, and an
+API key would save the app's start-up but not the writing. Five varied questions in
+the check (a Nobel prize, a supplement's safety, a housing market, a software agent,
+Korea's minimum wage in Korean) came back right wherever the pages were, with
+disagreements between sources named and what wasn't found said. It needs the same web
+permission as a lookup. Next in that shape: a last pass that puts the brief in the
+user's own words, from their kept writing.
 
 ## The full window
 
@@ -323,9 +417,26 @@ the clock icon. Only one copy runs at a time (`first_copy`): starting her again
 brings the running one forward (`bring_forward`), the practice run included,
 because two copies would both answer Ctrl tapped twice.
 
-Think is on by default: about 10 seconds more on this hardware, and the user asked
-to see her working it out. A switch beside the box turns it off, remembered in the
-page. Under each reply is the time, the model, how long it took and Copy, and
+Her answers are drawn by `rich` and `inline` in `app.js`, still never as HTML from the
+model's words: maths between $...$, $$...$$, \(...\) or \[...\] through KaTeX, code blocks
+through highlight.js with the language and Copy on a line above, both shipped in
+`web/vendor/` so they work offline (only the woff2 fonts, 740 KB in all); a ```svg block
+is a drawing, cleaned of scripts, links and anything fetched, on a white card; links
+open in the user's own browser (`open_link`), bold, italics and `code` as themselves,
+and emoji through Segoe UI Emoji. "$5 and $10" stays money: single dollars are maths only
+when what's between them looks like it. The user's own messages are drawn the same way,
+and a question copied from a page or a book, whose code comes as plain lines with no
+fences, gets them from `fenced` (runs of lines that look like code), so its code shows in
+boxes too. Under every message is its time, and under hers
+who wrote it, how long it took and Copy; a reopened chat shows the same times with the
+day (`TranscriptItem.when`), and an answer from the web its sources and pictures.
+
+Think is on by default, and the user asked to see her working it out. A switch beside the
+box turns it off, remembered in the page. Her thinking is cut at `MAX_THOUGHT_CHARS` (about
+5 seconds on an RTX 5080, measured) and the answer then written without it, because the 4B
+model mostly thinks about the answer rules until stopped; small talk never thinks, since a
+greeting took the longest of all. The first message after the app opens says that her model
+is loading into memory (`ElainaEngine._waking`), so the window never sits silent. Under each reply is the time, the model, how long it took and Copy, and
 replies keep their lists, bold and code (`rich` in `app.js`, built as elements, never
 as HTML).
 
@@ -423,9 +534,10 @@ Doubt goes to the plan (a wasted question costs a little; a bad answer costs tru
 short "why?" stays with whoever answered before, and a plan that refuses before
 writing a word (signed out, used up) means she answers herself. She says where each
 message goes and why in her thinking (`say`), the reply's line names the model
-(`ElainaDone.by`), and an answer kept here has "Ask Claude Sonnet 5.5 instead"
+(`ElainaDone.by`), and an answer kept here carries "Ask Claude Sonnet 5.5 instead"
 (`ElainaDone.instead`, `Engine.ask_again`, `ChatBridge.ask_again`), which asks the
-same question of the plan and replaces her answer in her memory. Each kind kept here
+same question of the plan and replaces her answer in her memory; the window doesn't
+draw that button any more, though the engine still offers it. Each kind kept here
 and each ask-again is counted (`auto.json`, `record`, `counts`), so a kind people keep
 asking again for shows up. Agents, the router and forms stay on her model with Auto.
 Auto asks the plan model picked last (`ModelMenu.auto_target`, `auto_cloud` in the
@@ -612,13 +724,13 @@ variables inside a function do not need listing.
 | `concierge/hardware.py` | Engine | `GB`, `MIN_USABLE_VRAM_GB`, `GPU`, `HardwareReport`, `detect`, `parse_nvidia_smi`, `describe` |
 | `concierge/catalog.py` | Engine | `CATALOG_PATH`, `GPU_SHARE`, `APPLE_SHARE`, `CPU_SHARE`, `CPU_MAX_GB`, `GPU_HEADROOM_GB`, `RAM_HEADROOM_GB`, `DISK_HEADROOM_GB`, `CPU_HELPER_SHARE`, `ModelEntry`, `HelperModel`, `Recommendation`, `load_catalog`, `load_helpers`, `helper_room`, `pick_helper`, `find_model`, `memory_budget`, `recommend`; models in `models.yaml` (`models`, `helpers`) |
 | `concierge/activity.py` | Engine | `ANSWERED`, `EXPLAINED`, `TRANSLATED`, `POLISHED`, `SUMMED_UP`, `HELPED`, `SORTED`, `READ`, `KEPT_DAYS`, `WEEK_DAYS`, `record`, `this_week` |
-| `concierge/voice.py` | Engine | `BUDGETS`, `KIND_WORDS`, `SHORTER_SHARE`, `STYLE`, `SMALL_TALK_STYLE`, `POINTS`, `NO_POINTS`, `EXTRA`, `OPENER`, `QUOTE`, `RULE_ECHO`, `ECHO_START`, `HEADING`, `RULE`, `TABLE_ROW`, `TABLE_LINE`, `SAFE_START`, `FIRST_SENTENCE`, `kind_of`, `guide`, `tidy` |
+| `concierge/voice.py` | Engine | `BUDGETS`, `KIND_WORDS`, `SHORTER_SHARE`, `STYLE`, `SMALL_TALK_STYLE`, `POINTS`, `NO_POINTS`, `EXPLAIN_SHAPE`, `EXTRA`, `MATH_STYLE`, `SCIENCE_STYLE`, `DRAWING`, `DRAW_WORDS`, `OPENER`, `QUOTE`, `BOLD_BULLET`, `RULE_ECHO`, `ECHO_START`, `HEADING`, `RULE`, `TABLE_ROW`, `TABLE_LINE`, `SAFE_START`, `FIRST_SENTENCE`, `kind_of`, `guide`, `tidy` |
 | `concierge/pictures.py` | Engine | `API`, `USER_AGENT`, `TIMEOUT`, `MAX_PICTURES`, `MAX_LOOKUPS`, `PICTURE_PIXELS`, `NO_PICTURES`, `BOLD`, `PART`, `BETWEEN`, `PLACE_WORDS`, `names_in`, `same_place`, `place`, `worth_asking`, `for_answer` |
 | `concierge/safety.py` | Engine | `CRISIS`, `HEALTH`, `MONEY`, `CRISIS_REPLY`, `CRISIS_REPLY_KO`, `HEALTH_NOTE`, `MONEY_NOTE`, `crisis`, `crisis_reply`, `caution` |
-| `concierge/elaina.py` | Engine | `ELAINA_MODEL`, `PERSONA_PATH`, `NUM_CTX`, `HISTORY_CHARS`, `MAX_THOUGHT_CHARS`, `UNLOAD_ON_EXIT`, `KEEP_ALIVE`, `HEARTBEAT_SECONDS`, `CLOSING_FILLER`, `ANSWERED_SENTENCES`, `without_closing_filler`, `system_prompt`, `configure`, `needs_configure`, `ElainaChat` (`kind`), `data_dir`, `load_state`, `save_state` |
+| `concierge/elaina.py` | Engine | `ELAINA_MODEL`, `PERSONA_PATH`, `NUM_CTX`, `HISTORY_CHARS`, `MAX_THOUGHT_CHARS`, `UNLOAD_ON_EXIT`, `KEEP_ALIVE`, `HEARTBEAT_SECONDS`, `CLOSING_FILLER`, `ANSWERED_SENTENCES`, `without_closing_filler`, `system_prompt`, `configure`, `needs_configure`, `ElainaChat` (`kind`, `draws`), `data_dir`, `load_state`, `save_state` |
 | `concierge/ollama.py` | Engine | `DEFAULT_URL`, `DOWNLOAD_PAGE`, `UNREACHABLE`, `OllamaError`, `Ollama` (`last_tokens`: read and written by the last chat) |
 | `concierge/conversations.py` | Engine | `TITLE_CHARS`, `Conversation`, `ChatBook`, `title_from` |
-| `concierge/models.py` | Engine | `LOCAL`, `CUSTOM`, `LOOPBACK`, `GB`, `FITS`, `SLOW`, `NO_DISK`, `LocalModel`, `ModelMenu` (Auto adds `auto_target`, `plan_used`; the meter `usage`), `nice_name` |
+| `concierge/models.py` | Engine | `LOCAL`, `CUSTOM`, `LOOPBACK`, `GB`, `FITS`, `SLOW`, `NO_DISK`, `LocalModel`, `ModelMenu` (Auto adds `auto_target`, `plan_used`, `fast_talker`; the meter `usage`), `nice_name` |
 | `concierge/huggingface.py` | Engine | `API`, `TIMEOUT`, `LIST_LIMIT`, `SIZE_WORKERS`, `CACHE_SECONDS`, `GB`, `SORTS`, `VISION`, `PREFERRED`, `QUANTIZATION`, `PART`, `HubError`, `HubModel`, `best_file`, `browse`, `tag_from` |
 | `concierge/cloud.py` | Engine | `CATALOG_PATH`, `KEY_STORE`, `MAX_REPLY_TOKENS`, `LIST_TIMEOUT`, `REPLY_TIMEOUT`, `MORE_MODELS`, `ANTHROPIC_VERSION`, `SENT_KEPT`, `NOT_FOR_CHAT`, `CloudError`, `CloudOption`, `Provider`, `CloudModel`, `load_providers`, `saved_key`, `save_key`, `forget_key`, `request_for`, `text_in`, `record_sent`, `sent_recently`, `key_refused`, `tokens_in`, `live_models`, `overview`, `find_option`; companies and models in `cloud_models.yaml` |
 | `concierge/accounts.py` | Engine | `CODEX`, `CLAUDE_CODE`, `APPS`, `CLAUDE_INSTALL`, `CLAUDE_NO_TOOLS`, `ANSWER_TIMEOUT`, `STATUS_SECONDS`, `NO_WINDOW`, `NEW_WINDOW`, `Accounts`, `AppModel`, `transcript` |
@@ -630,8 +742,10 @@ variables inside a function do not need listing.
 | `concierge/signs.py` | Engine | `KNOWN_APPS`, `NOT_APPS`, `FILE_KINDS`, `RECENT_GROUPS`, `RECENT_DAYS`, `USER_ASSIST`, `MAX_APPS_KEPT`, `MIN_HOURS`, `ACTIVITIES`, `GAME_FOLDERS`, `PLAIN_FOLDERS`, `NOT_ACTIVITIES`, `FRIENDLY`, `CODE`, `STUDY_NAMES`, `WORK_NAMES`, `SKIP_DIRS`, `MAX_ENTRIES`, `MAX_SECONDS`, `MAX_DEPTH`, `MAX_PROJECTS_KEPT`, `REPARSE_POINT`, `THIS_COMPUTER`, `look_around`, `app_use`, `app_name`, `activity_of`, `activities`, `installed_apps`, `facts_from`, `role_words` |
 | `concierge/portrait.py` | Engine | `KINDS`, `KIND_MEANINGS`, `ABOUT`, `MAX_SORTED`, `SORT_BATCH`, `SORT_PREVIEW_CHARS`, `MAX_SNIPPETS`, `SNIPPET_CHARS`, `FACT_BATCH`, `MAX_FACTS`, `FACTS_PER_LINE`, `QUOTE_MIN_CHARS`, `FACT_MAX_CHARS`, `SELF_WORDS`, `SENSITIVE`, `SUBJECT`, `ASKING`, `PARTS_OF_DAY`, `SCRIPTS`, `ENGLISH_WORDS`, `portrait_path`, `load`, `forget`, `understand`, `add_computer`, `keep`, `about_you`, `busiest_part_of_day`, `languages_used`, `language_of`, `sort_kinds`, `find_facts`, `confirmed`, `self_snippets`, `checked`, `merge` |
 | `concierge/reservations.py` | Engine | `SORT`, `RUN`, `TURN_ON`, `TURN_OFF`, `ONCE`, `DAILY`, `WEEKLY`, `CHECK_SECONDS`, `STEPS`, `ReservationError`, `Reservation`, `Reservations` |
-| `concierge/events.py` | Both (contract) | `Thinking`, `SystemInfo`, `ElainaText`, `ElainaDone`, `Question`, `AgentCard`, `Progress`, `Source`, `Result`, `AgentList`, `Error`, `IdeaStep`, `IdeaCard`, `ChatSummary`, `ChatList`, `TranscriptItem`, `Transcript`, `Event`, `to_dict`, `Engine` |
-| `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `FOLLOW_UPS`, `ElainaEngine` (adds `follow_up`, `follow_up_words`, `after_answer`, `pictures`; outside the contract: `ask_again` for Auto) |
+| `concierge/events.py` | Both (contract) | `Thinking`, `SystemInfo`, `ElainaText`, `ElainaDone`, `Question`, `AgentCard`, `Progress`, `Source`, `Picture`, `Result`, `AgentList`, `Error`, `IdeaStep`, `IdeaCard`, `ChatSummary`, `ChatList`, `TranscriptItem`, `Transcript`, `Event`, `to_dict`, `Engine` |
+| `concierge/research.py` | Engine | `SETTINGS`, `WEB_QUESTION`, `YES_LOOK`, `NO_LOOK`, `WEB`, `WEATHER`, `SEARCH`, `IMAGES`, `PRICE`, `MAX_RESULTS`, `MAX_IMAGES`, `SNIPPET_CHARS`, `EXTRACT_CHARS`, `FINDINGS_CHARS`, `TIMEOUT`, `USER_AGENT`, `GEOCODE`, `FORECAST`, `WHERE_AM_I`, `WIKIPEDIA`, `MAX_PAGES`, `PAGE_CHARS`, `PAGE_BYTES`, `PAGE_TIMEOUT`, `SKIP_PAGES`, `BRAVE_SEARCH`, `SEARCH_KEY`, `SEARCH_KEY_PAGE`, `TAGS_TO_DROP`, `TAG`, `BLOCK_END`, `YAHOO_SEARCH`, `YAHOO_CHART`, `COINGECKO_SEARCH`, `COINGECKO_PRICE`, `BROWSER_AGENT`, `CHANGING`, `TIMELESS`, `WEATHER_WORDS`, `IMAGE_WORDS`, `PRICE_WORDS`, `CRYPTO_WORDS`, `PRICE_FILLER`, `QUESTION`, `PLACE_AFTER`, `PLACE_BEFORE`, `PLACE_KO`, `SKY`, `SEARCH_ENGINES`, `Findings`, `wants_lookup`, `unsure`, `model_form`, `settings_path`, `allowed`, `allow`, `lookups`, `place_in`, `weather`, `price_subject`, `price`, `search_key`, `set_search_key`, `brave`, `search`, `page_text`, `read_page`, `images`, `wikipedia`, `look_up`, `note` |
+| `concierge/researcher.py` | Engine | `RESEARCH`, `RESEARCH_WORDS`, `MAX_QUERIES`, `PAGES_PER_QUERY`, `MAX_PAGES`, `SUMMARY_LINES`, `SINGLE_ASK_WRITTEN`, `SEARCH_WAIT`, `ENOUGH_SEARCHES`, `PAGES_PER_SITE`, `PLAN_NOTE`, `PLAN_SCHEMA`, `STALE_YEAR`, `WORKER_NOTE`, `MERGE_NOTE`, `Page`, `Account`, `wants_research`, `fresh_queries`, `plan`, `gather`, `summarise`, `merge`, `plan_tokens_after`, `last_plan_answer`, `settle`, `account_lines`, `when_now`, `sources_of` |
+| `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `FOLLOW_UPS`, `ElainaEngine` (adds `follow_up`, `follow_up_words`, `after_answer`, `pictures`, and `pending_lookup`, `found` for the web; outside the contract: `ask_again` for Auto) |
 | `concierge/fake_engine.py` | Engine | `FakeEngine`, `PracticeOllama`, `PracticeKeys`, `PracticeAccounts`, `practice_models` |
 | `concierge/cli.py` | Engine | `DIM`, `PLAIN`, `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `cmd_history`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure, history]`; in the chat `/think` turns thinking on or off |
 | `concierge/agents/blueprint.py` | Engine | `BLUEPRINT_DIR`, `Slot`, `Blueprint`, `load_blueprints`; templates in `agents/blueprints/*.yaml` (`documents_qa`, and `custom`: the shared template for agents made from parts) |
@@ -654,7 +768,7 @@ variables inside a function do not need listing.
 | `concierge/agents/runner.py` | Engine | `TOP_PASSAGES`, `MAX_CONTENTS`, `STOPWORDS`, `run`, `matching_words`, `clean_answer`, `refresh_index`, `best_sentence` |
 | `concierge/agents/store.py` | Engine | `Agent`, `agents_dir`, `slugify`, `list_agents`, `find_agent`, `name_taken`, `save`, `load_index`, `delete` |
 | `concierge/agents/eval_router.py` | Engine | `CASES`, `main`; command `python -m concierge.agents.eval_router` |
-| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `GLASS_SIZE`, `GLASS_MIN_HEIGHT`, `GLASS_CHAT_HEIGHT`, `GLASS_GROW_STEPS`, `GLASS_GROW_SECONDS`, `GLASS_ABOVE`, `GLASS_ALPHA`, `GLASS_FADE_STEPS`, `GLASS_FADE_SECONDS`, `GLASS_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `EXPORTS`, `EXPORT_WAIT_HOURS`, `EXPORT_CHECK_SECONDS`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a page calls its `startup`, `send`, `choose`, `ask_again`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `measure`, `set_spot`, `switch_agent`, `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`, `forget_history`, `open_export_page`, `look_around`, `find_downloads`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `paste_text`, `follow_up`, `after_answer`, `pictures`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `sign_in_account`, `install_account`, `check_accounts`, `use_account`, `usage`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_glass`, `fit_glass`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay`, `pasted_file`, `full_size`, `centered`, `glass_height`, `place_glass`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
+| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `GLASS_SIZE`, `GLASS_MIN_HEIGHT`, `GLASS_CHAT_HEIGHT`, `GLASS_GROW_STEPS`, `GLASS_GROW_SECONDS`, `GLASS_ABOVE`, `GLASS_ALPHA`, `GLASS_FADE_STEPS`, `GLASS_FADE_SECONDS`, `GLASS_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `EXPORTS`, `EXPORT_WAIT_HOURS`, `EXPORT_CHECK_SECONDS`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub`, `ChatBridge` (a page calls its `startup`, `send`, `choose`, `ask_again`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`, `set_web`, `set_search_key`, `open_link`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `measure`, `set_spot`, `switch_agent`, `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`, `forget_history`, `open_export_page`, `look_around`, `find_downloads`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `paste_text`, `follow_up`, `after_answer`, `pictures`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `sign_in_account`, `install_account`, `check_accounts`, `use_account`, `usage`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_glass`, `fit_glass`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay`, `pasted_file`, `full_size`, `centered`, `glass_height`, `place_glass`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug]` |
 | `concierge/ui/mini.py` | UI | `MINI_SIZE`, `EDGE_GAP`, `DISC_SHARE`, `FRAMES`, `FRAME_SECONDS`, `RESTING`, `BRIGHT`, `FADE_STEP`, `FULL_SCREEN_CHECK_SECONDS`, `IDLE`, `WORKING`, `ASKING`, `LILAC`, `WHITE`, `is_click`, `premultiplied`, `draw_frames`, `Mini` |
 | `concierge/ui/tray.py` | UI | `ICON_SIZE`, `INK`, `DOTS`, `tray_picture`, `Tray` |
-| `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`, `today.show`, `today.closeMenus`, `today.redraw`, `today.spotTried`, `today.chatsArrived`, `today.ui`), `help.js` (global `helpPage`: Help me and Who are you), `about.js` (global `aboutPage`: About you and the first two minutes), `room.js` (global `roomPage`: What I see and Reservations), `discover.js` (global `discover`: the Agents page and parts it shares), `models.js` (global `modelPage`: the model menu and the Models page; `modelPage.loadUsage` and `modelPage.openUsage` for the usage meter), `spot.html`, `spot.css`, `spot.js` (the Spot, global `spot.open`), `glass.html`, `glass.css`, `glass.js` (the card from minimized Elaina, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`, `app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe` (called by today.js, discover.js and models.js); window event `engine-event` |
+| `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`, `today.show`, `today.closeMenus`, `today.redraw`, `today.spotTried`, `today.chatsArrived`, `today.ui`), `help.js` (global `helpPage`: Help me and Who are you), `about.js` (global `aboutPage`: About you and the first two minutes), `room.js` (global `roomPage`: What I see and Reservations), `discover.js` (global `discover`: the Agents page and parts it shares), `models.js` (global `modelPage`: the model menu and the Models page; `modelPage.loadUsage` and `modelPage.openUsage` for the usage meter), `spot.html`, `spot.css`, `spot.js` (the Spot, global `spot.open`), `glass.html`, `glass.css`, `glass.js` (the card from minimized Elaina, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `vendor/` (KaTeX and highlight.js, for maths and code offline), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`, `app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe` (called by today.js, discover.js and models.js); window event `engine-event` |

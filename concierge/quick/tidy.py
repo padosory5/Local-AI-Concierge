@@ -285,7 +285,10 @@ class TidyWatch:
         self._job = threading.Lock()
         self._turn = threading.Lock()  # one question at a time
         self._question_gone = threading.Event()  # answered somewhere else, so the note can go
-        self._last_answer = 0.0
+        # No answer yet, so the first question needn't wait for the gap. Not 0.0: the
+        # clock here counts from boot, so that kept her quiet for the first three
+        # hours after every restart of the computer (and hung the tests after one).
+        self._last_answer = float("-inf")
         self.asking = False  # a question is on the screen right now
         self.changed: Callable[[], None] = lambda: None  # told whenever today() would say something new
         self.held: Callable[[], bool] = lambda: False  # true while she shouldn't ask anything yet

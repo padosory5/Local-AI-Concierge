@@ -57,25 +57,170 @@ window.app = (() => {
   function message(who, text) {
     const node = el("div", `bubble ${who}`);
     if (who === "elaina") node.append(...rich(text));
+    else if (who === "user") node.append(...rich(fenced(text)));
     else node.textContent = text;
     addRow(who, node);
     return node;
   }
 
-  // Elaina's replies come with small marks for lists, bold words and code. They
-  // are turned into real elements here, still never as HTML.
+  // A question copied from a web page or a book brings its code as plain lines, with
+  // no ``` around them, so runs of lines that look like code get the fences here and
+  // the user's own message shows its code in boxes the way an answer does. Lines
+  // already inside fences are left alone.
+  const CODE_LINE = new RegExp(String.raw`^\s*(?:(?:def|class|import|from|return|if|elif|else|for|while|try|except|`
+    + String.raw`finally|with|lambda|const|let|var|function|public|private|static|void|int|float|string|#include|using|`
+    + String.raw`SELECT|INSERT|UPDATE|DELETE|CREATE)\b|[\w.\[\]'"]+\s*(?:=|\+=|-=|\*=|==|=>)\s*\S|[\w.]+\(.*\)\s*;?$|`
+    + String.raw`[{}\[\]();]\s*$|\w+\[['"].+['"]\]|\w+\.\w+\(|<\/?\w+[^>]*>\s*$)`);
+  const PROSE_WORDS = 14; // a long line of plain words is a sentence, whatever else it has
+
+  function looksLikeCode(line) {
+    const words = line.trim().split(/\s+/);
+    if (!line.trim() || (words.length > PROSE_WORDS && !/[=(){};\[\]]/.test(line))) return false;
+    if (/^[A-Z][a-z]+(\s+[a-z]+){3,}[.?!]$/.test(line.trim())) return false; // "Which of these is right?"
+    return CODE_LINE.test(line);
+  }
+
+  function fenced(text) {
+    if (!text.includes("\n")) return text;
+    const out = [];
+    let run = [];
+    let inFence = false;
+    const flush = () => {
+      if (run.length) out.push("```", ...run, "```");
+      run = [];
+    };
+    for (const line of text.split("\n")) {
+      if (/^\s*```/.test(line)) {
+        flush();
+        inFence = !inFence;
+        out.push(line);
+      } else if (inFence) out.push(line);
+      else if (looksLikeCode(line)) run.push(line);
+      else {
+        flush();
+        out.push(line);
+      }
+    }
+    flush();
+    return out.join("\n");
+  }
+
+  // Elaina's replies come with small marks for lists, bold and italic words, code,
+  // links and maths. They are turned into real elements here, still never as HTML:
+  // maths goes through KaTeX and code through highlight.js, both shipped with the
+  // app (web/vendor), so the page works with no internet. All the marks are found in
+  // one pass, so a * inside a formula never becomes italics.
+  const MARK = new RegExp(String.raw`(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$(?=[^\s$])[^$\n]*?[^\s$]\$(?!\d)`
+    + String.raw`|\*\*[^*\n]+\*\*|` + "`[^`\\n]+`" + String.raw`|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\)`
+    + String.raw`|(?<![\w*])\*(?!\s)[^*\n]+?(?<!\s)\*(?![\w*]))`, "g");
+  // Between single dollars only what looks like maths: "$5 and $6" is money.
+  const MATHY = /[\\^_={}<>+\-*/]|^[a-zA-Z]\d?$|[α-ωΑ-Ω∑∫√π≈≠≤≥→∞]/;
+
   function inline(text) {
     const parts = [];
-    for (const piece of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/)) {
-      if (/^\*\*.+\*\*$/.test(piece)) {
+    for (const piece of text.split(MARK)) {
+      if (piece === undefined || piece === "") continue;
+      if (piece.startsWith("$$") && piece.endsWith("$$") && piece.length > 4) parts.push(math(piece.slice(2, -2), true));
+      else if (piece.startsWith("\\[") && piece.endsWith("\\]")) parts.push(math(piece.slice(2, -2), true));
+      else if (piece.startsWith("\\(") && piece.endsWith("\\)")) parts.push(math(piece.slice(2, -2), false));
+      else if (piece.startsWith("$") && piece.endsWith("$") && piece.length > 2 && MATHY.test(piece.slice(1, -1))) {
+        parts.push(math(piece.slice(1, -1), false));
+      } else if (/^\*\*.+\*\*$/.test(piece)) {
         const strong = el("strong");
         strong.dataset.label = piece.slice(2, -2); // where a photo of the place it names goes
-        strong.append(...keys(piece.slice(2, -2)));
+        strong.append(...inline(piece.slice(2, -2)));
         parts.push(strong);
       } else if (/^`.+`$/.test(piece)) parts.push(el("code", "", piece.slice(1, -1)));
-      else if (piece) parts.push(...keys(piece));
+      else if (/^\[.+\]\(https?:\/\/.+\)$/.test(piece)) {
+        const [, words, href] = piece.match(/^\[(.+)\]\((https?:\/\/.+)\)$/);
+        parts.push(link(href, words));
+      } else if (/^\*.+\*$/.test(piece)) {
+        const em = el("em");
+        em.append(...inline(piece.slice(1, -1)));
+        parts.push(em);
+      } else parts.push(...keys(piece));
     }
     return parts;
+  }
+
+  // A formula, drawn by KaTeX when it's loaded; shown as it was written otherwise.
+  function math(tex, display) {
+    const node = el(display ? "div" : "span", display ? "math-block" : "math");
+    if (window.katex) {
+      try {
+        window.katex.render(tex.trim(), node, { throwOnError: false, displayMode: display, trust: false });
+        return node;
+      } catch {}
+    }
+    node.textContent = tex;
+    return node;
+  }
+
+  // A link opens in the user's own browser, never inside this window.
+  function link(href, words) {
+    const a = el("a", "", words);
+    a.href = href;
+    a.title = href;
+    a.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (api && api.open_link) api.open_link(href);
+      else window.open(href, "_blank");
+    });
+    return a;
+  }
+
+  // A code block with its language and Copy on a line above, coloured by highlight.js
+  // (its output is built from the escaped text, never from the model's words as HTML).
+  function codeBlock(lang, text, open) {
+    const pre = el("pre", `code${open ? " open" : ""}`);
+    const code = el("code", "", text);
+    if (!open) {
+      const head = el("div", "code-head");
+      head.append(el("span", "code-lang", lang || "code"));
+      const copy = el("button", "code-copy", "Copy");
+      copy.type = "button";
+      copy.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(text);
+        copy.textContent = "Copied";
+        setTimeout(() => (copy.textContent = "Copy"), 1500);
+      });
+      head.append(copy);
+      pre.append(head);
+      if (window.hljs) {
+        try {
+          const known = lang && window.hljs.getLanguage(lang);
+          const lit = known ? window.hljs.highlight(text, { language: lang }) : window.hljs.highlightAuto(text);
+          code.innerHTML = lit.value;
+          code.className = "hljs";
+        } catch {}
+      }
+    }
+    pre.append(code);
+    return pre;
+  }
+
+  // A drawing she made as SVG, shown on a white card. Only shapes, lines and words
+  // are kept: no scripts, no links, nothing fetched from anywhere.
+  function drawing(text) {
+    const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+    const svg = doc.documentElement;
+    if (!svg || svg.tagName.toLowerCase() !== "svg" || doc.querySelector("parsererror")) return codeBlock("svg", text);
+    svg.querySelectorAll("script, foreignObject, image, use, a, iframe, object, embed").forEach((node) => node.remove());
+    for (const node of [svg, ...svg.querySelectorAll("*")]) {
+      for (const attr of [...node.attributes]) {
+        if (/^on/i.test(attr.name) || /href/i.test(attr.name) || /javascript:|url\(/i.test(attr.value)) {
+          node.removeAttribute(attr.name);
+        }
+      }
+    }
+    const width = parseFloat(svg.getAttribute("width")) || 480;
+    const height = parseFloat(svg.getAttribute("height")) || 300;
+    if (!svg.getAttribute("viewBox")) svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.removeAttribute("width");
+    svg.removeAttribute("height");
+    const figure = el("figure", "drawing");
+    figure.append(document.importNode(svg, true));
+    return figure;
   }
 
   // Keys drawn as keys: "Win + Shift + S" is three keys to press, so it shows as
@@ -103,19 +248,47 @@ window.app = (() => {
 
   function rich(text) {
     const out = [];
-    let group = null; // the list or code block being added to
-    for (const line of text.split("\n")) {
-      if (group && group.tagName === "PRE") {
-        if (line.startsWith("```")) group = null;
-        else group.append(`${line}\n`);
+    let group = null; // the list being added to
+    let block = null; // the code block being collected: { lang, lines, node }
+    let formula = null; // a $$ or \[ formula spread over several lines
+    const lines = text.split("\n");
+    for (const line of lines) {
+      if (block) {
+        if (/^\s*```/.test(line)) {
+          const code = block.lines.join("\n");
+          const isDrawing = block.lang === "svg" || /^\s*<svg[\s>]/.test(code);
+          out.splice(out.indexOf(block.node), 1, isDrawing ? drawing(code) : codeBlock(block.lang, code, false));
+          block = null;
+        } else {
+          block.lines.push(line);
+          block.node.lastChild.textContent = block.lines.join("\n");
+        }
         continue;
       }
+      if (formula) {
+        formula.lines.push(line);
+        if (/(\$\$|\\\])\s*$/.test(line)) {
+          const whole = formula.lines.join("\n").trim();
+          out.push(math(whole.slice(2, -2), true));
+          formula = null;
+        }
+        continue;
+      }
+      const fence = line.match(/^\s*```\s*([\w+-]*)/);
       const bullet = line.match(/^\s*[-*•]\s+(.*)/);
       const numbered = line.match(/^\s*\d+[.)]\s+(.*)/);
       const heading = line.match(/^#{1,4}\s+(.*)/);
-      if (line.startsWith("```")) {
-        group = el("pre");
-        out.push(group);
+      const opens = line.trim().match(/^(\$\$|\\\[)(.*)$/);
+      if (fence) {
+        block = { lang: fence[1].toLowerCase(), lines: [], node: codeBlock(fence[1].toLowerCase(), "", true) };
+        out.push(block.node);
+        group = null;
+      } else if (opens && !/(\$\$|\\\])\s*$/.test(line.trim().slice(2)) && opens[2].trim() !== "") {
+        formula = { lines: [line] }; // "$$ a = b" that ends on a later line
+        group = null;
+      } else if (opens && opens[2].trim() === "") {
+        formula = { lines: [line] }; // "$$" alone, the formula on the lines after it
+        group = null;
       } else if (bullet || numbered) {
         const tag = bullet ? "UL" : "OL";
         if (!group || group.tagName !== tag) {
@@ -140,6 +313,59 @@ window.app = (() => {
   function clock() {
     // In English like the rest of the app, not half in the computer's own language.
     return new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+
+  // When a saved message was said: the time today, the date too on another day.
+  function stamp(when) {
+    const date = when ? new Date(when) : null;
+    if (!date || Number.isNaN(date.getTime())) return "";
+    const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    if (date.toDateString() === new Date().toDateString()) return time;
+    const sameYear = date.getFullYear() === new Date().getFullYear();
+    const day = date.toLocaleDateString("en-US", sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
+    return `${day}, ${time}`;
+  }
+
+  // Where an answer she looked up came from, and when: small links above the line
+  // under it. The time matters, because a looked-up answer goes stale.
+  function showSources(row, sources, when) {
+    if (!sources || !sources.length) return;
+    const line = el("div", "sources-line", when ? `As of ${when}, from ` : "Sources: ");
+    const seen = new Set();
+    for (const source of sources) {
+      let site = source.path;
+      try {
+        site = new URL(source.path).hostname.replace(/^www\./, "");
+      } catch {}
+      if (seen.has(site)) continue;
+      seen.add(site);
+      if (seen.size > 1) line.append(", ");
+      const a = link(source.path, site);
+      a.title = source.quote || source.path;
+      line.append(a);
+    }
+    const meta = row.querySelector(".meta");
+    meta ? row.insertBefore(line, meta) : row.append(line);
+  }
+
+  // Pictures an answer brought from the web, under its words. A click opens the page
+  // they came from, and a picture that won't load just disappears.
+  function showFound(node, images) {
+    if (!images || !images.length) return;
+    const strip = el("div", "found");
+    for (const picture of images) {
+      const figure = el("figure", "found-picture");
+      const open = link(picture.source || picture.url, "");
+      const image = el("img");
+      image.alt = picture.title || "";
+      image.addEventListener("error", () => figure.remove());
+      image.src = picture.thumbnail || picture.url;
+      open.append(image);
+      figure.append(open);
+      if (picture.title) figure.append(el("figcaption", "", picture.title));
+      strip.append(figure);
+    }
+    node.append(strip);
   }
 
   // A small line under a message: when, who, how long, and Copy.
@@ -181,10 +407,13 @@ window.app = (() => {
     dot.setAttribute("role", "img");
     dot.setAttribute("aria-label", dot.title);
     line.prepend(dot);
-    if (info.where === "here" && info.saved > 0) {
+    if (info.saved > 0) {
       const saved = el("span", "meta-saved", `Saved about ${tokens(info.saved)} tokens`);
-      saved.title = "Answered on this computer instead of your plan. About what it would have used, "
-        + "counting the instructions its app sends with every question.";
+      saved.title = info.where === "here"
+        ? "Answered on this computer instead of your plan. About what it would have used, "
+          + "counting the instructions its app sends with every question."
+        : "Your plan only planned and checked; her model on this computer did the reading. About what "
+          + "the plan would have used doing every step itself. The details are in her thinking above.";
       line.querySelector(".meta-copy") ? line.insertBefore(saved, line.querySelector(".meta-copy")) : line.append(saved);
     }
   }
@@ -223,8 +452,9 @@ window.app = (() => {
     return group;
   }
 
-  // The row of buttons under the newest answer, made once and shared: Ask X instead
-  // (Auto kept the answer here), then Shorter and More detail. Cleared by the next message.
+  // The row of buttons under the newest answer, made once and shared. Cleared by the
+  // next message. Ask X instead and More detail were taken off it: the user found
+  // them unnecessary, and the engine still answers both for the terminal.
   function buttonRow(row) {
     let buttons = row.querySelector(".follow-ups");
     if (!buttons) {
@@ -232,21 +462,6 @@ window.app = (() => {
       row.append(buttons);
     }
     return buttons;
-  }
-
-  // Auto kept this answer on the computer: one click asks the plan's model instead.
-  // Only the newest answer has it, because it asks the last question again.
-  function askInstead(row, name) {
-    const again = el("button", "follow-up follow-instead", `Ask ${name} instead`);
-    again.type = "button";
-    again.title = `Ask the same question again, answered by ${name}. Uses some of your plan.`;
-    again.addEventListener("click", () => {
-      if (busy) return;
-      const words = `Ask ${name} instead`;
-      sentBy(words);
-      run(() => api.ask_again(words));
-    });
-    buttonRow(row).prepend(again);
   }
 
   function finishBubble(done) {
@@ -257,7 +472,10 @@ window.app = (() => {
       const who = (done && done.by) || (done && done.where === "here" ? ownName || "This computer" : modelName);
       details(bubble.parentElement, [clock(), who, `${took}s`].filter(Boolean).join(" · "), bubbleText);
       whoAnswered(bubble.parentElement, done);
-      if (done && done.instead) askInstead(bubble.parentElement, done.instead);
+      if (done) {
+        showFound(bubble, done.images);
+        showSources(bubble.parentElement, done.sources, clock());
+      }
       afterAnswer(bubble.parentElement, bubble, bubbleText);
     }
     bubble = null;
@@ -266,24 +484,23 @@ window.app = (() => {
 
   // ------------------------------------------------- under her answer
 
-  // Shorter and More detail, so more is one click away instead of a question
-  // tacked on the end. Only under the newest answer, and only under a real answer
-  // (the engine says which: a setup's message has nothing to shorten).
-  const FOLLOW_UPS = { shorter: "Shorter, please.", more: "Tell me more." }; // the same words as engine.FOLLOW_UPS
+  // Shorter, one click away under a long answer. Only under the newest answer, and
+  // only under a real answer (the engine says which: a setup's message has nothing
+  // to shorten).
+  const FOLLOW_UPS = { shorter: "Shorter, please." }; // the same words as engine.FOLLOW_UPS
   const SHORTER_FROM_WORDS = 30;
 
   async function afterAnswer(row, node, text) {
     if (!api || !api.after_answer) return;
     const can = (await api.after_answer(text)) || {};
     if (!row.isConnected || messages.lastElementChild !== row) return; // something newer has started
-    // Older answers lose their buttons; this answer keeps the Ask X instead it may already have.
+    // Older answers lose their buttons.
     messages.querySelectorAll(".after").forEach((node) => {
       if (!row.contains(node)) node.remove();
     });
     if (can.follow_ups) {
       const buttons = buttonRow(row);
       if (text.trim().split(/\s+/).length >= SHORTER_FROM_WORDS) buttons.append(followButton("shorter", "Shorter"));
-      buttons.append(followButton("more", "More detail"));
     }
     const photos = photosSetting();
     if (photos === "on") showPictures(node, await api.pictures(text));
@@ -510,9 +727,13 @@ window.app = (() => {
         else {
           const who = item.role === "user" ? "user" : item.role === "error" ? "error" : "elaina";
           const node = message(who, item.text);
+          // The same line as when it was said: the time (and day) and, for her, who wrote it.
+          if (who === "user") details(node.parentElement, stamp(item.when));
           if (who === "elaina") {
-            details(node.parentElement, item.by || "", item.text);
+            details(node.parentElement, [stamp(item.when), item.by].filter(Boolean).join(" · "), item.text);
             whoAnswered(node.parentElement, item); // the same dot as when it was written
+            showFound(node, item.images);
+            showSources(node.parentElement, item.sources, stamp(item.when));
           }
         }
       }
