@@ -3,7 +3,7 @@
 When a job the user said yes to starts, a soft light runs once around the edge
 of the screen they are working on, then fades. A thin line stays at the right
 edge while the job runs. When it is done, the same light runs round in green.
-Elaina shows no message for any of this; the light is the message.
+Noir shows no message for any of this; the light is the message.
 
 The light is four windows, one along each edge. Windows blends their soft
 edges itself and is told only how much of each to show, so a frame costs almost
@@ -18,6 +18,7 @@ from __future__ import annotations
 import ctypes
 import math
 import queue
+import sys
 import threading
 import time
 from ctypes import wintypes
@@ -31,7 +32,10 @@ FRAME_SECONDS = 1 / 60
 LINE_SHARE = 0.4  # how long the thin line is, as a share of the screen's height
 LINE_BREATH_SECONDS = 3.0  # one slow brighter and dimmer of the line
 
-_user32, _gdi32, _shell32 = ctypes.WinDLL("user32"), ctypes.WinDLL("gdi32"), ctypes.WinDLL("shell32")
+if sys.platform == "win32":
+    _user32, _gdi32, _shell32 = ctypes.WinDLL("user32"), ctypes.WinDLL("gdi32"), ctypes.WinDLL("shell32")
+else:  # the light is Windows only for now: elsewhere the module imports and shows nothing
+    _user32 = _gdi32 = _shell32 = None
 _pointer = wintypes.HANDLE
 WS_POPUP = 0x80000000
 # Layered: soft edges. Transparent: clicks go through. The others keep it on
@@ -57,30 +61,31 @@ class _MonitorInfo(ctypes.Structure):
     _fields_ = [("size", wintypes.DWORD), ("monitor", wintypes.RECT), ("work", wintypes.RECT), ("flags", wintypes.DWORD)]
 
 
-_user32.CreateWindowExW.restype = _pointer
-_user32.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_int,
-                                    ctypes.c_int, ctypes.c_int, ctypes.c_int, _pointer, _pointer, _pointer, _pointer]
-_user32.UpdateLayeredWindow.argtypes = [_pointer, _pointer, ctypes.POINTER(wintypes.POINT),
-                                        ctypes.POINTER(wintypes.SIZE), _pointer, ctypes.POINTER(wintypes.POINT),
-                                        wintypes.DWORD, ctypes.POINTER(_Blend), wintypes.DWORD]
-_user32.ShowWindow.argtypes = [_pointer, ctypes.c_int]
-_user32.DestroyWindow.argtypes = [_pointer]
-_user32.GetForegroundWindow.restype = _pointer
-_user32.MonitorFromWindow.restype = _pointer
-_user32.MonitorFromWindow.argtypes = [_pointer, wintypes.DWORD]
-_user32.GetMonitorInfoW.argtypes = [_pointer, ctypes.POINTER(_MonitorInfo)]
-_user32.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), _pointer, wintypes.UINT, wintypes.UINT, wintypes.UINT]
-_user32.TranslateMessage.argtypes = [ctypes.POINTER(wintypes.MSG)]
-_user32.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
-_gdi32.CreateCompatibleDC.restype = _pointer
-_gdi32.CreateCompatibleDC.argtypes = [_pointer]
-_gdi32.CreateDIBSection.restype = _pointer
-_gdi32.CreateDIBSection.argtypes = [_pointer, ctypes.POINTER(_BitmapHeader), wintypes.UINT,
-                                    ctypes.POINTER(ctypes.c_void_p), _pointer, wintypes.DWORD]
-_gdi32.SelectObject.restype = _pointer
-_gdi32.SelectObject.argtypes = [_pointer, _pointer]
-_gdi32.DeleteObject.argtypes = [_pointer]
-_gdi32.DeleteDC.argtypes = [_pointer]
+if sys.platform == "win32":  # the shapes of the calls, told once
+    _user32.CreateWindowExW.restype = _pointer
+    _user32.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_int,
+                                        ctypes.c_int, ctypes.c_int, ctypes.c_int, _pointer, _pointer, _pointer, _pointer]
+    _user32.UpdateLayeredWindow.argtypes = [_pointer, _pointer, ctypes.POINTER(wintypes.POINT),
+                                            ctypes.POINTER(wintypes.SIZE), _pointer, ctypes.POINTER(wintypes.POINT),
+                                            wintypes.DWORD, ctypes.POINTER(_Blend), wintypes.DWORD]
+    _user32.ShowWindow.argtypes = [_pointer, ctypes.c_int]
+    _user32.DestroyWindow.argtypes = [_pointer]
+    _user32.GetForegroundWindow.restype = _pointer
+    _user32.MonitorFromWindow.restype = _pointer
+    _user32.MonitorFromWindow.argtypes = [_pointer, wintypes.DWORD]
+    _user32.GetMonitorInfoW.argtypes = [_pointer, ctypes.POINTER(_MonitorInfo)]
+    _user32.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), _pointer, wintypes.UINT, wintypes.UINT, wintypes.UINT]
+    _user32.TranslateMessage.argtypes = [ctypes.POINTER(wintypes.MSG)]
+    _user32.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
+    _gdi32.CreateCompatibleDC.restype = _pointer
+    _gdi32.CreateCompatibleDC.argtypes = [_pointer]
+    _gdi32.CreateDIBSection.restype = _pointer
+    _gdi32.CreateDIBSection.argtypes = [_pointer, ctypes.POINTER(_BitmapHeader), wintypes.UINT,
+                                        ctypes.POINTER(ctypes.c_void_p), _pointer, wintypes.DWORD]
+    _gdi32.SelectObject.restype = _pointer
+    _gdi32.SelectObject.argtypes = [_pointer, _pointer]
+    _gdi32.DeleteObject.argtypes = [_pointer]
+    _gdi32.DeleteDC.argtypes = [_pointer]
 
 
 def light_at(distance: int, reach: int) -> float:

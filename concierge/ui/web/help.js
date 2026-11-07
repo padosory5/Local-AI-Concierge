@@ -1,7 +1,7 @@
-// Help me: the rolling list of what she can do, each line with its own switch and a
+// Help me: the rolling list of what it can do, each line with its own switch and a
 // small moving example, so people can picture it, and "Who are you?" under it. A
 // switch only asks Python to turn something on; a line without one sends plain words
-// to Elaina, as if typed, and she decides. This file only draws, from what today.js
+// to Noir, as if typed, and it decides. This file only draws, from what today.js
 // knows (today.ui.state()).
 
 window.helpPage = (() => {
@@ -10,8 +10,8 @@ window.helpPage = (() => {
 
   // Each line finishes the sentence "Help me...". `kind` says what its control does:
   // "agent" switches a ready-made highlight agent on and off, "spot" and "notice"
-  // switch the Spot and her noticing, "add" adds a ready-made chat agent, "say" sends
-  // words to Elaina as if typed, and "soon" is something not built yet, said plainly.
+  // switch the Spot and its noticing, "add" adds a ready-made chat agent, "say" sends
+  // words to Noir as if typed, and "soon" is something not built yet, said plainly.
   const TOPICS = [
     { id: "explain", words: "understand what I highlight", kind: "agent", agent: "Highlight Explainer", say: "Turn on the Highlight Explainer", does: "Highlight a word anywhere. A bubble explains it." },
     { id: "spot", words: "write better in any app", kind: "spot", does: "Highlight your writing and tap Ctrl twice. The better version goes right back." },
@@ -46,6 +46,11 @@ window.helpPage = (() => {
   let chosenRole = null; // a role picked on Help me, waiting for "Switch these on"
   const rows = [];
 
+  // Lines that need Windows (highlights, Ctrl tapped twice, its noticing) say so on a Mac.
+  function windowsOnly(topic) {
+    return !state().windows && ["agent", "spot", "notice"].includes(topic.kind);
+  }
+
   // Whether a line's job is on right now, from what Python last said.
   function isOn(topic) {
     const { agents, active, spotOn, info } = state();
@@ -63,6 +68,7 @@ window.helpPage = (() => {
   }
 
   async function setOn(topic, on) {
+    if (windowsOnly(topic)) return;
     if (topic.kind === "agent" || topic.kind === "add") await pywebview.api.switch_agent(agentFor(topic), on);
     else if (topic.kind === "spot") {
       setSpot(on);
@@ -78,7 +84,8 @@ window.helpPage = (() => {
   function control(topic) {
     const on = isOn(topic);
     if (topic.kind === "soon") return el("span", "wheel-note soon", "Not built yet");
-    if (topic.kind === "say") return el("span", "wheel-note", "Ask Elaina");
+    if (windowsOnly(topic)) return el("span", "wheel-note soon", "Windows for now");
+    if (topic.kind === "say") return el("span", "wheel-note", "Ask Noir");
     if (topic.kind === "add") {
       if (on) return el("span", "wheel-note", "Added");
       return button("wheel-note wheel-add", "Add", (event) => {
@@ -99,7 +106,7 @@ window.helpPage = (() => {
   function demo(topic) {
     const { home } = state();
     const page = (...parts) => el("div", "demo-page", ...parts);
-    const bubble = (words) => el("div", "demo-bubble", el("span", "demo-who", "Elaina"), words);
+    const bubble = (words) => el("div", "demo-bubble", el("span", "demo-who", "Noir"), words);
     const scenes = {
       explain: () => page(el("p", "", "Cells keep their balance through ", el("mark", "", "osmosis"), ", which the next chapter explains."),
                           bubble("Water moving through a thin wall, towards the saltier side.")),
@@ -166,7 +173,7 @@ window.helpPage = (() => {
   // with a switch flips it instead, and a line not built yet does nothing.
   function pick() {
     const topic = TOPICS[at];
-    if (topic.kind === "soon") return;
+    if (topic.kind === "soon" || windowsOnly(topic)) return;
     if (["agent", "spot", "notice"].includes(topic.kind)) {
       setOn(topic, !isOn(topic));
       return;

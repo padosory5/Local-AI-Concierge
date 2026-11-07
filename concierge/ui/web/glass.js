@@ -1,11 +1,11 @@
-// The card from minimized Elaina. Above: what she needs answered and what's
+// The card from minimized Noir. Above: what it needs answered and what's
 // running. Below: the conversation, oldest at the top and newest by the box, the
 // same one as in the full window. It only draws. Everything comes from the same
-// events as the chat, plus what Python says about her jobs (WatchBridge in
+// events as the chat, plus what Python says about its jobs (WatchBridge in
 // window.py).
 //
 // New messages are added to the conversation, never redrawn, so nothing that is
-// already on screen moves or flickers while she answers.
+// already on screen moves or flickers while it answers.
 
 window.app = (() => {
   const $ = (id) => document.getElementById(id);
@@ -17,10 +17,10 @@ window.app = (() => {
 
   let api = null;
   let active = []; // agents switched on
-  let info = {}; // what Python says about her jobs
+  let info = {}; // what Python says about its jobs
   let busy = false;
-  let bubble = null; // Elaina's message that streamed text is added to
-  let typing = null; // the dots shown until her answer starts
+  let bubble = null; // Noir's message that streamed text is added to
+  let typing = null; // the dots shown until its answer starts
   let statusKey = "";
   let fitted = "";
   let chatHeight = 0; // the step it has reached in this conversation
@@ -61,8 +61,8 @@ window.app = (() => {
     return add(el("div", "you talk", text));
   }
 
-  function her(...content) {
-    return add(el("div", "her talk", ...content));
+  function reply(...content) {
+    return add(el("div", "reply talk", ...content));
   }
 
   function showTyping(text = "") {
@@ -115,10 +115,10 @@ window.app = (() => {
       showTyping(e.text);
     },
 
-    ElainaText(e) {
+    NoirText(e) {
       hideTyping();
       if (!bubble) {
-        bubble = her();
+        bubble = reply();
         bubble.classList.add("streaming");
       }
       bubble.append(e.text);
@@ -126,35 +126,35 @@ window.app = (() => {
       follow();
     },
 
-    ElainaDone() {
+    NoirDone() {
       finishBubble();
     },
 
     Question(e) {
       beforeAnswer();
-      const row = her(e.text);
+      const row = reply(e.text);
       if (e.choices && e.choices.length) row.append(choices(e.id, e.choices));
       follow();
     },
 
     AgentCard(e) {
       beforeAnswer();
-      her(el("div", "from", e.kind), el("div", "strong", e.name), choices(e.id, e.actions));
+      reply(el("div", "from", e.kind), el("div", "strong", e.name), choices(e.id, e.actions));
     },
 
     IdeaCard(e) {
       beforeAnswer();
-      her(el("div", "from", "Your idea"), el("div", "strong", e.title), e.verdict, choices(e.id, e.actions));
+      reply(el("div", "from", "Your idea"), el("div", "strong", e.title), e.verdict, choices(e.id, e.actions));
     },
 
     Result(e) {
       beforeAnswer();
-      her(el("div", "from", e.agent), e.text);
+      reply(el("div", "from", e.agent), e.text);
     },
 
     Error(e) {
       beforeAnswer();
-      her(e.text).classList.add("problem");
+      reply(e.text).classList.add("problem");
     },
 
     Transcript(e) {
@@ -163,7 +163,7 @@ window.app = (() => {
       for (const item of e.items) {
         if (item.role === "user") you(item.text);
         else if (item.role === "result") draw.Result(item);
-        else her(item.text);
+        else reply(item.text);
       }
       settle();
       follow();

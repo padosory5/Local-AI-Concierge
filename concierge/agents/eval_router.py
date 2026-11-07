@@ -3,7 +3,7 @@
     python -m concierge.agents.eval_router
 
 Run it after changing the router prompt, a blueprint's `when` or `examples`,
-or Elaina's model. Small models fail quietly, so this number is how we know.
+or Noir's model. Small models fail quietly, so this number is how we know.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from ..elaina import ELAINA_MODEL
+from ..noir import NOIR_MODEL
 from ..ollama import Ollama
 from .blueprint import load_blueprints
 from .router import route
@@ -30,11 +30,11 @@ def main() -> int:
     blueprints = load_blueprints()
     ollama = Ollama()
     ollama.ensure_running()
-    think = False if "thinking" in ollama.capabilities(ELAINA_MODEL) else None
+    think = False if "thinking" in ollama.capabilities(NOIR_MODEL) else None
 
     passed = 0
     for case in data["cases"]:
-        got = route(ollama, ELAINA_MODEL, case["text"], blueprints, agents, think=think)
+        got = route(ollama, NOIR_MODEL, case["text"], blueprints, agents, think=think)
         ok = got.kind == case["kind"]
         if ok and case["kind"] == "new_agent":
             ok = got.blueprint == case.get("blueprint")
@@ -46,7 +46,7 @@ def main() -> int:
                   f"(blueprint={got.blueprint}, agent={got.agent})")
     total = len(data["cases"])
     print(f"\nRouter: {passed}/{total} correct ({passed / total:.0%})")
-    ollama.unload(ELAINA_MODEL)
+    ollama.unload(NOIR_MODEL)
     return 0 if passed == total else 1
 
 

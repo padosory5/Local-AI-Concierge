@@ -1,9 +1,9 @@
-"""Everything the model menu offers, and who writes Elaina's answers.
+"""Everything the model menu offers, and who writes Noir's answers.
 
 The menu keeps two kinds apart: models on this computer (anything in Ollama) and
 API models the user pays for (cloud.py, plus custom ones at any address that talks
-the shared way). Whichever is picked only writes her answers. Her own small model
-still decides what each message is for (see ElainaEngine._use_chosen_model).
+the shared way). Whichever is picked only writes its answers. Its own small model
+still decides what each message is for (see NoirEngine._use_chosen_model).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from collections.abc import Callable
 from urllib.parse import urlsplit
 
 from . import accounts as apps
-from . import auto, cloud, elaina, huggingface, usage
+from . import auto, cloud, noir, huggingface, usage
 from .catalog import DISK_HEADROOM_GB, find_model, helper_room
 from .ollama import OllamaError
 
@@ -26,8 +26,8 @@ FITS, SLOW, NO_DISK = "fits", "slow", "no_disk"
 
 
 class LocalModel:
-    """Another model on this computer, answering as Elaina. Her persona is baked
-    into her own model only, so here it goes along with each message."""
+    """Another model on this computer, answering as Noir. Its persona is baked
+    into its own model only, so here it goes along with each message."""
 
     def __init__(self, ollama, tag: str, system: str):
         self.ollama, self.tag, self.system = ollama, tag, system
@@ -37,8 +37,8 @@ class LocalModel:
         return [{"role": "system", "content": self.system}, *messages]
 
     def _options(self, options: dict | None) -> dict:
-        # Her memory is sized for this much. Left alone, some models take far more.
-        return {"num_ctx": elaina.NUM_CTX, **(options or {})}
+        # Its memory is sized for this much. Left alone, some models take far more.
+        return {"num_ctx": noir.NUM_CTX, **(options or {})}
 
     def chat(self, model, messages, think=None, options=None, keep_alive=None):
         return self.ollama.chat(self.tag, self._asked(messages), think=False if self.can_think else None,
@@ -77,11 +77,11 @@ class ModelMenu:
     def __init__(self, ollama, hardware: Callable, load: Callable = None, save: Callable = None, keys=cloud,
                  browse: Callable = None, accounts=None):
         self.ollama = ollama
-        self.hardware = hardware  # returns (report, memory Elaina's model takes)
+        self.hardware = hardware  # returns (report, memory Noir's model takes)
         self.keys = keys
         self.changed: Callable[[], None] = lambda: None
-        self._load = load or elaina.load_state
-        self._save = save or elaina.save_state
+        self._load = load or noir.load_state
+        self._save = save or noir.save_state
         self._browse = browse or huggingface.browse
         self.accounts = accounts or apps.Accounts()  # ChatGPT and Claude plans, through Codex and Claude Code
         self._pulling: dict[str, dict] = {}
@@ -107,12 +107,12 @@ class ModelMenu:
     # ------------------------------------------------------------ who answers
 
     def chosen(self) -> dict | None:
-        """What was picked in the menu, as long as it can still be used. Her own
-        model otherwise: a deleted model or a removed key must not stop her talking."""
+        """What was picked in the menu, as long as it can still be used. Its own
+        model otherwise: a deleted model or a removed key must not stop its talking."""
         choice = self._state("talk_model", None) or {}
         provider, model = choice.get("provider", ""), choice.get("model", "")
         if provider == auto.AUTO:
-            # Auto: her own model for small things, this one for the rest (auto.py).
+            # Auto: its own model for small things, this one for the rest (auto.py).
             target = self.auto_target()
             if target is None:
                 return None  # no plan or key left to send hard questions to
@@ -185,7 +185,7 @@ class ModelMenu:
         return self.accounts.talker(target["provider"], fast["id"], f"{system}\n\n{where}"), found
 
     def talker(self, system: str):
-        """Who writes her answers, or None for her own model. With Auto, the model
+        """Who writes its answers, or None for its own model. With Auto, the model
         for hard questions: the engine decides each time whether to use it."""
         chosen = self.chosen()
         if chosen is None:
@@ -225,8 +225,8 @@ class ModelMenu:
         local = []
         for item in self._installed():
             tag, details = item["name"], item.get("details") or {}
-            if tag.split(":")[0] == elaina.ELAINA_MODEL:
-                continue  # the same model as the one she's built from
+            if tag.split(":")[0] == noir.NOIR_MODEL:
+                continue  # the same model as the one it's built from
             words = [details.get("parameter_size", ""), f"{item.get('size', 0) / GB:.1f} GB"]
             local.append({"id": tag, "name": nice_name(tag), "detail": " · ".join(filter(None, words)),
                           "own": tag == own, "hidden": f"{LOCAL}/{tag}" in hidden})
@@ -239,7 +239,7 @@ class ModelMenu:
                    "hidden": f"{CUSTOM}/{item['id']}" in hidden} for item in self._custom()]
         known = find_model(own) if own else None
         target = self.auto_target()
-        return {"own": known.name if known else own or "Elaina's model", "current": self.chosen(),
+        return {"own": known.name if known else own or "Built-in model", "current": self.chosen(),
                 "auto": {"cloud": target["name"] if target else "", "company": target["company"] if target else ""},
                 "local": local, "accounts": self._accounts_shown(), "providers": companies, "custom": custom}
 
@@ -295,7 +295,7 @@ class ModelMenu:
         return [{**status, "hidden": status["id"] in hidden} for status in self.accounts.overview()]
 
     def usage(self) -> dict:
-        """How much of each plan or key her answers used, for the meter (usage.py)."""
+        """How much of each plan or key its answers used, for the meter (usage.py)."""
         return usage.summary()
 
     def check_accounts(self) -> dict:
@@ -333,9 +333,9 @@ class ModelMenu:
         return self.info()
 
     def delete_local(self, tag: str) -> dict:
-        """Frees the disk space. Elaina's own model can't be deleted here: without it she can't run."""
-        if tag.split(":")[0] == elaina.ELAINA_MODEL or tag == self._state("base_model", ""):
-            return {"error": "That's Elaina's own model, so it has to stay."}
+        """Frees the disk space. Noir's own model can't be deleted here: without it it can't run."""
+        if tag.split(":")[0] == noir.NOIR_MODEL or tag == self._state("base_model", ""):
+            return {"error": "That's the model Noir runs on, so it has to stay."}
         try:
             self.ollama.delete(tag)
         except OllamaError:
@@ -346,12 +346,12 @@ class ModelMenu:
     # ------------------------------------------------------- finding new ones
 
     @staticmethod
-    def _fit(size_gb: float, report, elaina_gb: float) -> str:
+    def _fit(size_gb: float, report, noir_gb: float) -> str:
         """Whether a model suits this computer, from what was measured: the room
-        next to Elaina, and the disk. A model takes at least its file size in memory."""
+        next to Noir, and the disk. A model takes at least its file size in memory."""
         if report.disk_free_gb < size_gb + DISK_HEADROOM_GB:
             return NO_DISK
-        room, _ = helper_room(report, elaina_gb)
+        room, _ = helper_room(report, noir_gb)
         return FITS if size_gb <= room else SLOW
 
     def browse(self, words: str = "", sort: str = "downloads", kind: str = "") -> dict:
@@ -360,8 +360,8 @@ class ModelMenu:
         except huggingface.HubError as exc:
             return {"error": str(exc)}
         have = {item["name"] for item in self._installed()}
-        report, elaina_gb = self.hardware()
-        models = [{**model, "fit": self._fit(model["size_gb"], report, elaina_gb), "have": model["tag"] in have}
+        report, noir_gb = self.hardware()
+        models = [{**model, "fit": self._fit(model["size_gb"], report, noir_gb), "have": model["tag"] in have}
                   for model in found]
         # The ones that will run well come first; a person can't use the rest as easily.
         return {"models": sorted(models, key=lambda model: model["fit"] != FITS)}

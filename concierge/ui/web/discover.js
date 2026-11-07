@@ -147,7 +147,7 @@ window.discover = (() => {
   }
 
   function recipeTags(recipe) {
-    return [tag(recipe.source === "Elaina" ? "Ready-made" : "Community", "strong"), tag(recipe.category),
+    return [tag(recipe.source === "Noir" ? "Ready-made" : "Community", "strong"), tag(recipe.category),
             tag(recipe.when.startsWith("While") ? "Works on highlights" : "Ask it in the chat")];
   }
 
@@ -180,17 +180,17 @@ window.discover = (() => {
       parts.push(hero(found.slice(0, 4), (recipe) => ({ by: recipe.by, name: recipe.name, about: recipe.about,
                                                         tags: recipeTags(recipe), action: heroAction(recipe),
                                                         open: () => openRecipe(recipe) })));
-      const groups = grouping === "category" ? categories : ["Community", "Elaina"];
+      const groups = grouping === "category" ? categories : ["Community", "Noir"];
       for (const group of groups) {
         const inGroup = found.filter((recipe) => (grouping === "category" ? recipe.category : recipe.source) === group);
         if (inGroup.length) {
-          const title = group === "Elaina" ? "Ready-made" : group;
+          const title = group === "Noir" ? "Ready-made" : group;
           parts.push(section(title, `${inGroup.length} agent${inGroup.length === 1 ? "" : "s"} to add.`,
                              inGroup.slice(0, 6).map(recipeCard), inGroup.length > 6 ? () => pickFilter(group) : null));
         }
       }
     } else {
-      const title = words.trim() ? `Found ${found.length}` : filter === "Elaina" ? "Ready-made" : filter;
+      const title = words.trim() ? `Found ${found.length}` : filter === "Noir" ? "Ready-made" : filter;
       parts.push(section(title, `${found.length} agent${found.length === 1 ? "" : "s"} to add.`, found.map(recipeCard)));
     }
     results.replaceChildren(...parts);
@@ -300,7 +300,7 @@ window.discover = (() => {
     }
     const groups = grouping === "category"
       ? categories.map((name) => ({ id: name, words: name }))
-      : [{ id: "Community", words: "Community" }, { id: "Elaina", words: "Ready-made" }];
+      : [{ id: "Community", words: "Community" }, { id: "Noir", words: "Ready-made" }];
     const controls = el("div", "disc-controls",
                         segments([{ id: "category", words: "Category" }, { id: "source", words: "Source" }], grouping, (id) => {
                           grouping = id;

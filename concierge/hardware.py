@@ -19,7 +19,7 @@ import psutil
 GB = 1024**3
 
 # Graphics cards with less memory than this are too small to hold even the
-# smallest model next to the desktop, so Elaina runs on the CPU instead.
+# smallest model next to the desktop, so Noir runs on the CPU instead.
 MIN_USABLE_VRAM_GB = 4.0
 
 # Virtual or remote display adapters that show up next to real cards on
@@ -323,10 +323,10 @@ def _run(cmd: list[str]) -> str:
 
 
 def describe(report: HardwareReport, live: bool = True) -> list[str]:
-    """Plain-language lines about the computer, for people and for Elaina.
+    """Plain-language lines about the computer, for people and for Noir.
 
     live=False leaves out the figures that change minute to minute (free
-    memory and disk), for text that is stored, such as Elaina's prompt.
+    memory and disk), for text that is stored, such as Noir's prompt.
     """
     memory = f"Memory: {report.ram_total_gb:g} GB"
     if live:

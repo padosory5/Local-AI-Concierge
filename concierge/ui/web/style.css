@@ -336,7 +336,7 @@ li:hover .item-delete,
   align-items: flex-end;
 }
 
-.row.elaina,
+.row.noir,
 .row.error {
   align-self: flex-start;
   align-items: flex-start;
@@ -356,7 +356,7 @@ li:hover .item-delete,
   color: var(--accent-text);
 }
 
-.bubble.elaina {
+.bubble.noir {
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
   background: var(--panel);
@@ -369,7 +369,7 @@ li:hover .item-delete,
   color: var(--error-text);
 }
 
-/* The "..." Elaina shows while she starts her reply. */
+/* The "..." Noir shows while it starts its reply. */
 .typing {
   display: flex;
   gap: 4px;
@@ -426,7 +426,7 @@ li:hover .item-delete,
   opacity: 1;
 }
 
-/* An agent Elaina proposes, before the user creates it. */
+/* An agent Noir proposes, before the user creates it. */
 .card {
   min-width: 300px;
   padding: 14px 16px;
@@ -465,7 +465,7 @@ li:hover .item-delete,
   margin-top: 2px;
 }
 
-/* Elaina's answer to "could you make a helper that...?". */
+/* Noir's answer to "could you make a helper that...?". */
 .idea-steps {
   display: grid;
   gap: 6px;
@@ -636,7 +636,7 @@ li:hover .item-delete,
   color: var(--accent);
 }
 
-/* Elaina's thinking: faded, italic "fog" above her answer. */
+/* Noir's thinking: faded, italic "fog" above its answer. */
 .thinking {
   max-width: 640px;
   color: var(--muted);

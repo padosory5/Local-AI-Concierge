@@ -1,4 +1,4 @@
-"""A research job (researcher.py): the plan model plans and merges, her own model reads
+"""A research job (researcher.py): the plan model plans and merges, its own model reads
 each page, every step is said with its tokens, and the saving is counted from measured
 numbers."""
 
@@ -6,12 +6,12 @@ import json
 
 import pytest
 
-from concierge import elaina, research, researcher, usage
+from concierge import noir, research, researcher, usage
 from concierge.agents import store
 from concierge.agents.router import Route
 from concierge.conversations import ChatBook
-from concierge.engine import ElainaEngine
-from concierge.events import ElainaDone, ElainaText, Error, Thinking
+from concierge.engine import NoirEngine
+from concierge.events import NoirDone, NoirText, Error, Thinking
 from tests.test_chat_path import Ollama
 
 
@@ -96,10 +96,10 @@ class Worker(Ollama):
 
 def test_a_worker_summarises_one_page_with_its_tokens():
     own = Worker()
-    page = researcher.summarise(own, "elaina", "what's new in python", researcher.Page("https://python.org/x", "T", "Page words"))
+    page = researcher.summarise(own, "noir", "what's new in python", researcher.Page("https://python.org/x", "T", "Page words"))
     assert page.useful and page.summary.startswith("- Python 3.15.2") and (page.read, page.wrote) == (812, 60)
     assert "PAGE (python.org)" in own.sent_pages()[0] if hasattr(own, "sent_pages") else True
-    nothing = researcher.summarise(own, "elaina", "q", researcher.Page("https://e.example.com", "", "empty page"))
+    nothing = researcher.summarise(own, "noir", "q", researcher.Page("https://e.example.com", "", "empty page"))
     assert not nothing.useful
 
 
@@ -134,17 +134,17 @@ class Plan:
 @pytest.fixture
 def engine(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
-    monkeypatch.setattr(elaina, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(noir, "data_dir", lambda: tmp_path)
     monkeypatch.setattr("concierge.engine.route", lambda *args, **kwargs: Route("chat"))
     monkeypatch.setattr(research, "model_form", lambda ollama, model: lambda text: False)
-    elaina.save_state({"base_model": "qwen3.5:4b"})  # so her model has its name in the steps
-    made = ElainaEngine(Worker())
+    noir.save_state({"base_model": "qwen3.5:4b"})  # so its model has its name in the steps
+    made = NoirEngine(Worker())
     made.book = ChatBook(None)
-    made.chat = elaina.ElainaChat(made.ollama)
+    made.chat = noir.NoirChat(made.ollama)
     from concierge.agents.builder import AgentBuilder
     from concierge.agents.planner import IdeaPlanner
-    made.builder = AgentBuilder(made.ollama, "elaina", None, made.blueprints)
-    made.planner = IdeaPlanner(made.ollama, "elaina", None, lambda: None, made.blueprints)
+    made.builder = AgentBuilder(made.ollama, "noir", None, made.blueprints)
+    made.planner = IdeaPlanner(made.ollama, "noir", None, lambda: None, made.blueprints)
     return made
 
 
@@ -173,8 +173,8 @@ def test_the_job_runs_plan_workers_merge_and_counts_the_saving(engine, monkeypat
     assert steps[6].startswith("On this computer: 3 calls to Qwen 3.5 4B, 1,924 read and 160 written, free.")
     assert "Saved about" in steps[8]
     assert not [e for e in events if isinstance(e, Error)]
-    assert "".join(e.text for e in events if isinstance(e, ElainaText)).startswith("Python 3.15.2 is the newest release")
-    done = next(e for e in events if isinstance(e, ElainaDone))
+    assert "".join(e.text for e in events if isinstance(e, NoirText)).startswith("Python 3.15.2 is the newest release")
+    done = next(e for e in events if isinstance(e, NoirDone))
     assert done.by == "Claude Opus 5.5" and done.where == "cloud" and done.saved == 3 * (18000 + 641 + 53)
     assert [s.path for s in done.sources] == ["https://www.python.org/downloads/"]  # only the page that said something
     assert len(plan.calls) == 1 and plan.calls[0][1][0]["role"] == "user"  # one plan call, the note in the question
@@ -195,7 +195,7 @@ def test_with_auto_the_plans_fast_model_merges(engine, monkeypatch):
     steps = [e.text for e in events if isinstance(e, Thinking)]
     assert "then Claude Sonnet 5.5 merges" in steps[0]
     assert len(fast.calls) == 1 and fast.calls[0][0] == "claude-sonnet-5-5" and slow.calls == []
-    assert next(e for e in events if isinstance(e, ElainaDone)).by == "Claude Sonnet 5.5"
+    assert next(e for e in events if isinstance(e, NoirDone)).by == "Claude Sonnet 5.5"
 
 
 def test_the_menu_finds_the_plans_fast_model_only_under_auto():
@@ -220,9 +220,9 @@ def test_the_menu_finds_the_plans_fast_model_only_under_auto():
     state = {"talk_model": {"provider": "auto", "model": ""}, "auto_cloud": {"provider": "claude_code", "model": "claude-opus-5-5"}}
     accounts = Accounts()
     menu = ModelMenu(None, lambda: (None, 0.0), load=lambda: dict(state), save=lambda new: state.update(new), accounts=accounts)
-    talker, found = menu.fast_talker("You are Elaina.")
+    talker, found = menu.fast_talker("You are Noir.")
     assert talker == ("talker", "claude-sonnet-5-5") and found["name"] == "Claude Sonnet 5.5"
-    assert accounts.made[0][2].startswith("You are Elaina.\n\nRight now your answers are written by Claude Sonnet 5.5")
+    assert accounts.made[0][2].startswith("You are Noir.\n\nRight now your answers are written by Claude Sonnet 5.5")
     # Picked on purpose: used as it is. Sonnet already: nothing faster. Auto off: none.
     state["auto_cloud"] = {"provider": "claude_code", "model": "claude-sonnet-5-5"}
     assert menu.fast_talker("") is None
@@ -237,6 +237,6 @@ def test_with_no_plan_her_own_model_does_every_step(engine, monkeypatch):
     events = list(engine.send("look into python 3.15 for me"))
     steps = [e.text for e in events if isinstance(e, Thinking)]
     assert steps[0].startswith("Research job with no plan connected, so Qwen 3.5 4B does every step")
-    done = next(e for e in events if isinstance(e, ElainaDone))
+    done = next(e for e in events if isinstance(e, NoirDone))
     assert done.where == "here" and done.saved == 0 and done.by == "Qwen 3.5 4B"
     assert steps[-1].startswith("Tokens: Qwen 3.5 4B did every step on this computer, 3 calls")

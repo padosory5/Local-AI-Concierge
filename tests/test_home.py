@@ -3,7 +3,7 @@ import time
 from concierge import activity
 from concierge.agents import store
 from concierge.events import AgentList
-from concierge.engine import ElainaEngine
+from concierge.engine import NoirEngine
 from concierge.fake_engine import FakeEngine
 from concierge.quick.tidy import TidyWatch
 from concierge.ui.window import Overlay, TodayBridge
@@ -42,7 +42,7 @@ class LocalOnly:
 
 
 class Thinker(LocalOnly):
-    """A model that thinks unless told not to, like Elaina's own."""
+    """A model that thinks unless told not to, like Noir's own."""
 
     def __init__(self):
         self.asked = []
@@ -57,7 +57,7 @@ class Thinker(LocalOnly):
 
 def test_a_spot_job_is_counted_by_what_it_did(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
-    engine = ElainaEngine(LocalOnly())
+    engine = NoirEngine(LocalOnly())
     engine.spot_run("polish", "hey send report", "")
     engine.spot_run("translate:Korean", "hello", "")
     assert activity.this_week() == {"polished": 1, "translated": 1}
@@ -65,20 +65,20 @@ def test_a_spot_job_is_counted_by_what_it_did(tmp_path, monkeypatch):
 
 def test_a_switch_on_help_me_adds_the_agent_quietly(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
-    events = list(ElainaEngine(LocalOnly()).switch_agent("Grammar Fixer", True))
+    events = list(NoirEngine(LocalOnly()).switch_agent("Grammar Fixer", True))
     assert len(events) == 1 and isinstance(events[0], AgentList)  # nothing said in the chat
     assert "Grammar Fixer" in events[0].agents and store.find_agent("Grammar Fixer")
 
 
 def test_switching_off_something_never_added_adds_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
-    list(ElainaEngine(LocalOnly()).switch_agent("Grammar Fixer", False))
+    list(NoirEngine(LocalOnly()).switch_agent("Grammar Fixer", False))
     assert store.find_agent("Grammar Fixer") is None
 
 
 def test_the_speed_test_times_real_jobs_on_this_computer(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
-    result = ElainaEngine(LocalOnly()).measure()
+    result = NoirEngine(LocalOnly()).measure()
     assert len(result["results"]) == 3 and all(job["seconds"] >= 0 for job in result["results"])
     assert result["device"]
 
@@ -86,7 +86,7 @@ def test_the_speed_test_times_real_jobs_on_this_computer(tmp_path, monkeypatch):
 def test_the_speed_test_never_lets_the_model_think_first(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
     model = Thinker()
-    engine = ElainaEngine(model)  # measured before startup, as the first-run page does
+    engine = NoirEngine(model)  # measured before startup, as the first-run page does
     engine.measure()
     engine.spot_run("explain", "serendipity", "")
     assert model.asked == [False] * 4

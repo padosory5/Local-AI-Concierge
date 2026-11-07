@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from ..elaina import data_dir
+from ..noir import data_dir
 
 
 @dataclass

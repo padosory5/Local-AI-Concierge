@@ -19,7 +19,7 @@ LONG_AGO = time.time() - SETTLE_SECONDS * 10
 
 @pytest.fixture(autouse=True)
 def noticing_allowed(monkeypatch):
-    """Most tests are about what she does once the user said she may notice things."""
+    """Most tests are about what it does once the user said it may notice things."""
     monkeypatch.setattr(TidyWatch, "_read_settings", lambda self: {"noticing": True})
 
 

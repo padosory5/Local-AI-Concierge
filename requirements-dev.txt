@@ -1,2 +1,4 @@
 -r requirements.txt
 pytest>=8.0
+# Building the app for people without Python (packaging/build.py).
+pyinstaller>=6.10

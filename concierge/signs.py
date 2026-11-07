@@ -1,6 +1,6 @@
 """Signs on this computer of who the user is: the apps they have, the kinds of files
-they keep and the code they're writing, so Elaina can guess what kind of user they
-are before anyone gives her their chats (history.py, portrait.py).
+they keep and the code they're writing, so Noir can guess what kind of user they
+are before anyone gives its their chats (history.py, portrait.py).
 
 Only names, kinds and counts are read, never what's inside a file, and nothing is
 looked at until the user says yes. Only the summary is kept, never a list of files.
@@ -85,9 +85,9 @@ GAME_FOLDERS = re.compile(r"steamapps|[\\/]games[\\/]|riot games|epic games|batt
 # Folders inside a game that say less than the one above them ("cod.exe" in "Call of Duty HQ").
 PLAIN_FOLDERS = re.compile(r"^(bin|bin64|x64|x86|win64|win32|binaries|common|multiexe|game|games|app|current|"
                            r"launcher|steam|steamapps)$", re.IGNORECASE)
-# Programs that aren't something the user does: Windows' own parts, installers, Elaina herself.
-NOT_ACTIVITIES = re.compile(r"^ueme|explorer|^python|^cmd$|conhost|rundll|msiexec|setup|install|update|elaina"
-                            r"|localaiconcierge|^control$|^mmc$|regedit|task ?manager|taskmgr|snipping|^settings$"
+# Programs that aren't something the user does: Windows' own parts, installers, Noir itself.
+NOT_ACTIVITIES = re.compile(r"^ueme|explorer|^python|^cmd$|conhost|rundll|msiexec|setup|install|update|noir"
+                            r"|noiragents|^control$|^mmc$|regedit|task ?manager|taskmgr|snipping|^settings$"
                             r"|^search", re.IGNORECASE)
 # Short Windows names people wouldn't recognise.
 FRIENDLY = {"code": "Visual Studio Code", "msedge": "Microsoft Edge", "chrome": "Chrome", "firefox": "Firefox",
@@ -190,12 +190,14 @@ def activities(used: list[dict]) -> dict[str, float]:
 
 
 def installed_apps(start_menus: list[Path]) -> list[tuple[str, str, str | None, str]]:
-    """(fact, about, role, app name) for each known app with a shortcut."""
+    """(fact, about, role, app name) for each known app with a shortcut (a Start menu
+    or desktop shortcut on Windows, an app in the Applications folders on a Mac)."""
     found, seen = [], set()
     for folder in start_menus:
         if not folder.is_dir():
             continue
-        for shortcut in folder.rglob("*.lnk"):
+        shortcuts = folder.rglob("*.lnk") if sys.platform == "win32" else folder.glob("*.app")
+        for shortcut in shortcuts:
             name = shortcut.stem.strip()
             if NOT_APPS.search(name) or name.lower() in seen:
                 continue
@@ -284,9 +286,12 @@ def _user_assist() -> list[tuple[str, bytes]]:
 
 
 def _start_menus(home: Path) -> list[Path]:
-    places = [Path(os.environ.get("ProgramData", "C:/ProgramData")) / "Microsoft/Windows/Start Menu/Programs",
-              Path(os.environ.get("APPDATA", home / "AppData/Roaming")) / "Microsoft/Windows/Start Menu/Programs",
-              home / "Desktop"]
+    if sys.platform == "darwin":
+        places = [Path("/Applications"), home / "Applications"]
+    else:
+        places = [Path(os.environ.get("ProgramData", "C:/ProgramData")) / "Microsoft/Windows/Start Menu/Programs",
+                  Path(os.environ.get("APPDATA", home / "AppData/Roaming")) / "Microsoft/Windows/Start Menu/Programs",
+                  home / "Desktop"]
     return [place for place in places if place.is_dir()]
 
 

@@ -1,4 +1,4 @@
-# What people want from AI tools: essential features, retention and new ideas (for Elaina)
+# What people want from AI tools: essential features, retention and new ideas (for Noir)
 
 Evidence date: searched 2026-11-01. Each finding carries a strength label so measured data stays apart from anecdote.
 
@@ -44,8 +44,8 @@ Web search, files and images
 - Researching personal interests is the most common AI activity, at 26% of US adults ([Menlo 2026](https://menlovc.com/perspective/2026-the-state-of-consumer-ai/)). [Survey]
 
 ### Inferences
-- Rough baseline for 2026: file reading, web search, memory, voice, mobile. Elaina has file reading only. Her missing items rank, by evidence, roughly: web search (a local model has no live facts, and information seeking is a top-three use), memory (cheap to add, naturally private, and every leader now has it), voice (46% self-report, and local dictation is feasible), connectors (useful but opt-in and minority), phone (where the mass of users is, but a local model cannot run there without a different design).
-- Users do not need Elaina to match every item. They need her not to feel broken on the first three.
+- Rough baseline for 2026: file reading, web search, memory, voice, mobile. Noir has file reading only. Her missing items rank, by evidence, roughly: web search (a local model has no live facts, and information seeking is a top-three use), memory (cheap to add, naturally private, and every leader now has it), voice (46% self-report, and local dictation is feasible), connectors (useful but opt-in and minority), phone (where the mass of users is, but a local model cannot run there without a different design).
+- Users do not need Noir to match every item. They need her not to feel broken on the first three.
 - Reading the screen has no usage evidence either way in this research. See question 7 on personal-memory products.
 
 ### Gaps
@@ -85,7 +85,7 @@ A claim that needs care
 - Menlo's paying share is 55% of AI users in 2026 against 3% in 2025 ([Menlo 2026](https://menlovc.com/perspective/2026-the-state-of-consumer-ai/)), while card-panel data shows 4.5% of eligible US consumers paying for ChatGPT, Gemini or Claude, up from 2.1% ([a16z 7th](https://a16z.com/100-gen-ai-apps-7/)). The denominators differ, but a jump from 3% to 55% is far larger than spend growth of about 3.3x, so the two Menlo figures are probably not comparable.
 
 ### Inferences
-- The most useful pattern for Elaina: narrow job, named plainly, that replaces something the user already does every day. The least useful: a general "agent" with an unclear purpose, which is the exact failure ChatGPT Agent reported.
+- The most useful pattern for Noir: narrow job, named plainly, that replaces something the user already does every day. The least useful: a general "agent" with an unclear purpose, which is the exact failure ChatGPT Agent reported.
 - Her minimized circle that asks yes-or-no questions is proactive, but on a narrow job with a clear answer. That differs from a feed like Pulse. Evidence does not yet show whether this form retains people, so it should be measured locally by acceptance rate.
 - A local app has no subscription churn, but it has the same risk: curiosity on day one, nothing on day thirty.
 
@@ -130,7 +130,7 @@ Fit of a small local model on a typical laptop (my judgment from the evidence ab
 | Translate common languages | Probably good | No independent benchmark found |
 | Draft emails | Good on wording | Needs the email in hand; no connector yet |
 | Meeting notes | Plausible | Local Whisper-style speech to text plus short-chunk summaries; audio capture is the real work |
-| Study help from the user's own notes | Good | Sourced answers from a folder, which Elaina already has |
+| Study help from the user's own notes | Good | Sourced answers from a folder, which Noir already has |
 | Plain how-to guidance | Fair | Stale or wrong facts; needs a warning or web search |
 | Personal admin | Limited | Needs calendar and email access |
 | Health questions | Risky | High demand, but the Uganda team found general models unsafe |
@@ -184,8 +184,8 @@ Trust
 
 ### Inferences
 - Ghost town recipe: anyone can publish, no duplicates rule, no reason to come back, thin analytics, and the store sits off the main path.
-- Elaina's recipes are data filled into a template, not code. That matches the safer instruction-only group, which is a real advantage worth keeping. It should stay a hard rule that shared agents cannot carry scripts or fetch new instructions after install.
-- Her discovery page should be a small curated shelf, not a store. Each entry should show in plain words what it reads, what it can do and what it cannot, which her agent card already does. Showing "made and tested by Elaina's team" is likely to beat star counts for non-technical users.
+- Noir's recipes are data filled into a template, not code. That matches the safer instruction-only group, which is a real advantage worth keeping. It should stay a hard rule that shared agents cannot carry scripts or fetch new instructions after install.
+- Her discovery page should be a small curated shelf, not a store. Each entry should show in plain words what it reads, what it can do and what it cannot, which her agent card already does. Showing "made and tested by Noir's team" is likely to beat star counts for non-technical users.
 - Posting through GitHub fits Raycast's model, and it filters out spam by adding effort, but ordinary users will not do it. Curators would be the publishers.
 - Put agents where the need arises, as she already does with starters, rather than expecting users to browse.
 
@@ -211,10 +211,10 @@ Evidence here is thinner than opinion suggests. The firmest points: non-users la
 - Benchmarks for time to value conflict and come from vendors, with one putting consumer apps under five minutes and another a median of 1.5 days across SaaS ([example of the genre](https://www.artisangrowthstrategies.com/md/blog/average-time-to-value-saas-category-2026-benchmark-report)). [Weak] A widely repeated stat that 63% omit context and 31% succeed first try has no traceable origin. Do not use it.
 
 ### Inferences
-- Elaina's Help me screen, with a rolling list and one line to write on, follows the evidence: broad examples, in place, no tutorial. Her setup by conversation matches what OpenClaw 2.0 moved towards.
+- Noir's Help me screen, with a rolling list and one line to write on, follows the evidence: broad examples, in place, no tutorial. Her setup by conversation matches what OpenClaw 2.0 moved towards.
 - The first thing she does matters more than the tour. Doing one real thing to the user's own stuff, such as sorting Downloads with Undo or answering from their folder with sources, addresses the "no need" and "do not trust" reasons at once.
 - Her privacy advantage answers the second-largest objection, so "nothing leaves your computer" should be shown plainly and early. She must also describe her own limits truthfully, since a bot misdescribing itself hurt in NN/g's test.
-- Non-users saying "not interested" will not be moved by onboarding. Elaina's audience is more likely the people already using a chatbot who have a privacy worry, plus family members they set up.
+- Non-users saying "not interested" will not be moved by onboarding. Noir's audience is more likely the people already using a chatbot who have a privacy worry, plus family members they set up.
 
 ### Gaps
 - I found no public consumer AI activation data (share reaching a first useful result, or the time it takes) from any major assistant. Reforge and Lenny material did not surface.
@@ -234,10 +234,10 @@ Hybrid works in research and is now the mainstream design at Apple. The best evi
 - OpenJarvis uses a cloud model to tune a stack that then runs entirely on-device, with traces kept local ([Hazy Research](https://hazyresearch.stanford.edu/blog/2026-05-15-minions-to-openjarvis-retrospective)). [Reported, the research team's own claim]
 
 ### Inferences
-- For non-technical users the rule should be one sentence: Elaina does it here unless she asks you first. Asking each time, showing what would be sent, fits her Question pattern and her trust promise.
+- For non-technical users the rule should be one sentence: Noir does it here unless she asks you first. Asking each time, showing what would be sent, fits her Question pattern and her trust promise.
 - Sensible order: local by default; ask before cloud for live facts, long hard tasks, or strong reasoning; strip names and details where code can do so reliably, and tell the user plainly what remains.
 - Local-first splitting is worth adopting even without cloud: both local weaknesses, long context and many steps, are addressed by breaking work into pieces in code. That matches the project's rule that reliability lives in code.
-- MinionS assumes a frontier cloud model, which costs money. Elaina's users on paid cloud would need clear costs per task, not tokens.
+- MinionS assumes a frontier cloud model, which costs money. Noir's users on paid cloud would need clear costs per task, not tokens.
 
 ### Gaps
 - No user research on how ordinary people feel about a local-to-cloud handoff, or whether they notice it.
@@ -282,10 +282,10 @@ Market shape
 Why these caught on (my reading of the pattern):
 - Attached to an existing moment: a meeting, a text box, a pile of lecture notes.
 - Instant output that shows its worth once. A dictated paragraph or a tidy set of notes beats a promise.
-- No new place to go, which is close to Elaina's own goal of working inside the user's work.
+- No new place to go, which is close to Noir's own goal of working inside the user's work.
 - Bot-free. Granola's quiet capture lacks the social cost of a bot in the meeting.
 
-Ideas with the best evidence for Elaina, in order:
+Ideas with the best evidence for Noir, in order:
 1. **Local dictation into any app.** Highlight agents already work system-wide. Speech to text can run locally, which answers privacy worries Wispr cannot, since its app can read keystrokes ([Wikipedia](https://en.wikipedia.org/wiki/Wispr_Flow)).
 2. **Private meeting or lecture notes.** Strong pull, and on-device recording is a real difference from Granola. Lecture detection already exists in her watcher, and the Summarize Video job is listed as not built.
 3. **Study from my own notes, with audio read-out.** Extends the documents agent, with NotebookLM as the model. Local text-to-speech quality was not researched.
@@ -320,9 +320,9 @@ Supply and pilots
 - Solo and small practices adopt slowly because upfront workflow work feels heavier than the payoff ([Enterprise DNA, Australia](https://enterprisedna.co/resources/blog/au-ai-legal-profession)). [Anecdote]
 
 ### Inferences
-- The most reachable near-term buyers are small offices that already hold private client files on a Windows laptop: small law offices, accountants, therapists, tutors. Elaina's folder agent with sources fits this job best, and a confidentiality promise is her strongest argument. No legal review was done, so she cannot claim compliance.
-- Schools and clinics in low-connectivity settings are a real need, but they often lack the hardware. Uganda shows 8GB phones can work but slowly, while most existing phones cannot. Elaina's hardware check gives her an honest answer here. A fixed-setup laptop or shared classroom machine may be more practical than personal devices.
-- Clinics are the hardest fit: the Uganda team needed a medical model, strict filters and ethics approval. Elaina should not go there as a clinical tool. Non-clinical paperwork in a clinic may be feasible.
+- The most reachable near-term buyers are small offices that already hold private client files on a Windows laptop: small law offices, accountants, therapists, tutors. Noir's folder agent with sources fits this job best, and a confidentiality promise is her strongest argument. No legal review was done, so she cannot claim compliance.
+- Schools and clinics in low-connectivity settings are a real need, but they often lack the hardware. Uganda shows 8GB phones can work but slowly, while most existing phones cannot. Noir's hardware check gives her an honest answer here. A fixed-setup laptop or shared classroom machine may be more practical than personal devices.
+- Clinics are the hardest fit: the Uganda team needed a medical model, strict filters and ethics approval. Noir should not go there as a clinical tool. Non-clinical paperwork in a clinic may be feasible.
 - For weak-internet countries, the first install is the barrier: downloading a model of several gigabytes. Offline installs from a USB stick would be a direct answer. This is my reasoning, not a sourced finding.
 - The category looks like an open gap, but the absence of a product may also reflect a small willingness to pay. That has not been tested.
 

@@ -1,7 +1,7 @@
 """Saved conversations, so "New chat" keeps the old one in a list.
 
 Each conversation is one JSON file in the app's data folder holding two
-things: what the chat area shows (the transcript) and what Elaina's model
+things: what the chat area shows (the transcript) and what Noir's model
 was told (the history), so a reopened chat carries on where it stopped.
 Every exchange is saved straight away; closing the app loses nothing.
 """
@@ -20,8 +20,8 @@ from .events import (
     AgentCard,
     ChatList,
     ChatSummary,
-    ElainaDone,
-    ElainaText,
+    NoirDone,
+    NoirText,
     Error,
     Event,
     IdeaCard,
@@ -43,7 +43,7 @@ class Conversation:
     created: str
     updated: str
     items: list[dict] = field(default_factory=list)  # TranscriptItem fields
-    history: list[dict] = field(default_factory=list)  # Elaina's model messages
+    history: list[dict] = field(default_factory=list)  # Noir's model messages
 
 
 class ChatBook:
@@ -78,30 +78,30 @@ class ChatBook:
         reply: list[str] = []
         try:
             for event in events:
-                if isinstance(event, ElainaText):
+                if isinstance(event, NoirText):
                     reply.append(event.text)
-                elif isinstance(event, ElainaDone):
-                    self._add("elaina", "".join(reply), answered=event)
+                elif isinstance(event, NoirDone):
+                    self._add("noir", "".join(reply), answered=event)
                     reply = []
                 elif isinstance(event, Question):
-                    self._add("elaina", event.text)
+                    self._add("noir", event.text)
                 elif isinstance(event, AgentCard):
-                    self._add("elaina", f"Suggested agent: {event.name} ({event.kind})")
+                    self._add("noir", f"Suggested agent: {event.name} ({event.kind})")
                 elif isinstance(event, IdeaCard):
-                    self._add("elaina", f"Idea: {event.title}. {event.verdict}")
+                    self._add("noir", f"Idea: {event.title}. {event.verdict}")
                 elif isinstance(event, Result):
                     self._add("result", event.text, event.agent, event.sources)
                 elif isinstance(event, Error):
                     self._add("error", event.text)
                 yield event
         finally:
-            self._add("elaina", "".join(reply))  # a reply cut off part way
+            self._add("noir", "".join(reply))  # a reply cut off part way
             self.save()
         if is_new:
             yield self.chat_list()
 
     def _add(self, role: str, text: str, agent: str = "", sources: list[Source] | None = None,
-             answered: ElainaDone | None = None) -> None:
+             answered: NoirDone | None = None) -> None:
         text = text.strip()
         if not text:
             return
@@ -109,7 +109,7 @@ class ChatBook:
         if self.current is None:
             self.current = Conversation(_new_id(), title_from(text), now, now)
         # Who wrote an answer goes along with it, so a reopened chat shows the same dot,
-        # and so do the sources and pictures of one she looked up on the web.
+        # and so do the sources and pictures of one it looked up on the web.
         who = {"by": answered.by, "where": answered.where, "saved": answered.saved,
                "plan_used": answered.plan_used, "images": list(answered.images)} if answered else {}
         if answered and answered.sources and not sources:
@@ -148,7 +148,8 @@ class ChatBook:
         if self.current is None:
             return Transcript(None, [])
         items = [
-            TranscriptItem(i["role"], i["text"], i.get("agent", ""), [Source(**s) for s in i.get("sources", [])],
+            TranscriptItem("noir" if i["role"] == "elaina" else i["role"],  # chats saved before it was Noir
+                           i["text"], i.get("agent", ""), [Source(**s) for s in i.get("sources", [])],
                            i.get("by", ""), i.get("where", ""), i.get("saved", 0), i.get("plan_used", -1.0),
                            [Picture(**p) for p in i.get("images", [])], i.get("when", ""))
             for i in self.current.items  # chats saved before this have none of those: no dot, no time

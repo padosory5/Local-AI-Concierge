@@ -1,4 +1,4 @@
-# Auto: the questions Elaina must place right (auto.py). "here" means her own model
+# Auto: the questions Noir must place right (auto.py). "here" means its own model
 # on this computer answers; "cloud" means the plan or key picked for hard questions.
 #
 # Every answer is for the weakest computer we support (a 4B model) with plenty of
@@ -13,7 +13,7 @@ cases:
   # ---------------------------------------------------- small talk: always here
   - {text: "hi", expect: here, kind: small_talk}
   - {text: "thanks!", expect: here, kind: small_talk}
-  - {text: "good morning Elaina", expect: here, kind: small_talk}
+  - {text: "good morning Noir", expect: here, kind: small_talk}
   - {text: "안녕", expect: here, kind: small_talk}
   - {text: "고마워", expect: here, kind: small_talk}
   - {text: "ok", expect: here, kind: small_talk}

@@ -1,12 +1,12 @@
-"""Terminal front end for the first process: check the computer, pick Elaina's
-model, set her up, and chat. A real UI comes later and will reuse the same
+"""Terminal front end for the first process: check the computer, pick Noir's
+model, set it up, and chat. A real UI comes later and will reuse the same
 modules; nothing here holds logic the UI would need.
 
     python -m concierge             show the computer and models, set up if needed, chat
     python -m concierge hardware    show what this computer has (--json for raw)
-    python -m concierge recommend   show which model Elaina would use and why
-    python -m concierge setup       download the model and (re)build Elaina
-    python -m concierge chat        talk with Elaina
+    python -m concierge recommend   show which model Noir would use and why
+    python -m concierge setup       download the model and (re)build Noir
+    python -m concierge chat        talk with Noir
     python -m concierge measure TAG measure a model's real graphics memory use
     python -m concierge history ZIP get to know you from a ChatGPT or Claude download
 """
@@ -18,14 +18,14 @@ import os
 import json
 import sys
 
-from . import elaina, hardware
+from . import noir, hardware
 from .catalog import Recommendation, find_model, recommend
-from .engine import ElainaEngine
+from .engine import NoirEngine
 from .events import (
     AgentCard,
     AgentList,
-    ElainaDone,
-    ElainaText,
+    NoirDone,
+    NoirText,
     Error,
     IdeaCard,
     Thinking,
@@ -45,14 +45,14 @@ def main(argv: list[str] | None = None) -> int:
         os.system("")  # switches on colour codes in the classic Windows console
         sys.stdin.reconfigure(encoding="utf-8", errors="replace")
 
-    parser = argparse.ArgumentParser(prog="concierge", description="Local AI Concierge")
+    parser = argparse.ArgumentParser(prog="concierge", description="Noir Agents")
     sub = parser.add_subparsers(dest="command")
     hw = sub.add_parser("hardware", help="show what this computer has")
     hw.add_argument("--json", action="store_true", help="print the raw report")
-    sub.add_parser("recommend", help="show which model Elaina would use")
-    setup = sub.add_parser("setup", help="download the model and build Elaina")
+    sub.add_parser("recommend", help="show which model Noir would use")
+    setup = sub.add_parser("setup", help="download the model and build Noir")
     setup.add_argument("--yes", "-y", action="store_true", help="do not ask before downloading")
-    sub.add_parser("chat", help="talk with Elaina")
+    sub.add_parser("chat", help="talk with Noir")
     measure = sub.add_parser("measure", help="measure a model's real graphics memory use")
     measure.add_argument("tag")
     past = sub.add_parser("history", help="get to know you from a ChatGPT or Claude download")
@@ -103,25 +103,25 @@ def cmd_recommend() -> int:
 
 def cmd_setup(assume_yes: bool) -> int:
     ollama, report, rec = _check_computer()
-    code = _ensure_elaina(ollama, rec, report, assume_yes, force=True)
+    code = _ensure_noir(ollama, rec, report, assume_yes, force=True)
     if code == 0:
         _print_in_use(rec)
     return code
 
 
 def cmd_chat(setup_first: bool) -> int:
-    """Show the computer, the recommended model and Elaina's model, then chat."""
+    """Show the computer, the recommended model and Noir's model, then chat."""
     ollama, report, rec = _check_computer()
     if setup_first:
-        code = _ensure_elaina(ollama, rec, report, assume_yes=False, force=False)
+        code = _ensure_noir(ollama, rec, report, assume_yes=False, force=False)
         if code:
             return code
-    if not ollama.has_model(elaina.ELAINA_MODEL):
-        print("Elaina is not set up yet. Run: python -m concierge setup")
+    if not ollama.has_model(noir.NOIR_MODEL):
+        print("Noir is not set up yet. Run: python -m concierge setup")
         return 1
     _print_in_use(rec)
 
-    engine = ElainaEngine(ollama)
+    engine = NoirEngine(ollama)
     screen = TerminalScreen()
     for event in engine.startup():
         if isinstance(event, Error):
@@ -136,8 +136,8 @@ def cmd_chat(setup_first: bool) -> int:
         engine.close()
 
 
-def _chat_loop(engine: ElainaEngine, screen: TerminalScreen) -> int:
-    print("Chat with Elaina. Type /new for a new chat (this one is saved), /think to see her")
+def _chat_loop(engine: NoirEngine, screen: TerminalScreen) -> int:
+    print("Chat with Noir. Type /new for a new chat (this one is saved), /think to see its")
     print("thinking (slower), /exit to leave.")
     print('Try: "make an agent for my Documents folder".\n')
     think = False
@@ -153,7 +153,7 @@ def _chat_loop(engine: ElainaEngine, screen: TerminalScreen) -> int:
             return 0
         if text == "/think":
             think = not think
-            print(f"(Think is {'on: Elaina shows her thinking first, which is slower' if think else 'off'}.)\n")
+            print(f"(Think is {'on: the thinking is shown first, which is slower' if think else 'off'}.)\n")
             continue
         if text in ("/new", "/reset"):
             engine.reset()
@@ -215,16 +215,16 @@ class TerminalScreen:
         if self.thinking:
             print(f"{PLAIN}\n")
             self.thinking = False
-        if isinstance(event, ElainaText):
+        if isinstance(event, NoirText):
             if not self.in_reply:
-                print("Elaina: ", end="")
+                print("Noir: ", end="")
                 self.in_reply = True
             print(event.text, end="", flush=True)
-        elif isinstance(event, ElainaDone):
+        elif isinstance(event, NoirDone):
             print("\n")
             self.in_reply = False
         elif isinstance(event, Question):
-            print(f"Elaina: {event.text}")
+            print(f"Noir: {event.text}")
             self._choices(event.id, event.choices)
             print()
         elif isinstance(event, AgentCard):
@@ -276,9 +276,9 @@ class TerminalScreen:
 
 
 def cmd_history(paths: list[str], forget: bool = False) -> int:
-    """Bring in ChatGPT or Claude downloads, then show what Elaina understood and
+    """Bring in ChatGPT or Claude downloads, then show what Noir understood and
     ask about each fact. The same steps the app's windows take."""
-    engine = ElainaEngine()
+    engine = NoirEngine()
     if forget:
         engine.forget_history()
         print("Forgotten: every chat brought in, and everything worked out from them.")
@@ -306,7 +306,7 @@ def cmd_history(paths: list[str], forget: bool = False) -> int:
             engine.keep_fact(fact["id"], answer == "y")
     kept = [fact["fact"] for fact in engine.what_i_know().get("facts", []) if fact.get("kept")]
     print()
-    print(f"She'll remember {len(kept)} thing{'s' if len(kept) != 1 else ''} about you, on this computer only.")
+    print(f"Noir will remember {len(kept)} thing{'s' if len(kept) != 1 else ''} about you, on this computer only.")
     return 0
 
 
@@ -348,7 +348,7 @@ def cmd_measure(tag: str) -> int:
     before = _nvidia_used_gb()
     ollama._post(
         "/api/generate",
-        {"model": tag, "prompt": "", "options": {"num_ctx": elaina.NUM_CTX}, "keep_alive": "2m"},
+        {"model": tag, "prompt": "", "options": {"num_ctx": noir.NUM_CTX}, "keep_alive": "2m"},
     )
     after = _nvidia_used_gb()
     reported = next((m for m in ollama.loaded() if m["name"] == tag), {})
@@ -359,7 +359,7 @@ def cmd_measure(tag: str) -> int:
         print("No NVIDIA card to measure on; memory_gb stays an estimate.")
         return 0
     used = round(after - before, 2)
-    print(f"The card used:    {used:.2f} GB (num_ctx {elaina.NUM_CTX})")
+    print(f"The card used:    {used:.2f} GB (num_ctx {noir.NUM_CTX})")
     print(f"\nFor models.yaml:\n    memory_gb: {used:.1f}\n    measured: true")
     return 0
 
@@ -379,30 +379,30 @@ def _check_computer() -> tuple[Ollama, hardware.HardwareReport, Recommendation]:
     return ollama, report, rec
 
 
-def _ensure_elaina(
+def _ensure_noir(
     ollama: Ollama, rec: Recommendation, report: hardware.HardwareReport, assume_yes: bool, force: bool
 ) -> int:
-    """Step 3: build Elaina from the recommended model if she is missing or
-    out of date. Returns 0 when there is an Elaina to talk to."""
-    has_elaina = ollama.has_model(elaina.ELAINA_MODEL)
+    """Step 3: build Noir from the recommended model if it is missing or
+    out of date. Returns 0 when there is an Noir to talk to."""
+    has_noir = ollama.has_model(noir.NOIR_MODEL)
     if rec.model is None:
-        return 0 if has_elaina else 1
-    if not force and not elaina.needs_configure(ollama, rec.model, rec, report):
+        return 0 if has_noir else 1
+    if not force and not noir.needs_configure(ollama, rec.model, rec, report):
         return 0
 
     if not ollama.has_model(rec.model.tag):
         if not assume_yes and not _confirm(f"Download {rec.model.name} ({rec.model.download_gb:g} GB) now?"):
-            if has_elaina:
-                print("Nothing was downloaded. Elaina keeps the model she already has.\n")
+            if has_noir:
+                print("Nothing was downloaded. Noir keeps the model it already has.\n")
                 return 0
             print("Nothing was downloaded.")
             return 1
         ollama.pull(rec.model.tag, on_progress=_progress_printer())
         print()
 
-    print("Setting up Elaina...")
-    elaina.configure(ollama, rec.model, rec, report)
-    print("Elaina is ready.\n")
+    print("Setting up Noir...")
+    noir.configure(ollama, rec.model, rec, report)
+    print("Noir is ready.\n")
     return 0
 
 
@@ -418,7 +418,7 @@ def _print_hardware(report: hardware.HardwareReport) -> None:
 
 def _print_recommendation(rec: Recommendation, downloaded: bool = False) -> None:
     if rec.model is None:
-        print(f"No model recommended: Elaina cannot run well on this computer yet. {rec.reason}\n")
+        print(f"No model recommended: Noir cannot run well on this computer yet. {rec.reason}\n")
         return
     where = {"gpu": "graphics memory", "apple": "shared memory", "cpu": "memory"}[rec.device]
     estimate = "" if rec.model.measured else " (estimate)"
@@ -431,12 +431,12 @@ def _print_recommendation(rec: Recommendation, downloaded: bool = False) -> None
 
 
 def _print_in_use(rec: Recommendation) -> None:
-    """The model Elaina is actually built from, which can differ from the
+    """The model Noir is actually built from, which can differ from the
     recommendation when the user declined to download a new one."""
-    tag = elaina.load_state().get("base_model")
+    tag = noir.load_state().get("base_model")
     model = find_model(tag) if tag else None
     name = f"{model.name} ({tag})" if model else tag or "an unknown model"
-    print(f"Elaina is using: {name} on {rec.device_name}")
+    print(f"Noir is using: {name} on {rec.device_name}")
     if rec.model and tag != rec.model.tag:
         print(f"  Not the recommended {rec.model.name}. Run `python -m concierge setup` to switch.")
     print()

@@ -23,20 +23,20 @@ from urllib.parse import urlencode
 
 import requests
 
-from ..elaina import data_dir
+from ..noir import data_dir
 from ..quick.agents import BOTH, BUBBLE, CLIPBOARD, FEW_SECONDS, UNTIL_UNHIGHLIGHT
 from . import store
 from .recipe import CUSTOM, IN_CHAT, MAX_INSTRUCTION, WHILE_ON
 from .starters import load_starters
 
-REPOSITORY = "padosory5/elaina-agents"
+REPOSITORY = "padosory5/noir-agents"
 INDEX_PATH = Path(__file__).with_name("community.json")
 INDEX_URL = f"https://raw.githubusercontent.com/{REPOSITORY}/main/community.json"
 POST_URL = f"https://github.com/{REPOSITORY}/issues/new"
 TIMEOUT = 6
 CACHE_SECONDS = 600
 MAX_NAME, MAX_ABOUT, MAX_BY = 40, 140, 40
-READY_MADE, COMMUNITY = "Elaina", "Community"
+READY_MADE, COMMUNITY = "Noir", "Community"
 CATEGORIES = ("Writing", "Study", "Work", "Languages", "Code", "Everyday")
 OTHER_CATEGORY = "Everyday"
 STARTER_DETAILS = {

@@ -1,9 +1,9 @@
-"""Elaina on the desktop: a full window when she's wanted, a small circle when she isn't.
+"""Noir on the desktop: a full window when it's wanted, a small circle when it isn't.
 
     the app opens             the full window, on Help me
-    minimize or close it      it stays on the taskbar, and she folds into a small
+    minimize or close it      it stays on the taskbar, and it folds into a small
                               circle in the corner
-    click the circle          a small window with her agents' work and her
+    click the circle          a small window with its agents' work and its
                               messages; Open there brings the full one back
     tap Ctrl twice, anywhere  the Spot: help with what's highlighted, right there
 
@@ -11,7 +11,7 @@ The full window and the see-through one are two pages showing one conversation.
 Both talk to the same engine through ChatHub, which sends every event to both.
 The pages only draw; they never decide anything (see CLAUDE.md).
 
-    python -m concierge.ui          with the real Elaina
+    python -m concierge.ui          with the real Noir
     python -m concierge.ui --fake   with FakeEngine and practice suggestions, no
                                     model needed and no files moved
 """
@@ -30,15 +30,16 @@ from pathlib import Path
 
 from .. import events, research
 from ..cloud import load_providers, sent_recently
-from ..elaina import data_dir
-from ..engine import FOLLOW_UPS, ElainaEngine
+from ..noir import data_dir
+from ..engine import FOLLOW_UPS, NoirEngine
 from ..events import Engine, Error
 from ..fake_engine import FakeEngine
+from .. import __version__
 from ..quick.tidy import TidyWatch
 from ..reservations import RUN, SORT, TURN_ON, Reservation, ReservationError, Reservations
 
 WEB_DIR = Path(__file__).parent / "web"
-TITLE = "Elaina"
+TITLE = "Noir"
 # Shown when the engine fails in a way it did not turn into an Error event,
 # such as Ollama dropping the connection halfway through a reply.
 UNEXPECTED_ERROR = "Something went wrong on my side. Please try again, or restart the app."
@@ -49,7 +50,7 @@ GLASS_SIZE = (380, 130)  # quiet, its height follows what it has to say
 GLASS_MIN_HEIGHT = 110
 GLASS_CHAT_HEIGHT = 560  # the tallest it gets while talking
 GLASS_GROW_STEPS, GLASS_GROW_SECONDS = 12, 0.012
-GLASS_ABOVE = 84  # its bottom stays above minimized Elaina
+GLASS_ABOVE = 84  # its bottom stays above minimized Noir
 GLASS_ALPHA = 253  # 0 to 255: nearly solid, because text behind it made it hard to read
 GLASS_FADE_STEPS, GLASS_FADE_SECONDS = 10, 0.012
 GLASS_LOAD_SECONDS = 20  # at most, while the app starts
@@ -58,14 +59,14 @@ FULL_MIN_SIZE = (640, 560)  # half of a small screen, for working side by side
 SCREEN_SETTLE_SECONDS = 0.25  # for the window to be gone before a screenshot
 PICTURES = "Pictures (*.png;*.jpg;*.jpeg;*.webp;*.gif;*.bmp)"
 EXPORTS = "ChatGPT or Claude download (*.zip;*.json)"
-# After the user opens a company's export page, how long she watches Downloads for it:
+# After the user opens a company's export page, how long it watches Downloads for it:
 # the email can take a day to come.
 EXPORT_WAIT_HOURS = 48
 EXPORT_CHECK_SECONDS = 5
-APP_ID = "LocalAIConcierge.Elaina"  # so Windows shows her own icon, not Python's
-# Held while she runs, so starting her again finds her: two copies would both answer
+APP_ID = "NoirAgents.Noir"  # so Windows shows its own icon, not Python's
+# Held while it runs, so starting it again finds it: two copies would both answer
 # Ctrl tapped twice, and their Spots would fight over the keyboard and the clipboard.
-ONE_COPY = r"Local\LocalAIConcierge.Elaina"  # Local\: this user's sign-in only
+ONE_COPY = r"Local\NoirAgents.Noir"  # Local\: this user's sign-in only
 SPOT_WIDTH, SPOT_START_HEIGHT, SPOT_MIN_HEIGHT = 540, 160, 90
 SPOT_GAP = 10  # between the highlighted text and the Spot
 SPOT_SETTLE_SECONDS = 0.15  # for the program to have the keyboard again
@@ -154,8 +155,16 @@ class ChatHub:
         with self._lock:
             self._engine.reset()
 
+    def restart(self) -> None:
+        """The first-run setup finished: start the engine again, so every page gets
+        what startup() now says (its model in use, the agents, the chats)."""
+        with self._lock:
+            self._started = True
+            self._startup.clear()
+            self._stream("startup", record=True)
+
     def close(self) -> None:
-        """The app is closing: stop drawing and let the engine free Elaina's memory.
+        """The app is closing: stop drawing and let the engine free Noir's memory.
 
         Does not wait for the lock, so closing never waits for a reply to finish.
         """
@@ -234,7 +243,7 @@ class ChatBridge:
 
 
 class WatchBridge(ChatBridge):
-    """A page that also shows what Elaina noticed and what her jobs are doing."""
+    """A page that also shows what Noir noticed and what its jobs are doing."""
 
     def __init__(self, hub: ChatHub, overlay: Overlay):
         super().__init__(hub)
@@ -260,7 +269,7 @@ class WatchBridge(ChatBridge):
         return self._hub.ask("activity", default={})
 
     def privacy(self) -> dict:
-        """What the What I see page shows: the switches, how her questions were
+        """What the What I see page shows: the switches, how its questions were
         answered, and when words left the computer (never what they were)."""
         watch = self._overlay.watch
         return {"noticing": watch.noticing if watch else None, "answers": watch.answers() if watch else {},
@@ -268,7 +277,7 @@ class WatchBridge(ChatBridge):
                 "search_key": bool(research.search_key()), "search_key_page": research.SEARCH_KEY_PAGE}
 
     def set_web(self, on: bool) -> None:
-        """Whether she may look things up on the web (research.py)."""
+        """Whether it may look things up on the web (research.py)."""
         research.allow(bool(on))
 
     def set_search_key(self, key: str) -> None:
@@ -276,7 +285,7 @@ class WatchBridge(ChatBridge):
         research.set_search_key(str(key or ""))
 
     def open_link(self, address: str) -> None:
-        """A link in her answer opens in the user's own browser, and only a web address."""
+        """A link in its answer opens in the user's own browser, and only a web address."""
         if isinstance(address, str) and address.startswith(("http://", "https://")):
             webbrowser.open(address)
 
@@ -293,11 +302,24 @@ class TodayBridge(WatchBridge):
         """What the first run and Help me need to know about this computer and the user's choices."""
         from ..quick.spot import home_language
 
+        # windows: whether the Spot, highlight agents and its noticing exist here (Windows for now).
         return {"welcomed": self._overlay.settings.get("welcomed", False), "home": home_language(),
-                "spot": self._overlay.settings.get("spot", True), "role": self._overlay.settings.get("role", "")}
+                "spot": self._overlay.settings.get("spot", True), "role": self._overlay.settings.get("role", ""),
+                "windows": sys.platform == "win32", "version": __version__}
 
     def set_welcomed(self, role: str = "") -> None:
         self._overlay.remember(welcomed=True, role=role)
+
+    # The first run's setup page (setup.py): Ollama, a model that fits, then Noir.
+
+    def setup_state(self) -> dict:
+        return self._hub.ask("setup_state", default={"needed": False})
+
+    def setup_begin(self, smallest: bool = False) -> dict:
+        return self._hub.ask("setup_begin", bool(smallest), default={"needed": False})
+
+    def setup_finish(self) -> None:
+        self._hub.restart()
 
     def measure(self) -> dict:
         return self._hub.ask("measure", default={"error": "I can't measure this computer right now."})
@@ -332,7 +354,7 @@ class TodayBridge(WatchBridge):
 
     def open_export_page(self, source: str) -> None:
         """Only a page from our own list, never an address a page hands us. From now
-        on she watches Downloads for that download (Overlay.expect_exports)."""
+        on it watches Downloads for that download (Overlay.expect_exports)."""
         from ..history import EXPORT_PAGES
 
         if source in EXPORT_PAGES:
@@ -425,7 +447,7 @@ class TodayBridge(WatchBridge):
         return self._hub.menu("more", provider, default=[])
 
     def usage(self) -> dict:
-        """How much of a plan or key her answers used: the meter by the model button."""
+        """How much of a plan or key its answers used: the meter by the model button."""
         return self._hub.menu("usage", default={})
 
     def open_key_page(self, provider: str) -> None:
@@ -537,9 +559,9 @@ class SpotBridge:
 
 
 def pasted_file(text: str) -> Path:
-    """A long paste, kept as a file so it goes to her like anything added with +. Each
+    """A long paste, kept as a file so it goes to it like anything added with +. Each
     gets a folder of its own, so every one can keep the plain name "Pasted text"."""
-    path = Path(tempfile.mkdtemp(prefix="elaina-paste-")) / "Pasted text.txt"
+    path = Path(tempfile.mkdtemp(prefix="noir-paste-")) / "Pasted text.txt"
     path.write_text(text, encoding="utf-8")
     return path
 
@@ -566,7 +588,7 @@ def glass_height(height: int, talking: bool, work: Area) -> int:
 
 
 def place_glass(size: tuple[int, int], work: Area) -> tuple[int, int]:
-    """In the bottom right corner, just above minimized Elaina."""
+    """In the bottom right corner, just above minimized Noir."""
     x, y, screen_width, screen_height = work
     width, height = size
     return x + screen_width - width - EDGE_GAP, y + screen_height - height - GLASS_ABOVE
@@ -601,7 +623,7 @@ def work_area() -> Area:
 
 
 class Overlay:
-    """The full window, minimized Elaina and the see-through window, and moving between them."""
+    """The full window, minimized Noir and the see-through window, and moving between them."""
 
     def __init__(self, engine: Engine, watch: TidyWatch | None = None, debug: bool = False,
                  bookings: Reservations | None = None):
@@ -699,26 +721,29 @@ class Overlay:
                 self.watch.stop()
 
     def _ready(self) -> None:
-        """The windows exist: she can start noticing things."""
-        from .mini import Mini
-        from .tray import Tray
-
+        """The windows exist: it can start noticing things."""
         # A hidden window only has its handle, and stops changing, once its page is in.
         self._glass.events.loaded.wait(GLASS_LOAD_SECONDS)
         _prepare_glass(self._glass, self._glass_size)
-        if self._spot.events.loaded.wait(GLASS_LOAD_SECONDS):
+        # The Spot, the circle and the icon by the clock are Windows for now: on a Mac the
+        # full window is all there is, and it minimizes to the Dock.
+        if self._spot.events.loaded.wait(GLASS_LOAD_SECONDS) and sys.platform == "win32":
             from ..quick.spot import DoubleTap
 
             _prepare_spot(self._spot)
             self._tap = DoubleTap(self.open_spot)
             if self.settings.get("spot", True):
                 self._tap.start()
-        self._mini = Mini(self.toggle_glass)
-        self._tray = Tray(self.open_app, self.quit, self.watch)
-        self._tray.start()
+        if sys.platform == "win32":
+            from .mini import Mini
+            from .tray import Tray
+
+            self._mini = Mini(self.toggle_glass)
+            self._tray = Tray(self.open_app, self.quit, self.watch)
+            self._tray.start()
         if self.watch:
             self.watch.changed = self._watch_changed
-            # While the full window is open she has the user's attention anyway.
+            # While the full window is open it has the user's attention anyway.
             self.watch.held = lambda: self._full_open
             self.watch.start()
         self.bookings.start(self._run_booking, self._bookings_changed)
@@ -766,9 +791,11 @@ class Overlay:
 
         if self._quitting:
             return
-        self._tray.refresh()
+        if self._tray:
+            self._tray.refresh()
         working = self.watch.today()["working"]
-        self._mini.set_state(WORKING if working else ASKING if self.watch.asking else IDLE)
+        if self._mini:
+            self._mini.set_state(WORKING if working else ASKING if self.watch.asking else IDLE)
         self._full.run_js("window.today && today.refresh()")
         self._glass.run_js("window.app && app.refresh()")
 
@@ -813,7 +840,7 @@ class Overlay:
         self.unfold()
 
     def unfold(self) -> None:
-        """The full window is back, by the taskbar or from her: the circle steps aside."""
+        """The full window is back, by the taskbar or from it: the circle steps aside."""
         with self._lock:
             if self._quitting:
                 return
@@ -824,7 +851,7 @@ class Overlay:
             self._full.run_js("window.app && app.shown()")
 
     def fold_up(self) -> None:
-        """The full window was minimized: it stays on the taskbar, and she folds into the circle."""
+        """The full window was minimized: it stays on the taskbar, and it folds into the circle."""
         with self._lock:
             if self._quitting:
                 return
@@ -870,7 +897,7 @@ class Overlay:
         target = user32.GetForegroundWindow()
         ours = {window.native.Handle.ToInt32() for window in (self._full, self._glass, self._spot) if window.native}
         if target in ours:
-            return  # inside her own windows the chat is right there
+            return  # inside its own windows the chat is right there
         _, app = foreground_app()
         try:
             words, rect = read_selection(app)
@@ -954,7 +981,7 @@ class Overlay:
                 picture = ImageGrab.grab()
             finally:
                 self._full.show()
-        path = Path(tempfile.gettempdir()) / f"elaina-screen-{time.strftime('%H%M%S')}.png"
+        path = Path(tempfile.gettempdir()) / f"noir-screen-{time.strftime('%H%M%S')}.png"
         picture.save(path)
         return [str(path)]
 
@@ -1054,7 +1081,7 @@ def _blend_title(window):
 
 
 def _set_icons(hwnd: int) -> None:
-    """Her own icon on the taskbar, and none in the title bar."""
+    """Its own icon on the taskbar, and none in the title bar."""
     import ctypes
     from ctypes import wintypes
 
@@ -1064,7 +1091,7 @@ def _set_icons(hwnd: int) -> None:
 
     folder = data_dir()
     folder.mkdir(parents=True, exist_ok=True)
-    big, small = folder / "elaina.ico", folder / "blank.ico"
+    big, small = folder / "noir.ico", folder / "blank.ico"
     tray_picture().save(big, sizes=[(64, 64), (48, 48), (32, 32)])
     Image.new("RGBA", (32, 32)).save(small)
     # Its own copy of user32, because these settings would change it for all the other code.
@@ -1102,7 +1129,7 @@ _held_copy = None  # kept open until the app ends; Windows lets go of it even af
 
 
 def first_copy(name: str = ONE_COPY) -> bool:
-    """False when Elaina is already running on this computer for this user."""
+    """False when Noir is already running on this computer for this user."""
     global _held_copy
     if sys.platform != "win32":
         return True
@@ -1121,7 +1148,7 @@ def first_copy(name: str = ONE_COPY) -> bool:
 
 def bring_forward(title: str = TITLE, kind: str = "WindowsForms10.") -> bool:
     """Bring the running copy's full window to the front, as it was. Only a window of
-    her own kind counts, so a folder that happens to be called Elaina is left alone."""
+    its own kind counts, so a folder that happens to be called Noir is left alone."""
     if sys.platform != "win32":
         return False
     import ctypes
@@ -1190,23 +1217,42 @@ def _rounded(window, size: tuple[int, int]) -> None:
     )
 
 
+def _check() -> int:
+    """Load every part without opening a window: what packaging/build.py runs on the
+    app it just built, so a build that can't start is caught before anyone installs it."""
+    from .. import hardware
+    from ..catalog import recommend
+
+    report = hardware.detect()
+    rec = recommend(report)
+    Overlay(FakeEngine(), TidyWatch(practice=True))
+    print(f"Noir {__version__}: every part loads. {rec.device_name}: "
+          f"{rec.model.name if rec.model else rec.reason}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="concierge.ui", description="Elaina's chat window")
+    parser = argparse.ArgumentParser(prog="concierge.ui", description="Noir's chat window")
     parser.add_argument("--fake", action="store_true", help="use FakeEngine, no model needed")
     parser.add_argument("--debug", action="store_true", help="open the pages' developer tools")
+    parser.add_argument("--setup", action="store_true", help="with --fake: play the first-run setup, fetching nothing")
+    parser.add_argument("--version", action="version", version=f"Noir {__version__}")
+    parser.add_argument("--check", action="store_true", help="open nothing; say whether every part loads, then exit")
     args = parser.parse_args(argv)
 
+    if args.check:
+        return _check()
     if not first_copy():
-        # Started again while she's running, from the Start menu, say: the one already
+        # Started again while it's running, from the Start menu, say: the one already
         # running comes forward instead. The practice run counts too: its Spot answers Ctrl.
-        print("Elaina is already running, so her window was brought forward.")
+        print("Noir is already running, so its window was brought forward.")
         bring_forward()
         return 0
     if sys.platform == "win32":
         import ctypes
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
-    engine = FakeEngine() if args.fake else ElainaEngine()
+    engine = FakeEngine(setup=args.setup) if args.fake else NoirEngine()
     bookings = Reservations(None if args.fake else data_dir() / "reservations.json")
     Overlay(engine, TidyWatch(practice=args.fake), debug=args.debug, bookings=bookings).open()
     return 0

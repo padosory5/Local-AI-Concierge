@@ -186,7 +186,7 @@ The measured pain is checking and fixing output, not getting it. The time people
 ### Inferences
 - Vendor surveys may overstate both saving and supervising, but they all point the same way: review time is real and sizeable.
 - Copilot sits inside Word and Outlook, yet loses main-tool status once ChatGPT is available (second-hand Recon data). If that holds, being embedded does not beat trust and answer quality. This is worth weighing for any product built on being beside the work.
-- For a local assistant like Elaina, limits, forced model changes and training on chats are the complaints it avoids by design. Accuracy is the top choosing factor, though, and local models won't escape it.
+- For a local assistant like Noir, limits, forced model changes and training on chats are the complaints it avoids by design. Accuracy is the top choosing factor, though, and local models won't escape it.
 
 ### Gaps
 - I found no measurement of copy-paste or split-screen friction. Searches returned only workslop and review data, so the claim that this workflow hurts is unsupported by these notes.

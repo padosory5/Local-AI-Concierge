@@ -1,6 +1,6 @@
 import pytest
 
-from concierge import cloud, elaina, huggingface
+from concierge import cloud, noir, huggingface
 from concierge.cloud import CloudModel
 from concierge.fake_engine import PracticeKeys, PracticeOllama, practice_models
 from concierge.hardware import GPU, HardwareReport
@@ -43,35 +43,35 @@ def menu():
 def test_the_menu_keeps_local_and_api_models_apart(menu):
     info = menu.info()
     assert [item["id"] for item in info["local"]] == ["qwen3.5:4b", "gemma4:latest"]
-    assert info["local"][0]["own"] is True  # her own comes first
+    assert info["local"][0]["own"] is True  # its own comes first
     assert {company["id"] for company in info["providers"]} >= {"anthropic", "openai", "google"}
     assert info["current"] is None
 
 
 def test_her_built_model_isnt_listed_twice(menu):
-    menu.ollama.installed.append({"name": "elaina:latest", "size": 3_000_000_000, "details": {}})
-    assert "elaina:latest" not in [item["id"] for item in menu.info()["local"]]
+    menu.ollama.installed.append({"name": "noir:latest", "size": 3_000_000_000, "details": {}})
+    assert "noir:latest" not in [item["id"] for item in menu.info()["local"]]
 
 
-def test_another_local_model_answers_as_elaina(menu):
+def test_another_local_model_answers_as_noir(menu):
     menu.pick(LOCAL, "gemma4:latest")
     assert menu.chosen()["here"] is True
-    talker = menu.talker("You are Elaina.")
+    talker = menu.talker("You are Noir.")
     assert isinstance(talker, LocalModel)
-    assert list(talker.chat("elaina", [{"role": "user", "content": "hi"}])) == ["hello"]
+    assert list(talker.chat("noir", [{"role": "user", "content": "hi"}])) == ["hello"]
     model, messages, think, options = menu.ollama.sent
     assert model == "gemma4:latest"
-    assert "You are Elaina." in messages[0]["content"] and "on this computer" in messages[0]["content"]
+    assert "You are Noir." in messages[0]["content"] and "on this computer" in messages[0]["content"]
     assert think is False  # it can think, and only does when asked
-    assert options["num_ctx"] == elaina.NUM_CTX
+    assert options["num_ctx"] == noir.NUM_CTX
 
 
 def test_a_local_model_that_cant_think_is_never_told_about_thinking(menu):
     menu.ollama.installed.append({"name": "plain:latest", "size": 1, "details": {}})
     menu.pick(LOCAL, "plain:latest")
-    talker = menu.talker("You are Elaina.")
+    talker = menu.talker("You are Noir.")
     assert talker.can_think is False
-    list(talker.chat("elaina", []))
+    list(talker.chat("noir", []))
     assert menu.ollama.sent[2] is None  # Ollama refuses think=False from a model that can't
 
 
@@ -138,7 +138,7 @@ def test_removing_a_custom_model_forgets_its_key_and_goes_home(menu):
 
 def test_her_own_model_can_never_be_deleted(menu):
     assert "error" in menu.delete_local("qwen3.5:4b")
-    assert "error" in menu.delete_local("elaina:latest")
+    assert "error" in menu.delete_local("noir:latest")
     assert any(item["name"] == "qwen3.5:4b" for item in menu.ollama.installed)
 
 
@@ -149,7 +149,7 @@ def test_deleting_another_model(menu):
 
 def test_whether_a_model_fits_comes_from_this_computer():
     assert ModelMenu._fit(5.0, report(), 3.0) == FITS
-    assert ModelMenu._fit(14.0, report(), 3.0) == SLOW  # 16 GB card, less Elaina and some room
+    assert ModelMenu._fit(14.0, report(), 3.0) == SLOW  # 16 GB card, less Noir and some room
     assert ModelMenu._fit(5.0, report(disk=6.0), 3.0) == NO_DISK
 
 

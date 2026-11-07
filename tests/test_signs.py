@@ -118,7 +118,7 @@ def test_what_is_used_most_comes_from_windows_own_count():
     used = signs.app_use([("Naver_Whale", record(5.2)), ("Claude_x!Claude", record(4.4)),
                           (r"{X}\Steam\steamapps\common\Hollow Knight\hollow_knight.exe", record(1.0)),
                           ("UEME_CTLSESSION", record(14)), (r"{X}\Python311\python.exe", record(0.4)),
-                          ("LocalAIConcierge.Elaina", record(0.4)), ("Barely.Used", record(0.01)),
+                          ("NoirAgents.Noir", record(0.4)), ("Barely.Used", record(0.01)),
                           ("MyBank.Banking_x!App", record(3.0))])
     assert [(entry["app"], entry["kind"]) for entry in used] == [("Naver Whale", "browsing"), ("Claude", "ai"),
                                                                 ("Hollow Knight", "games")]

@@ -2,7 +2,7 @@
 
 The engine never prints and the UI never decides anything. The UI sends the
 user's text (or a button click) to an Engine, gets back a stream of events,
-and draws them. Everything Elaina does, from chatting to creating and running
+and draws them. Everything Noir does, from chatting to creating and running
 agents, arrives as one of the events below.
 
 Change this file only when both sides agree: the UI and the engine are built
@@ -20,26 +20,26 @@ from typing import Protocol, Union
 
 @dataclass(frozen=True)
 class SystemInfo:
-    """What the computer has and which model Elaina runs on. Sent first by
+    """What the computer has and which model Noir runs on. Sent first by
     startup(), for a header or an "about this computer" panel."""
 
     hardware: list[str]  # plain-language lines, e.g. "Memory: 31.1 GB"
     recommended: str | None  # e.g. "Qwen 3.5 4B (qwen3.5:4b)"; None if nothing fits
-    in_use: str  # the model Elaina is actually built from
+    in_use: str  # the model Noir is actually built from
     device: str  # e.g. "NVIDIA GeForce RTX 5080" or the CPU name
     note: str = ""  # e.g. why in_use differs from recommended
 
 
 @dataclass(frozen=True)
 class Thinking:
-    """Elaina working something out. Show it faded ("foggy") in the chat, and
+    """Noir working something out. Show it faded ("foggy") in the chat, and
     fold it away into one line ("Thought for 12s") as soon as any other event
     arrives; the user can click to open it again.
 
-    kind "step": one of her real decisions, a short line of its own, such as
+    kind "step": one of its real decisions, a short line of its own, such as
     "This asks for a new agent: Highlight translator".
-    kind "thought": a piece of her model's own thinking, streamed like
-    ElainaText; sent only when the user asked her to think it through.
+    kind "thought": a piece of its model's own thinking, streamed like
+    NoirText; sent only when the user asked it to think it through.
     """
 
     text: str
@@ -47,8 +47,8 @@ class Thinking:
 
 
 @dataclass(frozen=True)
-class ElainaText:
-    """A piece of Elaina's reply. Append it to her current message bubble;
+class NoirText:
+    """A piece of Noir's reply. Append it to its current message bubble;
     replies stream in many small pieces."""
 
     text: str
@@ -72,8 +72,8 @@ class Picture:
 
 
 @dataclass(frozen=True)
-class ElainaDone:
-    """Elaina's current reply is complete.
+class NoirDone:
+    """Noir's current reply is complete.
 
     With Auto picked in the model menu (auto.py), `by` names the model that wrote
     this reply; show it under the reply instead of the menu's name. `instead` is
@@ -82,12 +82,12 @@ class ElainaDone:
     Both are empty otherwise.
 
     For every chat answer, `where` is "here" (written on this computer) or "cloud"
-    (a plan or key), for the coloured dot under it; empty for her set phrases.
+    (a plan or key), for the coloured dot under it; empty for its set phrases.
     `saved`: about how many plan or key tokens an answer written here kept (Auto
     only, 0 otherwise). `plan_used`: how full the plan's fullest window was right
     after a cloud answer (0 to 1), or -1 when there's no plan to measure (a key).
 
-    An answer she looked up on the web (research.py) names its `sources` (path: the
+    An answer it looked up on the web (research.py) names its `sources` (path: the
     address, quote: the page's title), shown small under it as links, and may bring
     `images` to show under it. Both empty otherwise.
     """
@@ -103,7 +103,7 @@ class ElainaDone:
 
 @dataclass(frozen=True)
 class Question:
-    """Elaina needs an answer to continue, e.g. while setting up an agent.
+    """Noir needs an answer to continue, e.g. while setting up an agent.
 
     With choices, show them as buttons and send the picked one with
     engine.choose(id, choice). The user may also just type an answer, which
@@ -130,7 +130,7 @@ class AgentCard:
     reads: list[str]  # folders or files it may read
     can_do: list[str]
     cannot_do: list[str]
-    runs_on: str  # e.g. "Qwen 3.5 4B (Elaina's model, no extra memory)"
+    runs_on: str  # e.g. "Qwen 3.5 4B (Noir's model, no extra memory)"
     actions: list[str] = field(default_factory=lambda: ["Create it", "Change something", "Cancel"])
 
 
@@ -182,7 +182,7 @@ class IdeaStep:
 
 @dataclass(frozen=True)
 class IdeaCard:
-    """Elaina's honest answer to "could you make a helper that...?".
+    """Noir's honest answer to "could you make a helper that...?".
 
     Show the title, each step with its status, the difficulty line (does it
     need a bigger model, does that fit this computer) and the verdict, with
@@ -218,11 +218,11 @@ class ChatList:
 
 @dataclass(frozen=True)
 class TranscriptItem:
-    role: str  # "user", "elaina", "result" (an agent's answer) or "error"
+    role: str  # "user", "noir", "result" (an agent's answer) or "error"
     text: str
     agent: str = ""  # for "result": which agent answered
     sources: list[Source] = field(default_factory=list)
-    # For an "elaina" answer, what its ElainaDone said, so a reopened chat shows the
+    # For an "noir" answer, what its NoirDone said, so a reopened chat shows the
     # same dot and saved tokens: who wrote it, "here" or "cloud", tokens saved, plan used.
     by: str = ""
     where: str = ""
@@ -243,7 +243,7 @@ class Transcript:
 
 
 Event = Union[
-    Thinking, SystemInfo, ElainaText, ElainaDone, Question, AgentCard, Progress, Result, AgentList, Error,
+    Thinking, SystemInfo, NoirText, NoirDone, Question, AgentCard, Progress, Result, AgentList, Error,
     ChatList, Transcript, IdeaCard,
 ]
 
@@ -270,8 +270,8 @@ class Engine(Protocol):
         """The user typed a message. The first message of a new conversation
         also yields a ChatList, since the conversation now has a place in it.
 
-        think: the user asked Elaina to think it through (the Think button).
-        Her own replies then come after streamed Thinking thoughts, which
+        think: the user asked Noir to think it through (the Think button).
+        Its own replies then come after streamed Thinking thoughts, which
         takes much longer (about 20 seconds on a 4B model)."""
         ...
 
@@ -294,12 +294,12 @@ class Engine(Protocol):
         ...
 
     def delete_agent(self, name: str) -> Iterator[Event]:
-        """The user wants an agent removed. Elaina asks to confirm with a
+        """The user wants an agent removed. Noir asks to confirm with a
         Question; answering it through choose() deletes it and yields AgentList."""
         ...
 
     def toggle_agent(self, name: str) -> Iterator[Event]:
-        """Switch a switchable agent on or off. Elaina says what changed, then
+        """Switch a switchable agent on or off. Noir says what changed, then
         AgentList with the new `active` list."""
         ...
 
@@ -309,5 +309,5 @@ class Engine(Protocol):
         ...
 
     def close(self) -> None:
-        """The UI is closing. Frees Elaina's graphics memory."""
+        """The UI is closing. Frees Noir's graphics memory."""
         ...

@@ -1,11 +1,11 @@
 """The user's own ChatGPT or Claude plan, used through the companies' own apps: Codex
 for ChatGPT, Claude Code for Claude. Nothing to copy and no key: they sign in once in
-that app, through the company's own page, and Elaina hands it each question.
+that app, through the company's own page, and Noir hands it each question.
 
 This is the way the companies allow. OpenAI's Codex signs in with a ChatGPT plan.
 Anthropic lets people sign in to the unmodified Claude Code program with their own
-plan, but doesn't let other apps offer Claude sign-in themselves. So Elaina never
-sees a login or a token: she runs the app the user installed and signed in to, in
+plan, but doesn't let other apps offer Claude sign-in themselves. So Noir never
+sees a login or a token: it runs the app the user installed and signed in to, in
 an empty folder where it can't change anything, and reads the answer back.
 """
 
@@ -25,14 +25,18 @@ from .cloud import CloudError, load_providers, record_sent
 from .usage import claude_limits, claude_tokens, codex_limits, codex_tokens, record_limits, record_tokens
 
 CODEX, CLAUDE_CODE = "codex", "claude_code"
-# What each one is called, where it might live, and how people get it.
+# What each one is called, where it might live (an app opened from the Mac's Finder
+# has almost no PATH, so the usual homes are tried too), and how people get it.
 APPS = {
     CODEX: {"name": "ChatGPT", "app": "Codex", "plan": "your ChatGPT plan", "command": "codex",
-            "places": ("~/.codex/.sandbox-bin/codex.exe", "~/AppData/Roaming/npm/codex.cmd"),
+            "places": ("~/.codex/.sandbox-bin/codex.exe", "~/AppData/Roaming/npm/codex.cmd",
+                       "/opt/homebrew/bin/codex", "/usr/local/bin/codex", "~/.npm-global/bin/codex"),
             "get": "https://developers.openai.com/codex",
             "sign_in": "Opens a sign-in page in your browser"},
     CLAUDE_CODE: {"name": "Claude", "app": "Claude Code", "plan": "your Claude plan", "command": "claude",
-                  "places": ("~/.local/bin/claude.exe", "~/AppData/Roaming/npm/claude.cmd"),
+                  "places": ("~/.local/bin/claude.exe", "~/AppData/Roaming/npm/claude.cmd",
+                             "~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+                             "~/.npm-global/bin/claude"),
                   "get": "https://code.claude.com/docs/en/setup",
                   "sign_in": "Opens a sign-in page in your browser"},
 }

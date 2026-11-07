@@ -1,20 +1,20 @@
-"""A research job, shared between the plan model and her own model.
+"""A research job, shared between the plan model and its own model.
 
-"Research X" is more than one lookup. Her own small model turns the request into a
+"Research X" is more than one lookup. Its own small model turns the request into a
 few searches (a form, forced by the schema: its queries were as good as Claude's in
 the first live run, in a sixth of the time and for none of the plan), code runs the
-searches and reads the pages, all at once, her model reads each page and writes a
+searches and reads the pages, all at once, its model reads each page and writes a
 short summary of what it says about the question, one page at a time, which is the
 kind of job a 4B model does well and the part that eats the most tokens, and the plan
 model (Claude or GPT through the user's plan, or a keyed model) is the reviewer: it
 merges the summaries into one brief and checks them against each other. With Auto
 that is the plan's fast model, since a merge needs care more than depth and Opus took
 15 of the first run's 37 seconds; a model the user picked on purpose is used as it is.
-Every step is said in her thinking, with its tokens, and the end says what the plan
+Every step is said in its thinking, with its tokens, and the end says what the plan
 was charged against what it would have been charged had it done every step itself,
 counted from its own measured numbers.
 
-Without a plan connected, her own model merges too, and the brief says so.
+Without a plan connected, its own model merges too, and the brief says so.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 from . import research, sources, usage, voice
-from .elaina import without_closing_filler
+from .noir import without_closing_filler
 from .events import Source
 
 _I = re.IGNORECASE
@@ -47,7 +47,7 @@ ENOUGH_SEARCHES = 2  # searches that answered before a refused one is retried al
 PAGES_PER_SITE = 2  # three of six pages from one supplement site made one brief lean on it
 SPARE_PAGES = 2  # picked beyond MAX_PAGES, in case a page turns out thin once read
 MIN_PAGE_CHARS = 400  # a blocked page gave a worker 140 tokens of nothing
-# Her model doesn't know the date: left to itself it searched "Seattle housing 2024" in
+# Its model doesn't know the date: left to itself it searched "Seattle housing 2024" in
 # November 2026 and the brief could only say the pages were two years old.
 PLAN_NOTE = (
     "Today is {today}. You plan a web research job for an assistant. Turn the user's request into 2 to {max} "
@@ -101,7 +101,7 @@ class Page:
 class Account:
     """What the job cost, in tokens, counted not guessed."""
 
-    source: str = ""  # the plan or key it ran on, "" when her own model did it all
+    source: str = ""  # the plan or key it ran on, "" when its own model did it all
     plan_calls: int = 0
     plan_read: int = 0
     plan_wrote: int = 0
@@ -136,7 +136,7 @@ def _json_in(text: str) -> dict:
 
 
 def fresh_queries(queries: list[str], question: str, year: int | None = None) -> list[str]:
-    """A query's year is this year, unless the question itself named one: her model's
+    """A query's year is this year, unless the question itself named one: its model's
     sense of "now" stops at its training."""
     year = year or time.localtime().tm_year
     if STALE_YEAR.search(question):
@@ -145,7 +145,7 @@ def fresh_queries(queries: list[str], question: str, year: int | None = None) ->
 
 
 def plan(ask_form, question: str, today: str = "") -> tuple[list[str], str]:
-    """The searches and the goal, as a form her model fills. `ask_form(system, user,
+    """The searches and the goal, as a form its model fills. `ask_form(system, user,
     schema)` returns the filled form as a dict (or a string holding JSON, from a model
     without forced schemas). Nothing usable means one search: the question."""
     today = today or time.strftime("%A %Y-%m-%d")
@@ -180,7 +180,7 @@ def gather(question: str, queries: list[str], search=research.search, read=resea
            judge=None) -> tuple[list[Page], list[sources.Choice]]:
     """The pages worth reading, read: every search's results go to the picker
     (sources.py), which scores them by the kind of site and how much of the question
-    their snippet holds, with her model breaking ties; the best are read, all at once,
+    their snippet holds, with its model breaking ties; the best are read, all at once,
     and a page that turns out thin is swapped for the next. All the searches run at
     once too: one after another they were a third of the job. A search that answered
     nothing to the burst is tried once more alone when too few did, since the free
@@ -213,7 +213,7 @@ def gather(question: str, queries: list[str], search=research.search, read=resea
 
 
 def summarise(ollama, model: str, question: str, page: Page) -> Page:
-    """One worker: her model reads one page and writes what it says about the question."""
+    """One worker: its model reads one page and writes what it says about the question."""
     messages = [{"role": "system", "content": WORKER_NOTE.format(lines=SUMMARY_LINES)},
                 {"role": "user", "content": f"QUESTION: {question}\n\nPAGE ({page.site}):\n{page.text}"}]
     chunks = ollama.chat(model, messages, think=False, options={"temperature": 0.2}, keep_alive="60s")
@@ -224,7 +224,7 @@ def summarise(ollama, model: str, question: str, page: Page) -> Page:
 
 def merge(talk, question: str, goal: str, pages: list[Page], when: str) -> Iterator[str]:
     """The reviewer writes the brief from the workers' summaries. `talk(system, user)`
-    streams the reply; it comes out in Elaina's shape."""
+    streams the reply; it comes out in Noir's shape."""
     words = voice.BUDGETS["plan"][0]
     useful = [page for page in pages if page.useful]
     notes = "\n\n".join(f"[{number}] {page.site}, {page.kind or 'other'} ({page.url})\n{page.summary}"
@@ -252,9 +252,9 @@ def last_plan_answer(source: str) -> dict:
 
 def settle(account: Account, question: str) -> Account:
     """What every step would have cost on the plan: each local step as one plan call,
-    counted as her model's read and written tokens plus what the plan's app reads on
+    counted as its model's read and written tokens plus what the plan's app reads on
     top of every question (measured from its real answers), the way the Saved line
-    under an answer counts. Tokens are her model's counts; the plan's own tokenizer
+    under an answer counts. Tokens are its model's counts; the plan's own tokenizer
     would count a little differently, so it's "about"."""
     if not account.source:
         return account
@@ -270,7 +270,7 @@ def settle(account: Account, question: str) -> Account:
 
 
 def account_lines(account: Account, orchestrator: str, own: str) -> list[str]:
-    """The tokens, said plainly, for the end of her thinking."""
+    """The tokens, said plainly, for the end of its thinking."""
     if not account.source:
         return [f"Tokens: {own} did every step on this computer, {account.local_calls + account.plan_calls} calls, "
                 f"{account.local_read + account.plan_read:,} read and {account.local_wrote + account.plan_wrote:,} "

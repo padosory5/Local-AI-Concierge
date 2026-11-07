@@ -42,7 +42,7 @@ def app_answering(monkeypatch, tmp_path, app, lines):
     place = tmp_path / (".local/bin/claude.exe" if app == CLAUDE_CODE else ".codex/.sandbox-bin/codex.exe")
     place.parent.mkdir(parents=True)
     place.write_text("")
-    return AppModel(Accounts(home=tmp_path), app, "the-model", "You are Elaina.")
+    return AppModel(Accounts(home=tmp_path), app, "the-model", "You are Noir.")
 
 
 def test_claude_codes_own_limits_and_tokens_are_kept(monkeypatch, tmp_path):
@@ -98,7 +98,7 @@ def test_days_add_up_and_old_days_are_dropped():
 
 
 def test_saved_counts_what_the_plans_app_reads_on_top_of_every_question():
-    # Before any real answer from the plan, only what her model read and wrote counts.
+    # Before any real answer from the plan, only what its model read and wrote counts.
     assert usage.saved_estimate("claude_code", 300, 40) == 340
     usage.record_tokens("claude_code", "m", 29_172, 7)
     usage.record_tokens("claude_code", "m", 31_000, 500)

@@ -12,7 +12,7 @@ agents:
 
 cases:
   # chat
-  - {text: "hi Elaina", kind: chat}
+  - {text: "hi Noir", kind: chat}
   - {text: "how are you today?", kind: chat}
   - {text: "what's the capital of Australia?", kind: chat}
   - {text: "rewrite this to sound friendlier: send me the report by friday", kind: chat}

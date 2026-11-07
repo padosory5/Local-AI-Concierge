@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 import time
 
-from . import auto, elaina
+from . import auto, noir
 from .ollama import Ollama
 
 SMALL_MODEL = "qwen3.5:4b"  # the weakest model the answers in the cases are for
@@ -21,7 +21,7 @@ SMALL_MODEL = "qwen3.5:4b"  # the weakest model the answers in the cases are for
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    model = argv[0] if argv else elaina.ELAINA_MODEL
+    model = argv[0] if argv else noir.NOIR_MODEL
     ollama = Ollama()
     ollama.ensure_running()
     fill = auto.model_form(ollama, model)

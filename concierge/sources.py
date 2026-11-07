@@ -6,9 +6,9 @@ against the question with a small model. Without one, two of six workers in the
 first live runs read a blocked page and a content farm, and a brief leaned on one
 supplement site. Here code scores first: the kind of site (sources.yaml, promoting
 and never banning), whether the site is the subject's own, how many of the
-question's words the snippet holds, and a date for a current question. Her small
+question's words the snippet holds, and a date for a current question. Its small
 model only breaks ties, in one call over all the snippets. The reasons for every
-pick and drop are kept, so her thinking can say them.
+pick and drop are kept, so its thinking can say them.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ PRIMARY, REFERENCE, ORDINARY, FARM = "primary", "reference", "ordinary", "farm"
 TIER_WORDS = {PRIMARY: "official", REFERENCE: "reference", ORDINARY: "other", FARM: "content farm"}
 TIER_POINTS = {PRIMARY: 30, REFERENCE: 20, ORDINARY: 10, FARM: 0}
 SUBJECT_POINTS = 12  # the subject's own site: "hermes-agent.nousresearch.com" for Hermes
-MODEL_POINTS = 8  # her model said the snippet is about the question
+MODEL_POINTS = 8  # its model said the snippet is about the question
 FRESH_POINTS = 4  # this year in the snippet, for a question about now
 MIN_SNIPPET_MATCH = 1  # question words a snippet must hold to be read without the model's yes
 CURRENT_WORDS = re.compile(r"\b(now|current|currently|latest|newest|today|this (year|month|week)|recent|20[23]\d)\b"
@@ -110,7 +110,7 @@ def relevance(question: str, title: str, body: str) -> int:
 
 
 def pick(question: str, rows: list[dict], wanted: int = 6, per_site: int = 2, judge=None) -> list[Choice]:
-    """Score every result, ask her model which snippets are about the question when
+    """Score every result, ask its model which snippets are about the question when
     there's one to ask, then take the best `wanted`, at most `per_site` from one site.
     Returns every choice, picked or not, with its reasons, best first."""
     current = bool(CURRENT_WORDS.search(question))
@@ -143,14 +143,14 @@ def pick(question: str, rows: list[dict], wanted: int = 6, per_site: int = 2, ju
         for number, choice in enumerate(choices):
             if number in about:
                 choice.score += MODEL_POINTS
-                choice.reasons.append("her model: about the question")
+                choice.reasons.append("the built-in model: about the question")
     choices.sort(key=lambda c: c.score, reverse=True)
     taken_per_site: dict[str, int] = {}
     taken = 0
 
     def about(choice: Choice) -> bool:
         return (relevance(question, choice.row.get("title") or "", choice.row.get("body") or "") >= MIN_SNIPPET_MATCH
-                or "her model: about the question" in choice.reasons)
+                or "the built-in model: about the question" in choice.reasons)
 
     # Two passes: first only results whose snippet is about the question (an official
     # page about something else once outranked every page that was about it), and
@@ -187,7 +187,7 @@ JUDGE_SCHEMA = {"type": "object", "properties": {"about": {"type": "array", "ite
 
 
 def judge_with(ask_form):
-    """Her model as the tie-break: `ask_form(system, user, schema)` fills the form."""
+    """Its model as the tie-break: `ask_form(system, user, schema)` fills the form."""
 
     def judge(question: str, snippets: list[str]) -> set[int]:
         listed = "\n".join(f"{number}. {snippet[:300]}" for number, snippet in enumerate(snippets))
@@ -198,7 +198,7 @@ def judge_with(ask_form):
 
 
 def said(choices: list[Choice]) -> tuple[str, str]:
-    """Two plain lines for her thinking: what was picked and why, what was dropped and why."""
+    """Two plain lines for its thinking: what was picked and why, what was dropped and why."""
     picked = [c for c in choices if c.picked]
     dropped = [c for c in choices if not c.picked]
     kept = ", ".join(f"{c.site} ({c.kind or (c.reasons[0] if c.reasons else 'other')})" for c in picked)

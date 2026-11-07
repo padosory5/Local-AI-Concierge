@@ -1,6 +1,6 @@
 """Cloud models, for people who already pay for Claude, ChatGPT, Gemini and others.
 
-Elaina's own small model always stays on the computer and still decides what a
+Noir's own small model always stays on the computer and still decides what a
 message is for, because that's reliable and free. A cloud model only takes over
 writing the answers, so CloudModel talks the same way Ollama does for that one job.
 
@@ -25,7 +25,7 @@ from . import usage
 from .ollama import OllamaError
 
 CATALOG_PATH = Path(__file__).with_name("cloud_models.yaml")
-KEY_STORE = "LocalAIConcierge"
+KEY_STORE = "LocalAIConcierge"  # the store's name from before the app was Noir, kept so saved keys stay
 MAX_REPLY_TOKENS = 4096
 LIST_TIMEOUT = 10
 REPLY_TIMEOUT = 300
@@ -76,7 +76,7 @@ def saved_key(provider: str) -> str:
     try:
         return keyring.get_password(KEY_STORE, provider) or ""
     except keyring.errors.KeyringError:
-        return ""  # no password store here: the app still works with her own model
+        return ""  # no password store here: the app still works with its own model
 
 
 def save_key(provider: str, key: str) -> None:
@@ -230,7 +230,7 @@ def key_refused(provider: Provider, key: str) -> bool:
 
 
 def _sent_path():
-    from .elaina import data_dir
+    from .noir import data_dir
 
     return data_dir() / "sent.json"
 

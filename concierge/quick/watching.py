@@ -1,13 +1,14 @@
 """Is the user watching a lecture? Decided in code, from the window in front.
 
 Only the title and the program name of that one window are read, and only
-when Elaina looks. Nothing on the screen is read or kept, and no model runs.
+when Noir looks. Nothing on the screen is read or kept, and no model runs.
 """
 
 from __future__ import annotations
 
 import ctypes
 import re
+import sys
 
 LECTURE_WORDS = re.compile(
     r"\b(lectures?|lessons?|courses?|seminars?|webinars?|tutorials?|class(es)?)\b|강의|강좌|수업|인강|세미나|특강|튜토리얼",
@@ -29,6 +30,8 @@ def looks_like_lecture(title: str, program: str) -> bool:
 
 def lecture_on_screen() -> str:
     """The title of the lecture in front, or "" if there isn't one."""
+    if sys.platform != "win32":
+        return ""  # the window in front is read on Windows only for now
     from .selection import foreground_app
 
     user32 = ctypes.WinDLL("user32")

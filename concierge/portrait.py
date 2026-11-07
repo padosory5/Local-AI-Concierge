@@ -1,14 +1,14 @@
-"""What Elaina understands about the user from their past chats with ChatGPT and
+"""What Noir understands about the user from their past chats with ChatGPT and
 Claude (history.py): what they ask for most, in which language, and who they are.
 
 Code counts: how many chats, since when, in which languages, at what time of day,
-and how many of each kind. Her model does only two small jobs. It sorts each chat
+and how many of each kind. Its model does only two small jobs. It sorts each chat
 into one kind from a fixed list, and it suggests facts about the person, each
 with the exact words they came from. Code drops a fact whose words aren't really
 in the messages, and anything about health, money, beliefs, politics, family or
 relationships, which aren't hers to work out. The user keeps or drops every fact,
-and only kept facts reach her prompt, and only her own model on this computer:
-what she knows about someone never goes to a cloud model.
+and only kept facts reach its prompt, and only its own model on this computer:
+what it knows about someone never goes to a cloud model.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from .elaina import data_dir
+from .noir import data_dir
 from .history import PastChat
 from .ollama import Ollama
 from .quick.translate import LANGUAGES as LANGUAGE_NAMES
@@ -94,7 +94,7 @@ SENSITIVE = re.compile(
     re.IGNORECASE,
 )
 # "The user works as a nurse" and "They work as a nurse" are both shown as
-# "Works as a nurse": the same line reads right on her page and in her prompt.
+# "Works as a nurse": the same line reads right on its page and in its prompt.
 SUBJECT = re.compile(r"^(the user|the person|user|they|he|she)\s+", re.IGNORECASE)
 # A fact that's really a request: "Requests course layouts", "Asks about loops".
 ASKING = re.compile(r"^(requests|asks|seeks|wants help|needs help|looks for|tries to)\b", re.IGNORECASE)
@@ -124,7 +124,7 @@ def forget() -> None:
 
 def understand(ollama: Ollama, model: str, chats: list[PastChat], think: bool | None = None,
                progress: Callable[[str], None] | None = None) -> dict:
-    """Read the brought-in chats and save what she understands. Facts the user
+    """Read the brought-in chats and save what it understands. Facts the user
     already kept or dropped stay that way, so reading a newer download never asks
     about the same thing twice."""
     say = progress or (lambda text: None)
@@ -178,7 +178,7 @@ def keep(fact_id: str, kept: bool) -> dict:
 
 
 def about_you(made: dict) -> str:
-    """The few lines her own model reads about the user: only what they kept,
+    """The few lines its own model reads about the user: only what they kept,
     what they ask for most, and the language they write in."""
     kept = [fact["fact"] for fact in made.get("facts", []) if fact.get("kept")]
     kinds = [kind for kind in made.get("kinds", []) if kind["id"] not in ("other", "personal")][:3]
@@ -223,7 +223,7 @@ def language_of(text: str) -> str:
     return "Other"
 
 
-# ------------------------------------------------------- with her model
+# ------------------------------------------------------- with its model
 
 
 def sort_kinds(ollama: Ollama, model: str, chats: list[PastChat], think: bool | None = None) -> list[dict]:

@@ -21,7 +21,7 @@ SUPPORTED = TEXT_TYPES | {".pdf", ".docx"}
 MAX_FILES = 2000
 MAX_FILE_MB = 30
 # About 150 to 200 words per passage: long enough to hold an answer, short
-# enough that four of them fit comfortably in Elaina's 4,096-token window.
+# enough that four of them fit comfortably in Noir's 4,096-token window.
 PASSAGE_CHARS = 900
 PASSAGE_OVERLAP = 150
 

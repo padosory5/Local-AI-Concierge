@@ -1,4 +1,4 @@
-"""What Elaina did for the user, counted, so Today can show what she's worth.
+"""What Noir did for the user, counted, so Today can show what it's worth.
 
 Only the kind of job and when it happened are kept, never the words, on this
 computer, for a month. People keep tools whose value they can see, and a local
@@ -20,7 +20,7 @@ _lock = threading.Lock()
 
 
 def _path() -> Path:
-    from .elaina import data_dir
+    from .noir import data_dir
 
     return data_dir() / "activity.json"
 

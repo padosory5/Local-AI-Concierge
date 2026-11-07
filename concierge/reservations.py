@@ -3,7 +3,7 @@
 An agent can be asked to do something, a switch-on agent can be turned on or off,
 and the Downloads folder can be sorted, once or again and again.
 
-They only run while Elaina is running. Something booked for while she was closed
+They only run while Noir is running. Something booked for while it was closed
 is never run late without asking, because moving files or answering hours later
 could surprise someone; a one-time booking is marked as missed instead.
 """

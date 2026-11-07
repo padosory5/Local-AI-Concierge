@@ -28,8 +28,8 @@ window.modelPage = (() => {
 
   // -------------------------------------------------- who is answering
 
-  // A beginner only ever has her own model, so the pill says where she is, not what
-  // she runs on. Model names stay inside the menu and the Models page.
+  // A beginner only ever has its own model, so the pill says where it is, not what
+  // it runs on. Model names stay inside the menu and the Models page.
   function label() {
     return models.current ? models.current.name : "This computer";
   }
@@ -41,7 +41,7 @@ window.modelPage = (() => {
       return `Small questions stay on this computer. Harder ones go to ${now.company}. `
         + "Highlights and your document agents stay on this computer.";
     }
-    return `What you say to Elaina goes to ${now.company}. Highlights and your document agents stay on this computer.`;
+    return `What you say to Noir goes to ${now.company}. Highlights and your document agents stay on this computer.`;
   }
 
   function drawNames() {
@@ -49,10 +49,10 @@ window.modelPage = (() => {
     $("model-name").textContent = label();
     $("model").classList.toggle("cloud", Boolean(now) && !now.here);
     // Only models on this computer can show their thinking.
-    // With Auto her own model answers small things, and it can.
+    // With Auto its own model answers small things, and it can.
     $("think").hidden = Boolean(now) && now.provider !== "local" && !now.auto;
     $("privacy").textContent = privacy();
-    $("side-model").textContent = !now ? "Elaina · on this computer" : now.here ? `${now.name} on this computer`
+    $("side-model").textContent = !now ? "Noir · on this computer" : now.here ? `${now.name} on this computer`
       : now.auto ? `Auto: ${models.own} or ${now.cloud.name}` : `${now.name}, ${now.company}`;
     app.setModelName(label(), models.own || "");
     drawUsage();
@@ -85,7 +85,7 @@ window.modelPage = (() => {
   function localRows() {
     const shown = (models.local || []).filter((item) => !item.hidden);
     const own = shown.find((item) => item.own);
-    const rows = [pickRow(models.own, "Elaina's own", !models.current, () => choose("", ""))];
+    const rows = [pickRow(models.own, "Built in", !models.current, () => choose("", ""))];
     if (own) shown.splice(shown.indexOf(own), 1);
     rows.push(...shown.map((item) => pickRow(item.name, item.detail, isHere("local", item.id), () => choose("local", item.id))));
     return rows;
@@ -128,7 +128,7 @@ window.modelPage = (() => {
     return rows;
   }
 
-  // Auto (auto.py): Elaina answers small things herself and sends the rest to a plan
+  // Auto (auto.py): Noir answers small things itself and sends the rest to a plan
   // or key. Only offered once there's a plan or key to send things to.
   function autoRows() {
     const target = models.auto || {};
@@ -153,7 +153,7 @@ window.modelPage = (() => {
 
   // ------------------------------------------------------- how much is used
   // The plan's own numbers (the same ones /usage shows in Claude Code) when its app
-  // reports them, and the tokens her answers used, counted here (usage.py).
+  // reports them, and the tokens its answers used, counted here (usage.py).
 
   function tokens(count) {
     if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
@@ -190,7 +190,7 @@ window.modelPage = (() => {
     return row;
   }
 
-  // Tokens her answers used, in plain words.
+  // Tokens its answers used, in plain words.
   function tokenLines(mine, viaApp) {
     const lines = [];
     const today = mine.today || {};
@@ -232,7 +232,7 @@ window.modelPage = (() => {
   // The block on the Accounts page, like /usage in Claude Code.
   function usageBlock(source, viaApp) {
     const mine = usage[source];
-    if (!mine) return el("div", "usage-block", el("div", "usage-line faint", "Nothing used through Elaina yet."));
+    if (!mine) return el("div", "usage-block", el("div", "usage-line faint", "Nothing used through Noir yet."));
     const parts = mine.limits.map((window) => meter(window, false));
     if (viaApp && !mine.limits.length) {
       parts.push(el("div", "usage-line faint", `${viaApp} hasn't said how much of your plan is left yet.`));
@@ -467,7 +467,7 @@ window.modelPage = (() => {
         drawTab();
       });
       const row = el("div", "agent-line", el("span", "open still", el("span", "words", el("span", "name", item.name),
-                                             el("span", "does", item.own ? `Elaina's own · ${item.detail}` : item.detail))), use);
+                                             el("span", "does", item.own ? `Built in · ${item.detail}` : item.detail))), use);
       if (!item.own) {
         row.append(showSwitch("local", item.id, item.hidden, item.name));
         const remove = button("item-delete", "×", async () => {
@@ -532,7 +532,7 @@ window.modelPage = (() => {
     }
     const list = company.models.map((model) => el("div", "model-line", el("span", "", model.name),
                                                   showSwitch(company.id, model.id, model.hidden, model.name)));
-    // A key has no plan limits to show, only what her answers used; what's left is
+    // A key has no plan limits to show, only what its answers used; what's left is
     // credit on the company's own website.
     const mine = company.has_key && usage[company.id];
     const kept = mine ? savedMeter(mine) : null;
@@ -595,7 +595,7 @@ window.modelPage = (() => {
         await load(await pywebview.api.use_account(plan.id, false));
         drawTab();
       });
-      act.title = `Stop using it in Elaina. You stay signed in to ${plan.app}.`;
+      act.title = `Stop using it in Noir. You stay signed in to ${plan.app}.`;
       act.setAttribute("aria-label", act.title);
     }
     const words = el("div", "account-words", title, el("span", "", about), note);
@@ -635,7 +635,7 @@ window.modelPage = (() => {
     results.replaceChildren(
       el("div", "accounts-head",
          el("div", "", el("h2", "", "Connect an account"),
-            el("p", "sub", "Sign in with your ChatGPT or Claude account: no API key to copy. Elaina opens the sign-in for you.")),
+            el("p", "sub", "Sign in with your ChatGPT or Claude account: no API key to copy. Noir opens the sign-in for you.")),
          button("link-button", "Have an API key instead?", () => open("keys"))),
       local,
       ...(connected.length ? [el("div", "account-label", "Connected"), ...connected.map(accountRow)] : []),

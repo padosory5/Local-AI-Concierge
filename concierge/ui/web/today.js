@@ -42,7 +42,7 @@ window.today = (() => {
     saved: ["saved", "token", "tokens", "tokens kept off your cloud model", "token kept off your cloud model"],
   };
   const ROOM = ["about", "agents", "helper", "models", "reservations", "privacy", "settings"];
-  const PLACEHOLDERS = { help: "or just tell me in your own words", chat: "Message Elaina" };
+  const PLACEHOLDERS = { help: "or just tell me in your own words", chat: "Message Noir" };
 
   const LOCALE = "en-US"; // times in English like the rest of the app
   const NARROW = 1100; // below this the side list folds to icons, so the work keeps the room
@@ -51,7 +51,7 @@ window.today = (() => {
   let switchable = new Set();
   let active = new Set();
   let opened = null; // the agent on show in the agent view
-  let info = {}; // what Python says about her jobs
+  let info = {}; // what Python says about its jobs
   let chats = []; // the saved conversations, newest first
   let currentChat = null;
   let pins = new Set();
@@ -60,6 +60,7 @@ window.today = (() => {
   let view = "help";
   let home = "English"; // the computer's own language, for the translator line
   let spotOn = true;
+  let windows = true; // the Spot, highlight agents and its noticing exist only on Windows for now
   let welcomed = true;
   let role = "";
   let week = {}; // how many of each kind of job this week
@@ -114,7 +115,7 @@ window.today = (() => {
     if (ROOM.includes(name) && name !== "helper") lastRoom = name;
     view = name;
     document.body.dataset.view = name;
-    for (const part of ["welcome", "help", "chat", "today", "about", "agents", "helper", "models", "reservations", "privacy", "settings"]) {
+    for (const part of ["setup", "welcome", "help", "chat", "today", "about", "agents", "helper", "models", "reservations", "privacy", "settings"]) {
       $(`view-${part}`).hidden = part !== name;
     }
     $("room-tabs").hidden = !ROOM.includes(name);
@@ -122,8 +123,8 @@ window.today = (() => {
     $("empty").hidden = name !== "chat" || $("messages").querySelector(".row") !== null;
     document.body.classList.remove("side-over");
     $("input").dispatchEvent(new Event("input")); // its height depends on the view's font
-    $("corner").hidden = ["chat", "agents", "models", "welcome"].includes(name);
-    $("input").placeholder = name === "helper" ? `Try ${opened}: type something here` : PLACEHOLDERS[name] || "Ask Elaina anything";
+    $("corner").hidden = ["chat", "agents", "models", "welcome", "setup"].includes(name);
+    $("input").placeholder = name === "helper" ? `Try ${opened}: type something here` : PLACEHOLDERS[name] || "Ask Noir anything";
     markSide();
     drawToday();
     if (name === "today") refresh();
@@ -355,11 +356,11 @@ window.today = (() => {
     return new Date(seconds * 1000).toLocaleTimeString(LOCALE, { hour: "numeric", minute: "2-digit" });
   }
 
-  // "This week Elaina explained 34 things, translated 12 pieces and sorted 120 files."
+  // "This week Noir explained 34 things, translated 12 pieces and sorted 120 files."
   function weekWords() {
     const done = Object.entries(DID).filter(([kind]) => week[kind]).map(([kind, [verb, one, many]]) => [verb, week[kind], week[kind] === 1 ? one : many]);
     if (!done.length) return null;
-    const sentence = el("p", "week-words", "This week Elaina ");
+    const sentence = el("p", "week-words", "This week Noir ");
     done.forEach(([verb, count, noun], index) => {
       if (index) sentence.append(index === done.length - 1 ? " and " : ", ");
       sentence.append(`${verb} `, el("em", "", `${amount(verb, count)} ${noun}`));
@@ -384,7 +385,7 @@ window.today = (() => {
     const label = $("working");
     label.hidden = !working || view !== "help"; // it has a place of its own only there
     label.textContent = `${working} working now`;
-    const asking = info.noticing === null; // she hasn't been told yet whether she may notice things
+    const asking = info.noticing === null && windows; // it hasn't been told yet whether it may notice things
     $("today-count").hidden = !info.noticed && !asking;
     $("today-count").textContent = "1";
     const summary = working === 0 ? "Nothing is running right now." : working === 1 ? "1 agent is working." : `${working} agents are working.`;
@@ -420,7 +421,7 @@ window.today = (() => {
 
     if (info.noticed) {
       const { id, text, plan } = info.noticed;
-      parts.push(el("h2", "", "Elaina noticed"));
+      parts.push(el("h2", "", "Noir noticed"));
       const words = el("div", "ask-words", el("b", "", text));
       if (plan && plan.length) words.append(el("span", "", `Into ${plan.map((part) => `${part.shelf} ${part.count}`).join(" · ")}. Nothing is deleted, and you can undo it for a week.`));
       const box = el("div", "noticed", words);
@@ -461,12 +462,20 @@ window.today = (() => {
     const welcome = (await pywebview.api.welcome()) || {};
     home = welcome.home || home;
     spotOn = welcome.spot !== false;
+    windows = welcome.windows !== false;
+    if (welcome.version) $("version").textContent = `Noir ${welcome.version}`;
     welcomed = welcome.welcomed !== false;
     role = welcome.role || role;
     if (!started) {
-      // The first time, the first two minutes. Then Today, once there's something to show.
+      // Before anything else, the setup page while Ollama, its model or it is missing
+      // (setup.js). The first time after that, the first two minutes. Then Today, once
+      // there's something to show.
       started = true;
-      if (!welcomed) show("welcome");
+      const setup = (await pywebview.api.setup_state()) || {};
+      if (setup.needed) {
+        show("setup");
+        setupPage.open(setup);
+      } else if (!welcomed) show("welcome");
       else if (Object.values(week).some(Boolean) && view === "help") show("today");
     }
     helpPage.draw();
@@ -496,7 +505,7 @@ window.today = (() => {
       chats = event.chats;
       currentChat = event.current;
       drawChats();
-    } else if (event.type === "ElainaDone" || event.type === "Error") {
+    } else if (event.type === "NoirDone" || event.type === "Error") {
       modelPage.loadUsage(); // an answer from a plan or key just used some of it
     }
   });
@@ -568,7 +577,7 @@ window.today = (() => {
   placeSide();
 
   // On an agent's page, what's typed goes to that agent. This runs before
-  // app.js sends it, so Elaina sees the agent's name as if the user had typed it.
+  // app.js sends it, so Noir sees the agent's name as if the user had typed it.
   function aimAtAgent() {
     const box = $("input");
     if (view === "helper" && opened && box.value.trim() && !box.value.startsWith(`${opened}:`) && !box.value.startsWith("Change ")) {
@@ -613,7 +622,7 @@ window.today = (() => {
       setNoticing,
       LOCALE,
       agentState: () => ({ agents, switchable, active }),
-      state: () => ({ agents, switchable, active, info, home, spotOn, role, view }),
+      state: () => ({ agents, switchable, active, info, home, spotOn, windows, role, view, welcomed }),
       setRole: (id) => {
         role = id;
       },

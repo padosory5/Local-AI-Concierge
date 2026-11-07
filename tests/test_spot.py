@@ -3,8 +3,8 @@ import pytest
 from concierge import safety
 from concierge.agents import store
 from concierge.agents.recipe import CUSTOM, IN_CHAT, WHILE_ON
-from concierge.engine import ElainaEngine
-from concierge.events import ElainaText, Thinking
+from concierge.engine import NoirEngine
+from concierge.events import NoirText, Thinking
 from concierge.fake_engine import FakeEngine
 from concierge.quick import spot
 from concierge.quick.spot import DoubleTap, actions_for, job, kind_of
@@ -155,7 +155,7 @@ def test_the_spot_sits_under_the_highlight_and_moves_above_near_the_bottom():
 
 
 class LocalOnly:
-    """Her own model on this computer. The Spot must use nothing else."""
+    """Its own model on this computer. The Spot must use nothing else."""
 
     def __init__(self):
         self.asked = []
@@ -168,23 +168,23 @@ class LocalOnly:
 def test_the_spot_always_runs_on_her_own_model(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
     local = LocalOnly()
-    engine = ElainaEngine(local)
+    engine = NoirEngine(local)
     engine.chat = type("Chat", (), {"think": None, "talker": object()})()  # a cloud model picked in the menu
     assert engine.spot_run("polish", "hey send report", "") == {"text": "Could you send the report?"}
-    assert local.asked and local.asked[0][0] == "elaina"
+    assert local.asked and local.asked[0][0] == "noir"
 
 
 def test_the_spot_offers_chat_agents_but_not_highlight_ones(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
     store.save(store.Agent("Grammar Fixer", CUSTOM, {"instruction": "Fix it.", "when": IN_CHAT}))
     store.save(store.Agent("Korean translator", CUSTOM, {"instruction": "Translate.", "when": WHILE_ON}))
-    found = words(ElainaEngine(LocalOnly()).spot_actions("me and him goes", True))
+    found = words(NoirEngine(LocalOnly()).spot_actions("me and him goes", True))
     assert "Grammar Fixer" in found and "Korean translator" not in found
 
 
 def test_nothing_to_work_on_is_said_plainly(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
-    assert "Highlight something" in ElainaEngine(LocalOnly()).spot_run("polish", "  ", "")["error"]
+    assert "Highlight something" in NoirEngine(LocalOnly()).spot_run("polish", "  ", "")["error"]
 
 
 def test_the_practice_spot_answers_without_a_model():
@@ -211,11 +211,11 @@ def test_ordinary_words_are_not_a_crisis(text):
 
 def test_the_crisis_reply_comes_before_anything_else(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
-    engine = ElainaEngine(LocalOnly())
+    engine = NoirEngine(LocalOnly())
     engine.builder = engine.planner = None  # never reached
     events = list(engine._handle("I want to end my life"))
     assert isinstance(events[0], Thinking)
-    said = "".join(event.text for event in events if isinstance(event, ElainaText))
+    said = "".join(event.text for event in events if isinstance(event, NoirText))
     assert said == safety.CRISIS_REPLY
 
 

@@ -1,11 +1,11 @@
 from concierge import events
-from concierge.engine import ElainaEngine
+from concierge.engine import NoirEngine
 from concierge.events import (
     AgentCard,
     AgentList,
     ChatList,
-    ElainaDone,
-    ElainaText,
+    NoirDone,
+    NoirText,
     Error,
     Progress,
     Question,
@@ -27,8 +27,8 @@ def test_chat_streams_then_finishes():
     evts = list(FakeEngine(delay=0).send("hello"))
     assert isinstance(evts[0], ChatList)  # a new conversation appears in the list first
     evts = evts[1:]
-    assert all(isinstance(e, ElainaText) for e in evts[:-1])
-    assert isinstance(evts[-1], ElainaDone)
+    assert all(isinstance(e, NoirText) for e in evts[:-1])
+    assert isinstance(evts[-1], NoirDone)
 
 
 def test_full_agent_setup_flow():
@@ -54,7 +54,7 @@ def test_cancel_and_unknown_choice():
     list(engine.send("make an agent"))
     list(engine.send("Documents"))
     card = next(engine.choose("file_types", "Everything"))
-    assert ElainaDone in types(engine.choose(card.id, "Cancel"))
+    assert NoirDone in types(engine.choose(card.id, "Cancel"))
     assert types(engine.choose("nope", "x")) == [Error]
 
 
@@ -74,4 +74,4 @@ def test_events_become_json_ready_dicts():
 def test_both_engines_offer_the_same_methods():
     for name in ("startup", "send", "choose", "reset", "close"):
         assert callable(getattr(FakeEngine, name))
-        assert callable(getattr(ElainaEngine, name))
+        assert callable(getattr(NoirEngine, name))

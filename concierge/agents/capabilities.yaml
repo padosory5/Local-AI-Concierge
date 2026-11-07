@@ -1,6 +1,6 @@
 # The building blocks an agent can be made of.
 #
-# When the user describes an idea, Elaina's model breaks it into these blocks
+# When the user describes an idea, Noir's model breaks it into these blocks
 # (it can only pick ids from this list, or "other"). Code then decides what
 # is possible from the fields below, never the model.
 #
@@ -9,7 +9,7 @@
 #   name     What the user sees on the idea card.
 #   ai       What it needs:
 #              none    plain code
-#              small   Elaina's own model is enough
+#              small   Noir's own model is enough
 #              large   a bigger general model (8B and up)
 #              vision  a model that understands images
 #              speech  a speech-to-text model

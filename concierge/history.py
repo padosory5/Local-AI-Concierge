@@ -1,9 +1,9 @@
 """The user's past conversations with ChatGPT and Claude, read from the files those
-services let people download, so Elaina can get to know them (portrait.py).
+services let people download, so Noir can get to know them (portrait.py).
 
 Nothing here is automatic: both companies keep the chats on their own servers, so
 the user asks once for a download (Settings, then Export data) and gets a zip by
-email. Elaina never signs in as the user and never reads their screen.
+email. Noir never signs in as the user and never reads their screen.
 
 Only the user's own side is kept. The answers were written by another AI and say
 little about the person, and keeping them would copy someone's whole chat history
@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from .elaina import data_dir
+from .noir import data_dir
 
 CHATGPT, CLAUDE = "ChatGPT", "Claude"
 # Where each company's download button is. They move now and then, so the windows

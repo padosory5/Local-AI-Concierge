@@ -5,7 +5,7 @@ fit it (your own writing gets polish and shorten, something you're reading gets
 explain and translate, an error message gets what it means), and the answer
 goes straight back into the program. Nothing to copy into another window.
 
-The job always runs on Elaina's own model, on this computer, whatever is picked
+The job always runs on Noir's own model, on this computer, whatever is picked
 in the model menu: the Spot can be opened over anything in any program, so what
 it reads is never sent to a cloud model.
 """
@@ -13,7 +13,10 @@ it reads is never sent to a cloud model.
 from __future__ import annotations
 
 import ctypes
+import os
 import re
+import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -45,11 +48,24 @@ ACTIONS = {
 
 
 def home_language() -> str:
-    """The language Windows shows itself in: Korean on a Korean computer, English otherwise."""
-    try:
-        return "Korean" if ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF == 0x12 else "English"
-    except (AttributeError, OSError):
-        return "English"
+    """The language the computer shows itself in: Korean on a Korean computer, English otherwise."""
+    if sys.platform == "win32":
+        try:
+            return "Korean" if ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF == 0x12 else "English"
+        except (AttributeError, OSError):
+            return "English"
+    first = ""
+    if sys.platform == "darwin":
+        # The Mac's own list, first language first. An app opened from Finder has no LANG to read.
+        try:
+            listed = subprocess.run(["defaults", "read", "-g", "AppleLanguages"], capture_output=True,
+                                    text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            listed = ""
+        found = re.search(r'"([A-Za-z]+)', listed)
+        first = found.group(1) if found else ""
+    code = (first or os.environ.get("LANG", ""))[:2].lower()
+    return "Korean" if code == "ko" else "English"
 
 
 def kind_of(text: str, editable: bool) -> str:

@@ -1,5 +1,5 @@
-# The one template every agent Elaina makes from parts shares. It is not a
-# kind of agent: the idea planner decides which parts an idea needs, Elaina
+# The one template every agent Noir makes from parts shares. It is not a
+# kind of agent: the idea planner decides which parts an idea needs, Noir
 # writes the instruction (what to do with the text), and these slots hold the
 # result so every such agent is shown, changed and run the same way
 # (agents/recipe.py, quick/agents.py). A translator, a word explainer and a

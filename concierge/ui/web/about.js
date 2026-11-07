@@ -1,5 +1,5 @@
-// Getting to know the user: About you in Elaina's room, and the first two minutes
-// (view-welcome), which share what she found out (portrait.py through TodayBridge).
+// Getting to know the user: About you in Noir's room, and the first two minutes
+// (view-welcome), which share what it found out (portrait.py through TodayBridge).
 // Everything here only draws what Python says; the facts, the hours and the roles
 // are worked out there.
 
@@ -13,7 +13,7 @@ window.aboutPage = (() => {
     ChatGPT: [["Open ", "Settings"], ["", "Data controls", ", then ", "Export data"]],
     Claude: [["Open ", "Settings"], ["", "Privacy", ", then ", "Export data"]],
   };
-  // What she offers for each kind of help someone asked other AIs for most:
+  // What it offers for each kind of help someone asked other AIs for most:
   // [words in bold, the rest]. Kinds not here get no offer.
   const OFFERS = {
     writing: ["I can do this right where you write:", " highlight it and tap Ctrl twice."],
@@ -26,7 +26,7 @@ window.aboutPage = (() => {
     planning: ["Tell me an idea,", " and I'll say honestly whether I can make it."],
   };
   const ROLE_NAMES = { developer: "a developer", student: "a student", office: "an office worker" };
-  // What people do most on their computer (signs.activities), beside what she can do about it.
+  // What people do most on their computer (signs.activities), beside what it can do about it.
   const DOING = {
     ai: ["AI tools", "I'm an AI too, right here:", " free, private and with no limits.", "chat"],
     browsing: ["Browsing the web", "Highlight anything you read on a page,", " and a bubble explains it.", "explain"],
@@ -39,10 +39,10 @@ window.aboutPage = (() => {
     games: ["Games", "I step out of the way", " while you play.", ""],
   };
 
-  let knowing = null; // what she understood about the user, once asked
-  let reading = ""; // what she's doing right now, said while she does it
+  let knowing = null; // what it understood about the user, once asked
+  let reading = ""; // what it's doing right now, said while it does it
   let readProblem = "";
-  let arrived = ""; // chats she picked up from Downloads by herself
+  let arrived = ""; // chats it picked up from Downloads by itself
   let forgetting = false; // "Forget all of this" was clicked once
 
   function exportCards() {
@@ -73,7 +73,7 @@ window.aboutPage = (() => {
     return Boolean(made && (made.made || made.computer));
   }
 
-  // One way of bringing chats in, then working out what she can. `fetch` gets them,
+  // One way of bringing chats in, then working out what it can. `fetch` gets them,
   // `waiting` is said meanwhile ("" when a file picker is showing), `after` redraws.
   async function readChats(after, waiting, fetch) {
     readProblem = "";
@@ -107,7 +107,7 @@ window.aboutPage = (() => {
     after();
   }
 
-  // Called from Python when chats she was waiting for landed in Downloads and were read.
+  // Called from Python when chats it was waiting for landed in Downloads and were read.
   function chatsArrived(found) {
     arrived = found.error || `Your ${found.sources.join(" and ")} chats arrived, and I read ${found.read} of them.`;
     if (state().view === "about") drawAbout();
@@ -134,11 +134,14 @@ window.aboutPage = (() => {
     return (made.kinds || []).filter((kind) => !["other", "personal"].includes(kind.id)).slice(0, count);
   }
 
-  // What she can do about something, right there: a switch for a Help me line, Ask
+  // What it can do about something, right there: a switch for a Help me line, Ask
   // for a line that's a request, Ask me something for the chat, or nothing.
   function actionFor(topicId) {
     if (topicId === "chat") return button("line-button", "Ask me something", () => show("chat"));
     const topic = TOPICS.find((one) => one.id === topicId);
+    if (topic && ["agent", "spot", "notice"].includes(topic.kind) && !state().windows) {
+      return el("span", "kept", "Windows for now");
+    }
     if (topic && ["agent", "spot", "notice", "add"].includes(topic.kind)) {
       return isOn(topic) ? el("span", "kept", "On")
         : button("line-button", "Turn on", async () => {
@@ -146,7 +149,7 @@ window.aboutPage = (() => {
           drawAbout();
         });
     }
-    if (topic && topic.kind === "say") return button("line-button", "Ask Elaina", () => app.say(topic.say));
+    if (topic && topic.kind === "say") return button("line-button", "Ask Noir", () => app.say(topic.say));
     return el("span");
   }
 
@@ -202,7 +205,7 @@ window.aboutPage = (() => {
     return /:/.test(day) ? `today at ${day}` : day === "Yesterday" ? "yesterday" : `on ${day}`;
   }
 
-  // The two ways of telling her more: looking around, and chats.
+  // The two ways of telling it more: looking around, and chats.
   function tellMore(made) {
     const looked = made && made.computer && made.computer.looked;
     const lookCard = el("div", "tell-card",
@@ -292,10 +295,12 @@ window.aboutPage = (() => {
   let measured = null;
   let tried = false;
 
+  // Step 2 is the Spot, which a Mac doesn't have yet, so there the steps go 1, 3, 4 and are numbered 1, 2, 3.
   function steps() {
-    const names = ["Your computer", "Try it anywhere", "Get to know you", "Who are you"];
-    return el("div", "steps", ...names.map((name, index) =>
-      el("span", index + 1 === step ? "now" : "", el("b", "", String(index + 1)), name)));
+    const names = [[1, "Your computer"], [2, "Try it anywhere"], [3, "Get to know you"], [4, "Who are you"]]
+      .filter(([which]) => which !== 2 || state().windows);
+    return el("div", "steps", ...names.map(([which, name], index) =>
+      el("span", which === step ? "now" : "", el("b", "", String(index + 1)), name)));
   }
 
   function next(to) {
@@ -331,7 +336,9 @@ window.aboutPage = (() => {
         parts.push(el("div", "week-cards", ...cells));
       }
       parts.push(el("p", "promise", "No subscription · No limits · Works without internet · Nothing leaves this computer"),
-                 el("div", "actions", button("solid-button", "Next: try it in any app", () => next(2)), skip));
+                 el("div", "actions", state().windows
+                   ? button("solid-button", "Next: try it in any app", () => next(2))
+                   : button("solid-button", "Next", () => next(3)), skip));
     } else if (step === 2) {
       parts.push(el("h1", "welcome-title", tried ? "That's it. It works in every app." : "Try it in any app."));
       if (!tried) {
@@ -352,14 +359,14 @@ window.aboutPage = (() => {
         const headline = doingSentence(knowing) || (looksLike(knowing).length && rolesSentence(knowing));
         if (headline) parts.push(headline);
         if (doingSentence(knowing) && looksLike(knowing).length) parts.push(el("p", "sub", rolesSentence(knowing).textContent));
-        parts.push(el("p", "sub", facts ? `I found ${facts} thing${facts === 1 ? "" : "s"} about you. Check them any time in Elaina's room, under About you. I only remember the ones you keep.`
+        parts.push(el("p", "sub", facts ? `I found ${facts} thing${facts === 1 ? "" : "s"} about you. Check them any time in Settings, under About you. I only remember the ones you keep.`
                                         : "Nothing stood out, so I won't guess."),
                    el("div", "actions", button("solid-button", "Next", () => next(4))));
       } else {
         parts.push(el("p", "sub", "I can look around this computer: which apps you have and use most, what you work on lately, and the kinds of files you keep. Only names and counts, never what's inside a file, and nothing leaves this computer."),
                    el("div", "actions", button("solid-button", "Look around", () => lookAround(drawWelcome)),
                       button("quiet-button", "I'll do it later", () => next(4))),
-                   el("p", "hint-line", "Used ChatGPT or Claude? You can add your chats any time in Elaina's room, under About you."));
+                   el("p", "hint-line", "Used ChatGPT or Claude? You can add your chats any time in Settings, under About you."));
       }
     } else {
       parts.push(el("h1", "welcome-title", "Who are you?"),

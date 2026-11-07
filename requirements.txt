@@ -4,13 +4,14 @@ PyYAML>=6.0
 pywebview>=6.2
 pypdf>=4.0
 python-docx>=1.1
-# Switch-on agents (concierge/quick/): mouse highlights, clipboard and
-# reading selected text through Windows' accessibility interface.
-pynput>=1.7
+# Switch-on agents and the Spot (concierge/quick/): mouse highlights, Ctrl tapped
+# twice, the clipboard and selected text through Windows' accessibility
+# interface. Windows for now: a Mac gets the window and the chat.
+pynput>=1.7; sys_platform == "win32"
 pywin32>=306; sys_platform == "win32"
 uiautomation>=2.0; sys_platform == "win32"
-# The small icon by the clock (concierge/ui/tray.py).
-pystray>=0.19
+# The small icon by the clock (concierge/ui/tray.py). Windows for now.
+pystray>=0.19; sys_platform == "win32"
 Pillow>=10
 keyring>=25
 # Looking things up on the web for answers that change (concierge/research.py).

@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 .env
+# What packaging/build.py makes.
+build/
+dist/
+packaging/icons/

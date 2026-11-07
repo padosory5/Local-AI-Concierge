@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 
 from ..agents.store import Agent
-from ..elaina import KEEP_ALIVE
+from ..noir import KEEP_ALIVE
 from ..ollama import Ollama, OllamaError
 from .translate import looks_like
 

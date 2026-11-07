@@ -44,7 +44,7 @@ def translator():
 
 
 def builder(model=None):
-    return AgentBuilder(model or FakeModel(), "elaina", None, BLUEPRINTS)
+    return AgentBuilder(model or FakeModel(), "noir", None, BLUEPRINTS)
 
 
 # --------------------------------------------------------------- editing
@@ -124,7 +124,7 @@ def test_router_knows_a_change_from_a_job(translator):
     assert not wants_change("Korean translator: keep calm and carry on", agents[0])
     assert not wants_change("make another Korean translator agent", agents[0])
     assert refers_to("the translation keeps disappearing", agents, BLUEPRINTS).name == "Korean translator"
-    where = route(FakeModel(), "elaina", "I want the Korean translator to use the clipboard instead",
+    where = route(FakeModel(), "noir", "I want the Korean translator to use the clipboard instead",
                   BLUEPRINTS, agents)
     assert where.kind == "change_agent" and where.agent == "Korean translator"
 
@@ -135,7 +135,7 @@ def test_two_agents_alike_need_a_name(translator):
 
 
 def test_make_another_named_agent_is_never_a_job_for_it(translator):
-    where = route(FakeModel(), "elaina", "make another Korean translator agent", BLUEPRINTS, store.list_agents())
+    where = route(FakeModel(), "noir", "make another Korean translator agent", BLUEPRINTS, store.list_agents())
     assert where.kind != "run_agent"  # never translated as if it were text to translate
 
 
@@ -143,7 +143,7 @@ def test_make_another_named_agent_is_never_a_job_for_it(translator):
 
 
 def test_changed_settings_reach_an_agent_that_is_on(translator):
-    q = QuickAgents(FakeModel(), "elaina", None, lambda *a: type("W", (), {"start": lambda s: None,
+    q = QuickAgents(FakeModel(), "noir", None, lambda *a: type("W", (), {"start": lambda s: None,
                     "stop": lambda s: None})(), lambda: type("B", (), {"close": lambda s: None,
                     "pressed": lambda s, x, y: None})())
     q.switch(translator, True)

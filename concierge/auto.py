@@ -1,4 +1,4 @@
-"""Auto: for each chat message, Elaina decides whether her own model can answer it
+"""Auto: for each chat message, Noir decides whether its own model can answer it
 or it's worth the user's plan (Claude through Claude Code, ChatGPT through Codex) or
 API key. Most of what people ask is small, and every answer from a plan uses part of
 it, so the small things stay on this computer.
@@ -7,8 +7,8 @@ Asking the plan's model to decide would cost as much as answering: Claude Code r
 about 29k tokens of its own instructions with every question. So the decision never
 leaves the computer. Plain code places the clear cases (pasted code, a proof, an essay,
 a greeting, a translation) the same on every computer. Only an unclear message goes to
-her small model, and only to fill in one word from `KINDS`; code turns that word into
-here or the plan. Whether a kind can stay here depends on how big her own model is
+its small model, and only to fill in one word from `KINDS`; code turns that word into
+here or the plan. Whether a kind can stay here depends on how big its own model is
 (`STAY_HERE`), not on how well it judges. When in doubt, the plan answers: a wasted
 question costs a little of the plan, a bad answer costs the user's trust.
 
@@ -27,7 +27,7 @@ HERE, CLOUD = "here", "cloud"
 AUTO = "auto"  # the model menu's provider id for Auto
 KINDS = ("small_talk", "quick_fact", "rewrite", "suggestion", "explain", "writing", "planning",
          "analysis", "code", "math")
-# What her own model answers well enough, by its size. Code, maths and weighing up
+# What its own model answers well enough, by its size. Code, maths and weighing up
 # options always go to the plan: a small mistake there is a wrong answer.
 SMALL, MEDIUM, LARGE = "small", "medium", "large"
 STAY_HERE = {
@@ -36,7 +36,7 @@ STAY_HERE = {
     LARGE: {"small_talk", "quick_fact", "rewrite", "suggestion", "explain", "writing", "planning"},
 }
 MEDIUM_FROM_B, LARGE_FROM_B = 7, 14  # billions of parameters
-NEARLY_OUT = 0.8  # the plan's fullest window: from here, treat her model as one size bigger
+NEARLY_OUT = 0.8  # the plan's fullest window: from here, treat its model as one size bigger
 USED_UP = 0.98  # from here, everything stays here until the window starts again
 LONG_CHARS = 1200  # a message this long is real work
 FOLLOW_UP_WORDS = 6
@@ -96,7 +96,7 @@ class Decision:
 
 
 def strength(base_model: str) -> str:
-    """How much her own model can take on, from its size in the tag ("qwen3.5:4b").
+    """How much its own model can take on, from its size in the tag ("qwen3.5:4b").
     Unknown counts as small: then more goes to the plan, never less."""
     found = re.search(r"(\d+(?:\.\d+)?)b\b", base_model.lower())
     size = float(found.group(1)) if found else 0
@@ -190,7 +190,7 @@ CLOUD_WORDS = {
 
 
 def say(decision: Decision, cloud: str, plan: bool = True) -> str:
-    """Her one line about where this message goes and why, in plain words."""
+    """It one line about where this message goes and why, in plain words."""
     saving = "plan" if plan else "tokens"
     if decision.where == HERE:
         line = HERE_WORDS.get(decision.kind, "Auto: my model on this computer can handle this, "
@@ -201,7 +201,7 @@ def say(decision: Decision, cloud: str, plan: bool = True) -> str:
 
 
 def model_form(ollama, model: str):
-    """Her small model, asked to fill in one word. The schema only allows KINDS."""
+    """Its small model, asked to fill in one word. The schema only allows KINDS."""
     schema = {"type": "object", "properties": {"kind": {"enum": list(KINDS)}}, "required": ["kind"]}
     meanings = (
         "small_talk: greetings, thanks, feelings, chatting, jokes\n"
@@ -230,7 +230,7 @@ _lock = threading.Lock()
 
 
 def _log_path() -> Path:
-    from .elaina import data_dir
+    from .noir import data_dir
     return data_dir() / "auto.json"
 
 

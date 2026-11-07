@@ -1,12 +1,12 @@
-"""Elaina minimized: a small circle in the corner, just above the taskbar.
+"""Noir minimized: a small circle in the corner, just above the taskbar.
 
-She says what she's doing without words. Print dots drift slowly while she
-waits, a line runs round her while a job is going, and rings open out of her
-when she has a question. Clicking her opens the see-through window.
+It says what it's doing without words. Print dots drift slowly while it
+waits, a line runs round it while a job is going, and rings open out of it
+when it has a question. Clicking it opens the see-through window.
 
 Every picture is drawn once at the start, with soft edges no web page could
-have on Windows, and shown one after another, so she costs almost nothing while
-she sits there. During games, videos and slideshows she steps out of the way.
+have on Windows, and shown one after another, so it costs almost nothing while
+it sits there. During games, videos and slideshows it steps out of the way.
 """
 
 from __future__ import annotations
@@ -20,12 +20,12 @@ from ctypes import wintypes
 
 from ..quick.glow import Layer, full_screen_in_use, pump, real_pixels, work_screen
 
-MINI_SIZE = 72  # the whole picture in logical pixels, with room for her shadow and rings
+MINI_SIZE = 72  # the whole picture in logical pixels, with room for its shadow and rings
 EDGE_GAP = 8  # from the edges of the screen, above the taskbar
-DISC_SHARE = 0.33  # her radius, as a share of the picture
+DISC_SHARE = 0.33  # its radius, as a share of the picture
 FRAMES = 60
 FRAME_SECONDS = 0.05  # 20 pictures a second: slow movement doesn't need more
-RESTING, BRIGHT = 225, 255  # how solid she is, and when the mouse is on her
+RESTING, BRIGHT = 225, 255  # how solid it is, and when the mouse is on it
 FADE_STEP = 24
 FULL_SCREEN_CHECK_SECONDS = 2.0
 IDLE, WORKING, ASKING = "idle", "working", "asking"
@@ -51,7 +51,7 @@ def premultiplied(picture) -> bytes:
 
 
 def draw_frames(state: str, size: int, count: int = FRAMES) -> list[bytes]:
-    """One full turn of her animation. Drawn three times too big, then shrunk,
+    """One full turn of its animation. Drawn three times too big, then shrunk,
     which is what makes the edges smooth."""
     from PIL import Image, ImageDraw, ImageFilter
 
@@ -71,7 +71,7 @@ def draw_frames(state: str, size: int, count: int = FRAMES) -> list[bytes]:
         picture = shadow.copy()
         draw = ImageDraw.Draw(picture)
         draw.ellipse((middle - radius, middle - radius, middle + radius, middle + radius), fill=(0, 0, 0, 255))
-        # The light on her drifts slowly round, so the dots swell and shrink.
+        # The light on its drifts slowly round, so the dots swell and shrink.
         light_x = middle + math.cos(turn) * radius * 0.38 - radius * 0.1
         light_y = middle + math.sin(turn) * radius * 0.38 - radius * 0.14
         for x, y in spots:
@@ -121,7 +121,7 @@ class Mini:
         if threading.current_thread() is not self._thread:
             self._thread.join(timeout=2)
 
-    # Everything below runs on her own thread.
+    # Everything below runs on its own thread.
 
     def _run(self) -> None:
         real_pixels()

@@ -101,7 +101,7 @@ def quick():
         made.bubbles.append(FakeBubble())
         return made.bubbles[-1]
 
-    q = QuickAgents(FakeOllama(), "elaina", None, watcher, bubble, made.clipboard.append,
+    q = QuickAgents(FakeOllama(), "noir", None, watcher, bubble, made.clipboard.append,
                     lambda: made.highlight)
     return q, made
 

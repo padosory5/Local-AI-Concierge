@@ -1,4 +1,4 @@
-"""Elaina's small question, next to where she sits in the corner of the screen.
+"""Noir's small question, next to where it sits in the corner of the screen.
 
 One short line with Yes and No. It floats over every program and never takes
 the keyboard, so whatever the user was doing stays where it was. Left alone, it
@@ -9,20 +9,24 @@ from __future__ import annotations
 
 import ctypes
 import gc
+import sys
 import threading
 
 from .bubble import GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST
 from .glow import real_pixels, work_screen
 
 COLORS = {"bg": "#0a090c", "line": "#3a3340", "text": "#fbfafc", "yes": "#c4b4cc", "yes_text": "#000000", "no": "#c4b4cc"}
-CIRCLE_ROOM = 84  # kept free at the right, where minimized Elaina sits
+CIRCLE_ROOM = 84  # kept free at the right, where minimized Noir sits
 BOTTOM_GAP = 16
 SHOW_SECONDS = 30
 CHECK_MS = 200
-ARRIVE_STEPS, ARRIVE_MS, ARRIVE_PIXELS = 9, 16, 3  # it slides out from her and fades in
+ARRIVE_STEPS, ARRIVE_MS, ARRIVE_PIXELS = 9, 16, 3  # it slides out from it and fades in
 SOLID = 0.97
 
-_user32 = ctypes.windll.user32
+if sys.platform == "win32":
+    _user32 = ctypes.windll.user32
+else:  # the note is Windows only for now; elsewhere the module imports and nothing asks
+    _user32 = None
 
 
 def ask(text: str, yes: str, no: str, cancel: threading.Event, seconds: float = SHOW_SECONDS) -> str | None:

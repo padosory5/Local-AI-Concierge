@@ -1,9 +1,9 @@
-# A blueprint is a tested agent template. Elaina never designs agents from
-# scratch: she picks a blueprint and fills in its slots with the user.
+# A blueprint is a tested agent template. Noir never designs agents from
+# scratch: it picks a blueprint and fills in its slots with the user.
 #
 #   id           Stable name, used in saved agents.
 #   name         What the user sees as the agent's kind.
-#   pitch        One sentence Elaina says when she offers it.
+#   pitch        One sentence Noir says when it offers it.
 #   when         For the router: what kind of request this blueprint fits.
 #   examples     Requests it fits, for the router and its tests.
 #   slots        What the interview fills in. `ask` is the question, or null

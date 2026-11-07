@@ -1,11 +1,11 @@
 import json
 
-from concierge import elaina
+from concierge import noir
 from concierge.agents import store
 from concierge.agents.blueprint import load_blueprints
 from concierge.agents.builder import AgentBuilder
 from concierge.cli import TerminalScreen
-from concierge.events import ElainaText, IdeaCard, Question, Thinking
+from concierge.events import NoirText, IdeaCard, Question, Thinking
 from concierge.fake_engine import FakeEngine
 from concierge.ui.window import ChatBridge, ChatHub
 
@@ -29,7 +29,7 @@ class ThinkingModel:
 
 
 def test_think_through_streams_thoughts_then_the_reply():
-    chat = elaina.ElainaChat(ThinkingModel())
+    chat = noir.NoirChat(ThinkingModel())
     assert chat.can_think
     parts = list(chat.think_through("hello"))
     kinds = [k for k, _ in parts]
@@ -49,11 +49,11 @@ def test_a_model_that_thinks_and_never_answers_is_asked_to_just_answer():
             assert think is False  # no more thinking this time
             yield "Saturday at noon."
 
-    chat = elaina.ElainaChat(Lost())
+    chat = noir.NoirChat(Lost())
     chat.attach("notes.txt says the picnic is on Saturday at noon.", [])
     said = "".join(piece for kind, piece in chat.think_through("When is it?") if kind == "text")
     assert said == "Saturday at noon."
-    # The file stays in her memory, because the question was answered after all.
+    # The file stays in its memory, because the question was answered after all.
     assert "notes.txt" in chat.history[0]["content"]
 
 
@@ -71,9 +71,9 @@ def test_thinking_that_runs_on_is_stopped_before_it_fills_the_model():
         def chat(self, model, messages, think=None, options=None, keep_alive=None):
             yield "Here is my answer."
 
-    parts = list(elaina.ElainaChat(Rambling()).think_through("hello"))
+    parts = list(noir.NoirChat(Rambling()).think_through("hello"))
     thought = sum(len(piece) for kind, piece in parts if kind == "thought")
-    assert thought < elaina.MAX_THOUGHT_CHARS * 2
+    assert thought < noir.MAX_THOUGHT_CHARS * 2
     assert parts[-1] == ("text", "Here is my answer.")
     assert stopped == [True]
 
@@ -83,7 +83,7 @@ def test_a_model_without_thinking_says_it_cannot():
         def capabilities(self, name):
             return ["completion"]
 
-    assert not elaina.ElainaChat(Plain()).can_think
+    assert not noir.NoirChat(Plain()).can_think
 
 
 def test_composing_shows_the_instruction_it_wrote(tmp_path, monkeypatch):
@@ -95,7 +95,7 @@ def test_composing_shows_the_instruction_it_wrote(tmp_path, monkeypatch):
             return {"name": "Korean translator", "instruction": "Translate the text into Korean.",
                     "example": "Good morning"}
 
-    builder = AgentBuilder(Writer(), "elaina", None, load_blueprints())
+    builder = AgentBuilder(Writer(), "noir", None, load_blueprints())
     events = list(builder.compose("translate what I highlight into Korean", ["while_on", "selected_text"]))
     step = next(e for e in events if isinstance(e, Thinking))
     assert step.kind == "step" and step.text == 'Wrote what it does: "Translate the text into Korean."'
@@ -107,7 +107,7 @@ def test_fake_engine_streams_thinking_when_asked():
     events = list(engine.send("hello", think=True))
     thinking = [e for e in events if isinstance(e, Thinking)]
     assert thinking[0].kind == "step" and {e.kind for e in thinking[1:]} == {"thought"}
-    first_text = next(i for i, e in enumerate(events) if isinstance(e, ElainaText))
+    first_text = next(i for i, e in enumerate(events) if isinstance(e, NoirText))
     assert all(isinstance(e, Thinking) for e in events[1:first_text])  # fog comes before the answer
     assert not any(isinstance(e, Thinking) for e in FakeEngine(delay=0).send("hello"))
 
@@ -126,11 +126,11 @@ def test_terminal_draws_thinking_dimmed(capsys):
     screen.draw(Thinking("This asks for a new agent: Highlight translator."))
     screen.draw(Thinking("Let me think. ", "thought"))
     screen.draw(Thinking("Done.", "thought"))
-    screen.draw(ElainaText("Hello"))
+    screen.draw(NoirText("Hello"))
     out = capsys.readouterr().out
     assert "· This asks for a new agent" in out
     assert "(thinking) Let me think. Done." in out
-    assert out.index("Done.") < out.index("Elaina: Hello")
+    assert out.index("Done.") < out.index("Noir: Hello")
 
 
 def test_idea_card_comes_after_its_steps():
@@ -143,7 +143,7 @@ def test_idea_card_comes_after_its_steps():
                 {"block": "while_on", "detail": ""}, {"block": "selected_text", "detail": ""},
                 {"block": "translate", "detail": "simple Korean"}, {"block": "show_popup", "detail": ""}]}
 
-    p = IdeaPlanner(Planner(), "elaina", None, lambda: (machine(gpus=[nvidia(16)]), 3.8), load_blueprints())
+    p = IdeaPlanner(Planner(), "noir", None, lambda: (machine(gpus=[nvidia(16)]), 3.8), load_blueprints())
     events = list(p.start("explain words I highlight in simple Korean"))
     assert isinstance(events[0], Thinking) and events[0].text.startswith("Broke the idea into parts:")
     assert isinstance(events[-1], IdeaCard)

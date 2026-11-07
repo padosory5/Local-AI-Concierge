@@ -1,4 +1,4 @@
-/* The card that grows out of minimized Elaina (glass.html). Windows lets a little
+/* The card that grows out of minimized Noir (glass.html). Windows lets a little
    of the screen through; the page stays solid enough to read over anything. */
 
 @font-face {
@@ -182,7 +182,7 @@ body.talking #thread {
   overflow-wrap: anywhere;
 }
 
-.her {
+.reply {
   align-self: flex-start;
   max-width: 96%;
   line-height: 1.45;
@@ -190,7 +190,7 @@ body.talking #thread {
   white-space: pre-wrap;
 }
 
-.her.problem {
+.reply.problem {
   color: #f4b0a8;
 }
 
@@ -296,7 +296,7 @@ body.talking #thread {
   font-weight: 600;
 }
 
-/* What she needs answered comes first, and stands out. */
+/* What it needs answered comes first, and stands out. */
 .question {
   display: flex;
   align-items: center;

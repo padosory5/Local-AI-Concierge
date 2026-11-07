@@ -2,9 +2,9 @@ import base64
 
 from concierge.attachments import MAX_CHARS, MAX_CHARS_PER_FILE, read_attachments
 from concierge.conversations import ChatBook
-from concierge.elaina import ElainaChat
-from concierge.engine import ElainaEngine
-from concierge.events import ElainaDone, ElainaText, Thinking
+from concierge.noir import NoirChat
+from concierge.engine import NoirEngine
+from concierge.events import NoirDone, NoirText, Thinking
 
 
 class FakeOllama:
@@ -24,9 +24,9 @@ class FakeOllama:
 
 
 def engine_with(ollama, tmp_path):
-    engine = ElainaEngine(ollama)
+    engine = NoirEngine(ollama)
     engine.book = ChatBook(None)
-    engine.chat = ElainaChat(ollama)
+    engine.chat = NoirChat(ollama)
     return engine
 
 
@@ -78,9 +78,9 @@ def test_pictures_and_folders_are_kept_apart_from_text(tmp_path):
     assert attached.folders == [str(tmp_path / "docs")]
 
 
-def test_elaina_reads_a_file_and_still_knows_it_next_time(tmp_path):
+def test_noir_reads_a_file_and_still_knows_it_next_time(tmp_path):
     ollama = FakeOllama()
-    chat = ElainaChat(ollama)
+    chat = NoirChat(ollama)
     chat.attach("Picnic on Saturday", [])
     list(chat.send("When is it?"))
     assert "Picnic on Saturday" in ollama.sent[-1]["content"]
@@ -90,7 +90,7 @@ def test_elaina_reads_a_file_and_still_knows_it_next_time(tmp_path):
 
 def test_a_picture_only_goes_with_its_own_message(tmp_path):
     ollama = FakeOllama(["completion", "vision"])
-    chat = ElainaChat(ollama)
+    chat = NoirChat(ollama)
     chat.attach("", ["AAAA"])
     list(chat.send("What's this?"))
     assert ollama.sent[-1]["images"] == ["AAAA"]
@@ -106,8 +106,8 @@ def test_a_message_with_a_file_skips_the_router(tmp_path):
     engine.builder = engine.planner = None
     events = list(engine.send_files("When is it?", [str(tmp_path / "notes.txt")]))
     assert any(isinstance(e, Thinking) and "notes.txt" in e.text for e in events)
-    assert "".join(e.text for e in events if isinstance(e, ElainaText)) == "The picnic is on Saturday."
-    assert any(isinstance(e, ElainaDone) for e in events)
+    assert "".join(e.text for e in events if isinstance(e, NoirText)) == "The picnic is on Saturday."
+    assert any(isinstance(e, NoirDone) for e in events)
     assert "Attached: notes.txt" in engine.book.current.items[0]["text"]
 
 
@@ -116,7 +116,7 @@ def test_a_picture_for_a_model_that_cant_see_says_so(tmp_path):
     ollama = FakeOllama(["completion"])
     engine = engine_with(ollama, tmp_path)
     events = list(engine.send_files("What's this?", [str(tmp_path / "a.png")]))
-    assert "can't look at pictures" in "".join(e.text for e in events if isinstance(e, ElainaText))
+    assert "can't look at pictures" in "".join(e.text for e in events if isinstance(e, NoirText))
     assert ollama.sent is None  # never pretends to have looked
 
 
@@ -133,5 +133,5 @@ def test_nothing_readable_is_said_plainly(tmp_path):
     ollama = FakeOllama()
     engine = engine_with(ollama, tmp_path)
     events = list(engine.send_files("", [str(tmp_path / "app.exe")]))
-    assert "couldn't read" in "".join(e.text for e in events if isinstance(e, ElainaText))
+    assert "couldn't read" in "".join(e.text for e in events if isinstance(e, NoirText))
     assert ollama.sent is None

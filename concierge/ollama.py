@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import requests
 
@@ -54,26 +55,53 @@ class Ollama:
         return self._get("/api/version")["version"]
 
     @staticmethod
-    def is_installed() -> bool:
-        return shutil.which("ollama") is not None
+    def find_program() -> str:
+        """Ollama's own program: on the PATH, or where its installer puts it. An app
+        started from the Start menu or Finder keeps the PATH it was born with, so an
+        Ollama installed a minute ago is looked for by name too."""
+        found = shutil.which("ollama")
+        if found:
+            return found
+        home = Path.home()
+        if sys.platform == "win32":
+            places = [Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local")) / "Programs/Ollama/ollama.exe"]
+        elif sys.platform == "darwin":
+            places = [Path("/Applications/Ollama.app/Contents/Resources/ollama"),
+                      home / "Applications/Ollama.app/Contents/Resources/ollama", Path("/usr/local/bin/ollama")]
+        else:
+            places = [Path("/usr/local/bin/ollama"), Path("/usr/bin/ollama")]
+        return next((str(place) for place in places if place.is_file()), "")
 
-    def ensure_running(self, wait_seconds: float = 20) -> None:
-        """Start `ollama serve` in the background if it is installed but stopped."""
-        if self.is_running():
-            return
-        if not self.is_installed():
+    @classmethod
+    def is_installed(cls) -> bool:
+        return bool(cls.find_program())
+
+    def start(self) -> None:
+        """Start Ollama without waiting: its own app where there is one (it sits by the
+        clock and starts with the computer), else `ollama serve` quietly in the background."""
+        program = self.find_program()
+        if not program:
             raise OllamaError(
                 f"Ollama is not installed. Download it from {DOWNLOAD_PAGE}, "
                 "install it, and run this again."
             )
+        quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        app = Path(program).with_name("ollama app.exe")
+        if sys.platform == "win32" and app.is_file():
+            subprocess.Popen([str(app)], creationflags=subprocess.CREATE_NO_WINDOW, **quiet)
+            return
+        bundle = Path(program).parents[2] if len(Path(program).parents) > 2 else None
+        if sys.platform == "darwin" and bundle is not None and bundle.suffix == ".app":
+            subprocess.Popen(["open", str(bundle)], **quiet)
+            return
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        subprocess.Popen(
-            ["ollama", "serve"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=flags,
-            start_new_session=sys.platform != "win32",
-        )
+        subprocess.Popen([program, "serve"], creationflags=flags, start_new_session=sys.platform != "win32", **quiet)
+
+    def ensure_running(self, wait_seconds: float = 20) -> None:
+        """Start Ollama in the background if it is installed but stopped, and wait for it."""
+        if self.is_running():
+            return
+        self.start()
         deadline = time.monotonic() + wait_seconds
         while time.monotonic() < deadline:
             if self.is_running():
@@ -222,7 +250,7 @@ class Ollama:
         if keep_alive is not None:
             body["keep_alive"] = keep_alive
         reply = self._post("/api/chat", body)
-        # Counted like a streamed answer, so a form her model fills (a research plan)
+        # Counted like a streamed answer, so a form its model fills (a research plan)
         # shows up in the tokens a job used.
         self.last_tokens = (reply.get("prompt_eval_count") or 0, reply.get("eval_count") or 0)
         content = reply["message"]["content"]

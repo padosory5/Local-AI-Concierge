@@ -7,7 +7,7 @@ import requests
 from concierge.agents import community, store
 from concierge.agents.community import PostError, Recipe, clean, install, post_address, recipes
 from concierge.agents.recipe import CUSTOM, IN_CHAT, MAX_INSTRUCTION, MECHANICS, WHILE_ON
-from concierge.engine import ElainaEngine
+from concierge.engine import NoirEngine
 from concierge.fake_engine import FakeEngine
 
 GOOD = {"name": "Poem Maker", "by": "Dana", "category": "Writing", "about": "Writes a poem.",
@@ -172,14 +172,14 @@ def test_posting_is_only_offered_once_the_shared_place_exists(monkeypatch):
 def test_the_engine_says_when_posting_isnt_open(monkeypatch):
     store.save(agent())
     monkeypatch.setattr(community, "can_post", lambda: False)
-    reply = ElainaEngine(object()).post_agent("Poem Maker", "Writes poems.", "Writing")
+    reply = NoirEngine(object()).post_agent("Poem Maker", "Writes poems.", "Writing")
     assert "isn't open yet" in reply["error"] and "address" not in reply
 
 
 def test_the_engine_hands_back_the_page_to_open(monkeypatch):
     store.save(agent())
     monkeypatch.setattr(community, "can_post", lambda: True)
-    assert ElainaEngine(object()).post_agent("Poem Maker", "Writes poems.", "Writing")["address"].startswith(community.POST_URL)
+    assert NoirEngine(object()).post_agent("Poem Maker", "Writes poems.", "Writing")["address"].startswith(community.POST_URL)
 
 
 def test_the_practice_app_never_posts():

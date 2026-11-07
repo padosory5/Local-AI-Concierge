@@ -1,5 +1,5 @@
 from concierge import voice
-from concierge.elaina import ElainaChat
+from concierge.noir import NoirChat
 
 
 def tidied(text, size=3):
@@ -40,7 +40,7 @@ def test_headings_rules_and_tables_become_what_the_window_shows_well():
 
 
 def test_a_quote_mark_is_taken_off_and_a_closing_offer_dropped():
-    from concierge.elaina import without_closing_filler
+    from concierge.noir import without_closing_filler
 
     assert tidied("Press Win + Shift + S.\n> Note: PrtScn saves it.") == "Press Win + Shift + S.\nNote: PrtScn saves it."
     reply = ["Press Win + Shift + S. ", "Would you like to save these steps somewhere?"]
@@ -48,7 +48,7 @@ def test_a_quote_mark_is_taken_off_and_a_closing_offer_dropped():
 
 
 def test_a_question_tacked_on_after_a_whole_answer_is_dropped_but_a_needed_one_stays():
-    from concierge.elaina import without_closing_filler
+    from concierge.noir import without_closing_filler
 
     def said(*sentences):
         return "".join(without_closing_filler(iter(sentences)))
@@ -78,7 +78,7 @@ class Talker:
         return []
 
     def show(self, name):
-        return {"system": "I am Elaina."}
+        return {"system": "I am Noir."}
 
     def chat(self, model, messages, think=None, options=None, keep_alive=None):
         self.sent = messages
@@ -87,20 +87,20 @@ class Talker:
 
 def test_every_model_gets_the_note_and_her_memory_keeps_only_the_words():
     own = Talker()
-    chat = ElainaChat(own)
+    chat = NoirChat(own)
     assert "".join(chat.send("What's the capital of Australia?")) == "**Answer**\nCanberra."
     assert own.sent[-1]["content"].endswith(voice.guide("What's the capital of Australia?"))
     cloud = Talker("Sure! Canberra.")
     chat.talker = cloud  # a Claude or GPT model picked in the menu
     assert "".join(chat.send("And of Korea?")) == "Canberra."
-    assert "Elaina's way" in cloud.sent[-1]["content"]
+    assert "How to answer" in cloud.sent[-1]["content"]
     assert [m["content"] for m in chat.history if m["role"] == "user"] == ["What's the capital of Australia?", "And of Korea?"]
     chat.close()
 
 
 def test_the_note_is_chosen_from_the_question_not_from_an_added_file():
     own = Talker()
-    chat = ElainaChat(own)
+    chat = NoirChat(own)
     chat.attach("FILE notes.txt\nPlan for the plan of the planning", [])
     list(chat.send("What does this say?"))
     assert own.sent[-1]["content"].endswith(voice.guide("What does this say?"))
@@ -108,7 +108,7 @@ def test_the_note_is_chosen_from_the_question_not_from_an_added_file():
 
 
 def test_small_talk_gets_a_note_of_its_own_and_no_answer_rules():
-    for words in ("hello", "Thanks!", "ok cool", "good morning Elaina", "안녕!", "고마워요"):
+    for words in ("hello", "Thanks!", "ok cool", "good morning Noir", "안녕!", "고마워요"):
         assert voice.kind_of(words) == "small_talk", words
     note = voice.guide("thanks!")
     assert "small talk" in note and "Don't answer an earlier question again" in note

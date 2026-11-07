@@ -1,10 +1,10 @@
-"""Pictures beside her answers: a photo of a place she names, from Wikipedia.
+"""Pictures beside its answers: a photo of a place it names, from Wikipedia.
 
 People look at a picture that shows something and skip one that only decorates, and
 a picture helps most right beside the words it shows. So code only ever looks up
-places: the bold names in her answer, never the user's own words, and only a
+places: the bold names in its answer, never the user's own words, and only a
 Wikipedia page that is a place (it has map coordinates), has a photo, and whose title
-really is the name she wrote. A wrong picture is worse than none, so anything unsure
+really is the name it wrote. A wrong picture is worse than none, so anything unsure
 is left out. Nothing is looked up until the user says yes once (the page asks under
 the first plan that names places), and each answer that looked counts on What I see.
 """
@@ -19,7 +19,7 @@ from . import voice
 from .cloud import record_sent
 
 API = "https://{language}.wikipedia.org/w/api.php"
-USER_AGENT = "LocalAIConcierge/0.1 (https://github.com/padosory5/elaina-agents)"
+USER_AGENT = "NoirAgents/0.1 (https://github.com/padosory5/noir-agents)"
 TIMEOUT = 4
 MAX_PICTURES = 4
 MAX_LOOKUPS = 8
@@ -35,7 +35,7 @@ PART = re.compile(
 )
 # Between two places in one label: "Haeundae and Gwangalli", "해운대와 광안리".
 BETWEEN = re.compile(r"\s+(?:and|&|or)\s+|\s*[,/·+]\s*|(?<=[가-힣])(?:와|과|및)\s+")
-# Words a page's title adds to the name she wrote: "Gwangalli" is "Gwangalli Beach".
+# Words a page's title adds to the name it wrote: "Gwangalli" is "Gwangalli Beach".
 PLACE_WORDS = {
     "beach", "market", "village", "park", "temple", "island", "tower", "mountain", "bridge", "station",
     "street", "museum", "palace", "castle", "lake", "river", "district", "city", "fortress", "square",
@@ -58,7 +58,7 @@ def _words(text: str) -> set[str]:
 
 
 def same_place(name: str, title: str) -> bool:
-    """Whether a page's title is the name she wrote, not just a page a search found."""
+    """Whether a page's title is the name it wrote, not just a page a search found."""
     title = re.sub(r"\s*\(.*?\)", "", title)
     if re.search(r"[가-힣]", name):
         return title.replace(" ", "").startswith(name.replace(" ", ""))

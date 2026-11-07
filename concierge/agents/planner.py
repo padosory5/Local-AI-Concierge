@@ -1,11 +1,11 @@
 """Talk an agent idea through with the user before anything is built.
 
 The user describes a helper they would like ("translate what I highlight
-when I press Ctrl+F1"). Elaina's model only breaks the idea into building
+when I press Ctrl+F1"). Noir's model only breaks the idea into building
 blocks from capabilities.yaml. Code then decides, from the blocks and this
 computer's hardware:
 
-    - is it easy (Elaina's own model or plain code), does it need a bigger
+    - is it easy (Noir's own model or plain code), does it need a bigger
       model, and does that model fit on this computer?
     - can the app build it today, is it planned but not built yet, or is it
       something the app will not do?
@@ -27,7 +27,7 @@ from pathlib import Path
 import yaml
 
 from ..catalog import HelperModel, pick_helper
-from ..elaina import data_dir
+from ..noir import data_dir
 from ..events import Event, IdeaCard, IdeaStep, Question, Thinking
 from ..hardware import HardwareReport
 from ..ollama import Ollama
@@ -84,7 +84,7 @@ def load_blocks(path: Path = BLOCKS_PATH) -> dict[str, Block]:
 # ------------------------------------------------------------- judging
 
 
-def assess(steps: list[PlanStep], report: HardwareReport, elaina_gb: float,
+def assess(steps: list[PlanStep], report: HardwareReport, noir_gb: float,
            blueprints: dict | None = None) -> Assessment:
     """Decide what is possible. Plain code: the model never judges itself.
 
@@ -109,7 +109,7 @@ def assess(steps: list[PlanStep], report: HardwareReport, elaina_gb: float,
                           f"I'm not sure how to do {what} yet. Tell me more, or put it a different way.",
                           [CHANGE_IDEA, DROP_IDEA])
 
-    difficulty, helpers, too_big = _difficulty(blocks, report, elaina_gb)
+    difficulty, helpers, too_big = _difficulty(blocks, report, noir_gb)
     if too_big:
         return Assessment("too_big", card_steps, difficulty,
                           "This computer can't run that part. It could work on one with more graphics memory.",
@@ -136,27 +136,27 @@ def assess(steps: list[PlanStep], report: HardwareReport, elaina_gb: float,
                       [MAKE_IT, CHANGE_IDEA, DROP_IDEA], blueprint, helpers)
 
 
-def _difficulty(blocks: list[Block], report: HardwareReport, elaina_gb: float
+def _difficulty(blocks: list[Block], report: HardwareReport, noir_gb: float
                 ) -> tuple[str, list[HelperModel], bool]:
     """(sentence for the card, helper models it needs, whether one does not fit)."""
     roles = list(dict.fromkeys(HELPER_ROLES[b.ai] for b in blocks if b.ai in HELPER_ROLES))
     if not roles:
         if all(b.ai == "none" for b in blocks):
             return "Easy: plain code, no AI model needed.", [], False
-        return "Easy: Elaina's own model can do this, nothing extra to download.", [], False
+        return "Easy: the built-in model can do this, nothing extra to download.", [], False
 
     helpers, sentences = [], []
     for role in roles:
-        helper, room, on_cpu = pick_helper(role, report, elaina_gb)
+        helper, room, on_cpu = pick_helper(role, report, noir_gb)
         if helper is None:
             return (f"Too big for this computer: it needs {ROLE_WORDS[role]}, and only "
-                    f"{max(room, 0):g} GB is free next to Elaina."), helpers, True
+                    f"{max(room, 0):g} GB is free next to Noir."), helpers, True
         helpers.append(helper)
         slow = " It would run on the processor, so expect it to be slow." if on_cpu and role != "speech" else ""
         sentences.append(f"{helper.name} ({helper.download_gb:g} GB download, about {helper.memory_gb:g} GB "
                          f"of memory while it works).{slow}")
     return ("Needs a bigger model: " + " ".join(sentences)
-            + " Your computer has room for it next to Elaina."), helpers, False
+            + " Your computer has room for it next to Noir."), helpers, False
 
 
 # Words that show the user really asked for a shortcut key.
@@ -236,7 +236,7 @@ class IdeaDraft:
 class IdeaPlanner:
     def __init__(self, ollama: Ollama, model: str, think: bool | None,
                  hardware: Callable[[], tuple[HardwareReport, float]], blueprints: dict | None = None):
-        """hardware() returns this computer's report and Elaina's model memory in GB."""
+        """hardware() returns this computer's report and Noir's model memory in GB."""
         self.blueprints = blueprints or {}
         self.ollama = ollama
         self.model = model
@@ -322,8 +322,8 @@ class IdeaPlanner:
             if PlanStep(block, detail) not in draft.steps:
                 draft.steps.append(PlanStep(block, detail))
         draft.steps = settle_triggers(draft.steps or [PlanStep(None, "")], draft.request, self.blocks)
-        report, elaina_gb = self.hardware()
-        draft.assessment = assess(draft.steps, report, elaina_gb, self.blueprints)
+        report, noir_gb = self.hardware()
+        draft.assessment = assess(draft.steps, report, noir_gb, self.blueprints)
         draft.waiting = IDEA
         a = draft.assessment
         parts = " → ".join(s.text[:1].lower() + s.text[1:] for s in a.steps)
@@ -438,7 +438,7 @@ def save_idea(draft: IdeaDraft) -> int:
     return len(ideas)
 
 
-def describe_ideas(report: HardwareReport, elaina_gb: float, blueprints: dict | None = None) -> str:
+def describe_ideas(report: HardwareReport, noir_gb: float, blueprints: dict | None = None) -> str:
     """The saved ideas, each judged again against today's building blocks."""
     ideas = list_ideas()
     if not ideas:
@@ -449,5 +449,5 @@ def describe_ideas(report: HardwareReport, elaina_gb: float, blueprints: dict | 
     lines = [f"You have {len(ideas)} saved idea{'s' if len(ideas) != 1 else ''}:"]
     for idea in ideas:
         steps = [PlanStep(blocks.get(s["block"]), s.get("detail", "")) for s in idea["steps"]]
-        lines.append(f"- {idea['title']}: {words[assess(steps, report, elaina_gb, blueprints).level]}")
+        lines.append(f"- {idea['title']}: {words[assess(steps, report, noir_gb, blueprints).level]}")
     return "\n".join(lines)

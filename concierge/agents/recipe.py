@@ -2,7 +2,7 @@
 the text, and how it shows the result.
 
 There is no code per kind of agent. What an agent does is one instruction
-Elaina writes ("Explain this English word in simple Korean, with one
+Noir writes ("Explain this English word in simple Korean, with one
 example."), and run_instruction() applies it to whatever text comes in,
 whether highlighted (quick/agents.py) or sent in the chat (engine.py). The
 model writes and rewrites instructions; code decides everything else.
@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from ..elaina import KEEP_ALIVE
+from ..noir import KEEP_ALIVE
 from ..ollama import Ollama, OllamaError
 from ..quick.agents import BOTH, BUBBLE, CLIPBOARD, FEW_SECONDS, UNTIL_UNHIGHLIGHT
 from ..quick.translate import language_in

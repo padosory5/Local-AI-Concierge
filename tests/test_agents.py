@@ -10,7 +10,7 @@ from concierge.agents.blueprint import load_blueprints
 from concierge.agents.builder import AgentBuilder, describe_files, find_folders, is_blocked
 from concierge.agents.files import SearchIndex, passages_of, scan, split
 from concierge.agents.router import route
-from concierge.events import AgentCard, AgentList, ElainaText, Progress, Question, Result
+from concierge.events import AgentCard, AgentList, NoirText, Progress, Question, Result
 
 
 class FakeModel:
@@ -113,7 +113,7 @@ def test_search_finds_the_right_passage(docs):
 def test_naming_an_agent_skips_the_model():
     model = FakeModel()
     agents = [store.Agent("Sample_docs helper", "documents_qa", {"folder": "x"})]
-    where = route(model, "elaina", "sample docs helper: who signed?", load_blueprints(), agents)
+    where = route(model, "noir", "sample docs helper: who signed?", load_blueprints(), agents)
     assert (where.kind, where.agent, where.request) == ("run_agent", "Sample_docs helper", "who signed?")
     assert model.schemas == []
 
@@ -121,15 +121,15 @@ def test_naming_an_agent_skips_the_model():
 def test_model_choice_maps_to_a_route():
     agents = [store.Agent("Contracts helper", "documents_qa", {"folder": "x"})]
     model = FakeModel(choice="use agent: Contracts helper")
-    assert route(model, "elaina", "who signed?", load_blueprints(), agents).kind == "run_agent"
+    assert route(model, "noir", "who signed?", load_blueprints(), agents).kind == "run_agent"
     model = FakeModel(choice="new agent: Ask my documents")
-    assert route(model, "elaina", "search my notes", load_blueprints(), agents).blueprint == "documents_qa"
+    assert route(model, "noir", "search my notes", load_blueprints(), agents).blueprint == "documents_qa"
 
 
 def test_asking_for_a_new_agent_never_offers_existing_ones():
     agents = [store.Agent("Contracts helper", "documents_qa", {"folder": "x"})]
     model = FakeModel(choice="chat")
-    route(model, "elaina", "make me another agent for my contracts", load_blueprints(), agents)
+    route(model, "noir", "make me another agent for my contracts", load_blueprints(), agents)
     assert "use agent: Contracts helper" not in model.schemas[0]["properties"]["choice"]["enum"]
 
 
@@ -137,7 +137,7 @@ def test_asking_for_a_new_agent_never_offers_existing_ones():
 
 
 def builder(model):
-    return AgentBuilder(model, "elaina", None, load_blueprints())
+    return AgentBuilder(model, "noir", None, load_blueprints())
 
 
 @pytest.fixture(autouse=True)
@@ -175,7 +175,7 @@ def test_moving_on_mid_setup_hands_the_message_back(docs):
     list(b.start("documents_qa", "make an agent"))
     events = list(b.answer("what's the capital of Australia?"))
     assert not b.active and b.handoff == "what's the capital of Australia?"
-    assert isinstance(events[0], ElainaText)
+    assert isinstance(events[0], NoirText)
 
 
 def test_cancel_and_empty_folder(docs, tmp_path):

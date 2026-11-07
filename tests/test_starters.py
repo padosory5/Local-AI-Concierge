@@ -1,6 +1,6 @@
 import pytest
 
-from concierge import elaina
+from concierge import noir
 from concierge.agents import store
 from concierge.agents.builder import AgentBuilder
 from concierge.agents.planner import IdeaPlanner
@@ -8,8 +8,8 @@ from concierge.agents.recipe import CUSTOM, IN_CHAT, WHILE_ON, is_switchable
 from concierge.agents.router import refers_to, wants_change
 from concierge.agents.starters import asks_for, load_starters
 from concierge.conversations import ChatBook
-from concierge.engine import ElainaEngine
-from concierge.events import AgentList, ElainaText
+from concierge.engine import NoirEngine
+from concierge.events import AgentList, NoirText
 from concierge.fake_engine import FakeEngine
 from concierge.quick.agents import QuickAgents
 
@@ -33,19 +33,19 @@ class NoModel:
 @pytest.fixture
 def engine(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
-    e = ElainaEngine(NoModel())
+    e = NoirEngine(NoModel())
     e.book = ChatBook(None)
-    e.chat = elaina.ElainaChat(NoModel())
-    e.quick = QuickAgents(NoModel(), "elaina", None,
+    e.chat = noir.NoirChat(NoModel())
+    e.quick = QuickAgents(NoModel(), "noir", None,
                           lambda *a: type("W", (), {"start": lambda s: None, "stop": lambda s: None})(),
                           lambda: type("B", (), {"close": lambda s: None, "pressed": lambda s, x, y: None})())
-    e.builder = AgentBuilder(NoModel(), "elaina", None, e.blueprints)
-    e.planner = IdeaPlanner(NoModel(), "elaina", None, lambda: None, e.blueprints)
+    e.builder = AgentBuilder(NoModel(), "noir", None, e.blueprints)
+    e.planner = IdeaPlanner(NoModel(), "noir", None, lambda: None, e.blueprints)
     return e
 
 
 def said(events):
-    return "".join(e.text for e in events if isinstance(e, ElainaText))
+    return "".join(e.text for e in events if isinstance(e, NoirText))
 
 
 def last_list(events):

@@ -1,4 +1,4 @@
-"""Agents: blueprint-based helpers that Elaina creates with the user and runs.
+"""Agents: blueprint-based helpers that Noir creates with the user and runs.
 
     blueprints/*.yaml  the tested agent templates (the menu)
     blueprint.py       loads them

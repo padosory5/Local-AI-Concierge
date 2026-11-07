@@ -1,5 +1,5 @@
 """The picker between the search and the workers (sources.py): the kind of site from
-the yaml, the subject's own site, content farms, relevance, and her model as tie-break."""
+the yaml, the subject's own site, content farms, relevance, and its model as tie-break."""
 
 from concierge import sources
 
@@ -44,7 +44,7 @@ def test_the_best_pages_come_first_two_per_site_and_farms_last():
     order = [(c.site, c.picked, c.why_not) for c in choices]
     assert order[0][0] == "hermes-agent.nousresearch.com" and order[1][0] == "hermes-agent.nousresearch.com"
     assert order[2] == ("hermes-agent.nousresearch.com", False, "a third page from the same site")
-    assert order[3][0] == "hermesatlas.com" and order[3][1]  # her model's yes lifted it above the rest
+    assert order[3][0] == "hermesatlas.com" and order[3][1]  # its model's yes lifted it above the rest
     assert [c.site for c in choices if c.picked] == ["hermes-agent.nousresearch.com", "hermes-agent.nousresearch.com",
                                                      "hermesatlas.com", "networksolutions.com"]
     farm = next(c for c in choices if c.tier == "farm")

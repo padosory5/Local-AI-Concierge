@@ -1,7 +1,7 @@
 import pytest
 
-from concierge import auto, elaina, usage
-from concierge.events import ElainaDone, ElainaText, Error, Thinking
+from concierge import auto, noir, usage
+from concierge.events import NoirDone, NoirText, Error, Thinking
 from concierge.fake_engine import FakeEngine
 
 
@@ -29,12 +29,12 @@ def test_a_bigger_model_keeps_more_here():
     explain = "explain the difference between TCP and UDP"
     assert auto.decide(explain, base_model="qwen3:8b").where == auto.HERE
     assert auto.decide(explain, base_model="qwen3:1.7b").where == auto.CLOUD
-    # Code never stays here, however big her model is.
+    # Code never stays here, however big its model is.
     assert auto.decide("write SQL for the top 5 customers", base_model="llama3:70b").where == auto.CLOUD
 
 
 def test_unknown_model_size_counts_as_small():
-    assert auto.strength("elaina") == auto.SMALL
+    assert auto.strength("noir") == auto.SMALL
     assert auto.strength("hf.co/someone/Model-12B-GGUF:Q4_K_M") == auto.MEDIUM
 
 
@@ -68,7 +68,7 @@ def test_the_model_form_only_allows_the_kinds():
             seen.update(schema=schema, think=think)
             return {"kind": "code"}
 
-    assert auto.model_form(Model(), "elaina")("hm") == "code"
+    assert auto.model_form(Model(), "noir")("hm") == "code"
     assert seen["schema"]["properties"]["kind"]["enum"] == list(auto.KINDS) and seen["think"] is False
 
 
@@ -121,19 +121,19 @@ def test_practice_chat_says_where_each_answer_comes_from():
     engine = practice_with_auto()
     small = list(engine.send("thanks!"))
     assert any(isinstance(e, Thinking) and e.text.startswith("Auto: just chatting") for e in small)
-    done = next(e for e in small if isinstance(e, ElainaDone))
+    done = next(e for e in small if isinstance(e, NoirDone))
     assert done.by and done.instead == "Claude (practice)"
 
     hard = list(engine.send("write a Python script that sorts my photos"))
-    done = next(e for e in hard if isinstance(e, ElainaDone))
+    done = next(e for e in hard if isinstance(e, NoirDone))
     assert done.by == "Claude (practice)" and done.instead == ""
 
     again = list(engine.ask_again())
-    assert next(e for e in again if isinstance(e, ElainaDone)).by == "Claude (practice)"
+    assert next(e for e in again if isinstance(e, NoirDone)).by == "Claude (practice)"
 
 
 class Talker:
-    """A plan's model or her own, answering or refusing."""
+    """A plan's model or its own, answering or refusing."""
 
     def __init__(self, words="", refuse=None):
         self.words, self.refuse, self.asked = words, refuse, []
@@ -149,13 +149,13 @@ class Talker:
 
 
 def real_engine_with_auto(monkeypatch, plan_talker):
-    from concierge.engine import ElainaEngine
+    from concierge.engine import NoirEngine
 
     own = Talker("From this computer.")
-    engine = ElainaEngine.__new__(ElainaEngine)
+    engine = NoirEngine.__new__(NoirEngine)
     engine.ollama = own
-    engine.chat = elaina.ElainaChat.__new__(elaina.ElainaChat)
-    engine.chat.ollama, engine.chat.model, engine.chat.talker = own, "elaina", own
+    engine.chat = noir.NoirChat.__new__(noir.NoirChat)
+    engine.chat.ollama, engine.chat.model, engine.chat.talker = own, "noir", own
     engine.chat.history, engine.chat._context, engine.chat._images, engine.chat.about = [], "", [], ""
     engine.chat.think = None
     engine.chat.kind, engine.chat._asked = "", ""  # how to answer (voice.py) goes with each question
@@ -176,7 +176,7 @@ def real_engine_with_auto(monkeypatch, plan_talker):
 
     engine.menu, engine.book = Menu(), Book()
     engine._full_lists = lambda events: events
-    monkeypatch.setattr(elaina, "load_state", lambda: {"base_model": "qwen3.5:4b"})
+    monkeypatch.setattr(noir, "load_state", lambda: {"base_model": "qwen3.5:4b"})
     return engine, own
 
 
@@ -186,24 +186,24 @@ def test_the_real_engine_keeps_small_things_here_and_restores_her_model(monkeypa
     usage.record_tokens("claude_code", "m", 29_000, 10)  # what Claude Code reads on top, measured
     own.last_tokens = (400, 20)
     events = list(engine._reply("what's the capital of Japan?", False))
-    assert "".join(e.text for e in events if isinstance(e, ElainaText)) == "From this computer."
-    assert events[-1] == ElainaDone(by="Qwen 3.5 4B", instead="Claude Sonnet 5.5", where="here", saved=29_020)
+    assert "".join(e.text for e in events if isinstance(e, NoirText)) == "From this computer."
+    assert events[-1] == NoirDone(by="Qwen 3.5 4B", instead="Claude Sonnet 5.5", where="here", saved=29_020)
     assert plan.asked == [] and usage.summary()["claude_code"]["today"]["saved"] == 29_020
 
     usage.record_limits("claude_code", [{"id": "five_hour", "used": 0.6, "resets_at": 4_000_000_000}])
     events = list(engine._reply("write a Python script that renames photos", False))
-    assert "".join(e.text for e in events if isinstance(e, ElainaText)) == "From your plan."
-    assert events[-1] == ElainaDone(by="Claude Sonnet 5.5", where="cloud", plan_used=0.6)
-    assert engine.chat.talker is own  # agents and the router stay on her model
+    assert "".join(e.text for e in events if isinstance(e, NoirText)) == "From your plan."
+    assert events[-1] == NoirDone(by="Claude Sonnet 5.5", where="cloud", plan_used=0.6)
+    assert engine.chat.talker is own  # agents and the router stay on its model
 
 
 def test_a_reopened_chat_keeps_who_answered():
     from concierge.conversations import ChatBook
 
     book = ChatBook(None)
-    answer = [ElainaText("Tokyo."), ElainaDone(by="Qwen 3.5 4B", where="here", saved=29_020)]
+    answer = [NoirText("Tokyo."), NoirDone(by="Qwen 3.5 4B", where="here", saved=29_020)]
     list(book.record("capital of Japan?", iter(answer)))
-    list(book.record("a script please", iter([ElainaText("Here."), ElainaDone(by="Claude", where="cloud", plan_used=0.7)])))
+    list(book.record("a script please", iter([NoirText("Here."), NoirDone(by="Claude", where="cloud", plan_used=0.7)])))
     items = book.transcript().items
     assert (items[1].by, items[1].where, items[1].saved) == ("Qwen 3.5 4B", "here", 29_020)
     assert (items[3].where, items[3].plan_used) == ("cloud", 0.7)
@@ -212,8 +212,8 @@ def test_a_reopened_chat_keeps_who_answered():
 
 def test_practice_answers_carry_their_dot():
     engine = practice_with_auto()
-    here = next(e for e in engine.send("thanks!") if isinstance(e, ElainaDone))
-    cloud = next(e for e in engine.send("write SQL for my orders") if isinstance(e, ElainaDone))
+    here = next(e for e in engine.send("thanks!") if isinstance(e, NoirDone))
+    cloud = next(e for e in engine.send("write SQL for my orders") if isinstance(e, NoirDone))
     assert here.where == "here" and here.saved > 0
     assert cloud.where == "cloud" and 0 < cloud.plan_used <= 1
 
@@ -224,8 +224,8 @@ def test_when_the_plan_refuses_she_answers_herself(monkeypatch):
     engine, own = real_engine_with_auto(monkeypatch, Talker(refuse=CloudError("you're signed out")))
     events = list(engine._reply("write a Python script that renames photos", False))
     assert any(isinstance(e, Thinking) and "couldn't answer (you're signed out)" in e.text for e in events)
-    assert "".join(e.text for e in events if isinstance(e, ElainaText)) == "From this computer."
-    assert len(engine.chat.history) == 2  # the question once, and her answer
+    assert "".join(e.text for e in events if isinstance(e, NoirText)) == "From this computer."
+    assert len(engine.chat.history) == 2  # the question once, and its answer
 
 
 def test_ask_again_replaces_her_answer_with_the_plans(monkeypatch):

@@ -42,7 +42,7 @@ def agents_home(tmp_path, monkeypatch):
 
 
 def builder(model=None):
-    return AgentBuilder(model or FakeModel(), "elaina", None, BLUEPRINTS)
+    return AgentBuilder(model or FakeModel(), "noir", None, BLUEPRINTS)
 
 
 # ---------------------------------------------------------------- making
@@ -174,7 +174,7 @@ def test_typed_new_job_from_the_change_menu(explainer):
 
 def test_run_instruction_returns_only_the_result():
     model = FakeModel()
-    assert recipe.run_instruction(model, "elaina", "Fix the grammar.", "me go") == "done: me go"
+    assert recipe.run_instruction(model, "noir", "Fix the grammar.", "me go") == "done: me go"
 
 
 def test_target_language_only_for_translators():
@@ -213,7 +213,7 @@ def test_the_shared_template_is_never_offered_as_a_kind_of_agent():
             return {"choice": "chat"}
 
     chooser = Chooser()
-    route(chooser, "elaina", "make me an agent that fixes my grammar", BLUEPRINTS, [])
+    route(chooser, "noir", "make me an agent that fixes my grammar", BLUEPRINTS, [])
     assert not any("Made from parts" in c for c in chooser.choices)
     assert "new agent: Ask my documents" in chooser.choices
 

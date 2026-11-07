@@ -3,12 +3,12 @@ once, what comes back goes with the question, and the sources stay with the answ
 
 import pytest
 
-from concierge import elaina, research, voice
+from concierge import noir, research, voice
 from concierge.agents import store
 from concierge.agents.router import Route
 from concierge.conversations import ChatBook
-from concierge.engine import ElainaEngine
-from concierge.events import ElainaDone, ElainaText, Picture, Question, Source, Thinking
+from concierge.engine import NoirEngine
+from concierge.events import NoirDone, NoirText, Picture, Question, Source, Thinking
 from tests.test_chat_path import Ollama
 
 
@@ -67,7 +67,7 @@ def test_what_never_changes_is_never_looked_up():
                  "how do I take a screenshot", "translate this into Korean", "what does serendipity mean",
                  "should I learn Python or JavaScript", "hey how are you"):
         assert research.wants_lookup(text) is None, text
-    # A question code can't place is put to her model; small talk and timeless things never are.
+    # A question code can't place is put to its model; small talk and timeless things never are.
     assert research.unsure("what's the capital of Korea?")
     assert not research.unsure("explain gravity")
     assert not research.unsure("hey how are you")
@@ -101,7 +101,7 @@ def test_the_findings_go_together_with_their_sources_and_pictures():
     assert sent == [("DuckDuckGo", "a web search")] and counted == [1]
     note = research.note(found)
     assert note.startswith("FOUND ON THE WEB just now (") and "don't add anything they don't say" in note
-    assert "never say you can't access the web" in note  # she once said she was offline with the findings in hand
+    assert "never say you can't access the web" in note  # it once said it was offline with the findings in hand
 
 
 def test_the_first_pages_are_read_after_the_search():
@@ -178,7 +178,7 @@ def test_weather_is_read_plainly_from_open_meteo():
 
 
 def test_permission_is_remembered_and_lookups_counted(tmp_path, monkeypatch):
-    monkeypatch.setattr(elaina, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(noir, "data_dir", lambda: tmp_path)
     assert research.allowed() is None
     research.allow(True)
     assert research.allowed() is True and research.lookups() == 0
@@ -191,16 +191,16 @@ def test_permission_is_remembered_and_lookups_counted(tmp_path, monkeypatch):
 @pytest.fixture
 def engine(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
-    monkeypatch.setattr(elaina, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(noir, "data_dir", lambda: tmp_path)
     monkeypatch.setattr("concierge.engine.route", lambda *args, **kwargs: Route("chat"))
     monkeypatch.setattr(research, "model_form", lambda ollama, model: lambda text: False)
-    made = ElainaEngine(Ollama())
+    made = NoirEngine(Ollama())
     made.book = ChatBook(None)
-    made.chat = elaina.ElainaChat(made.ollama)
+    made.chat = noir.NoirChat(made.ollama)
     from concierge.agents.builder import AgentBuilder
     from concierge.agents.planner import IdeaPlanner
-    made.builder = AgentBuilder(made.ollama, "elaina", None, made.blueprints)
-    made.planner = IdeaPlanner(made.ollama, "elaina", None, lambda: None, made.blueprints)
+    made.builder = AgentBuilder(made.ollama, "noir", None, made.blueprints)
+    made.planner = IdeaPlanner(made.ollama, "noir", None, lambda: None, made.blueprints)
     return made
 
 
@@ -216,15 +216,15 @@ def test_she_asks_once_before_the_first_lookup_and_then_answers_from_the_web(eng
     events = list(engine.send("what's the newest version of python?"))
     question = next(e for e in events if isinstance(e, Question))
     assert question.id == research.WEB and question.choices == [research.YES_LOOK, research.NO_LOOK]
-    assert looked == [] and not any(isinstance(e, ElainaText) for e in events)
+    assert looked == [] and not any(isinstance(e, NoirText) for e in events)
 
     events = list(engine.choose(research.WEB, research.YES_LOOK))
     assert research.allowed() is True and looked == [("what's the newest version of python?", research.SEARCH)]
     assert any(isinstance(e, Thinking) and "looking this up on the web" in e.text for e in events)
-    assert "".join(e.text for e in events if isinstance(e, ElainaText)) == "Tokyo."
-    done = next(e for e in events if isinstance(e, ElainaDone))
+    assert "".join(e.text for e in events if isinstance(e, NoirText)) == "Tokyo."
+    done = next(e for e in events if isinstance(e, NoirDone))
     assert done.sources == FOUND.sources and done.images == FOUND.images
-    # Her model read the findings along with the question, and remembers them.
+    # Its model read the findings along with the question, and remembers them.
     asked = engine.chat.history[-2]["content"]
     assert asked.startswith("FOUND ON THE WEB just now (2026-11-06 16:30") and asked.endswith("what's the newest version of python?")
     # The next lookup needs no question.
@@ -238,8 +238,8 @@ def test_no_means_she_answers_from_memory_and_says_so(engine, monkeypatch):
     events = list(engine.choose(research.WEB, research.NO_LOOK))
     assert research.allowed() is False
     assert any(isinstance(e, Thinking) and "from memory" in e.text for e in events)
-    assert "".join(e.text for e in events if isinstance(e, ElainaText)) == "Tokyo."
-    assert next(e for e in events if isinstance(e, ElainaDone)).sources == []
+    assert "".join(e.text for e in events if isinstance(e, NoirText)) == "Tokyo."
+    assert next(e for e in events if isinstance(e, NoirDone)).sources == []
 
 
 def test_when_the_web_fails_she_still_answers(engine, monkeypatch):
@@ -247,7 +247,7 @@ def test_when_the_web_fails_she_still_answers(engine, monkeypatch):
     monkeypatch.setattr(research, "look_up", lambda text, kind: (_ for _ in ()).throw(LookupError("nothing came back")))
     events = list(engine.send("who is the president of south korea now"))
     assert any(isinstance(e, Thinking) and "may be out of date" in e.text for e in events)
-    assert "".join(e.text for e in events if isinstance(e, ElainaText)) == "Tokyo."
+    assert "".join(e.text for e in events if isinstance(e, NoirText)) == "Tokyo."
 
 
 def test_the_saved_chat_keeps_the_time_sources_and_pictures(engine, monkeypatch):

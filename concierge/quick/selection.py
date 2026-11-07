@@ -13,6 +13,7 @@ Windows only for now.
 from __future__ import annotations
 
 import ctypes
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -33,7 +34,10 @@ NO_COPY_APPS = {
 
 Rect = tuple[int, int, int, int]  # left, top, right, bottom in screen pixels
 
-_user32 = ctypes.windll.user32
+if sys.platform == "win32":
+    _user32 = ctypes.windll.user32
+else:  # highlights are read on Windows only for now; elsewhere the module imports and reads nothing
+    _user32 = None
 
 
 def foreground_app() -> tuple[int, str]:
@@ -50,7 +54,7 @@ class SelectionWatcher:
     """Calls on_selection(text, rect) after the user highlights text.
 
     on_press(x, y) is called on every left mouse press, so a bubble can close
-    when the user clicks elsewhere. Highlights in skip_pids (Elaina's own
+    when the user clicks elsewhere. Highlights in skip_pids (Noir's own
     window) are ignored.
     """
 

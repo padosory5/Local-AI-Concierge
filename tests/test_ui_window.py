@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from concierge.events import ElainaText
+from concierge.events import NoirText
 from concierge.ui import window
 from concierge.fake_engine import FakeEngine
 from concierge.ui.window import (
@@ -71,8 +71,8 @@ def test_reply_streams_to_the_page_then_finishes():
     page, window = page_for(ChatHub(FakeEngine(delay=0)))
     page.send("hello")
     assert types(window)[0] == "ChatList"  # the new conversation appears in the list first
-    assert set(types(window)[1:-1]) == {"ElainaText"}
-    assert types(window)[-1] == "ElainaDone"
+    assert set(types(window)[1:-1]) == {"NoirText"}
+    assert types(window)[-1] == "NoirDone"
 
 
 def test_button_clicks_reach_the_engine():
@@ -124,16 +124,16 @@ def test_a_page_that_loads_later_gets_the_newest_lists():
 def test_engine_crash_becomes_a_friendly_error():
     class BrokenEngine(FakeEngine):
         def send(self, text, think=False):
-            yield ElainaText("Hel")
+            yield NoirText("Hel")
             raise ConnectionError("Ollama went away")
 
     page, window = page_for(ChatHub(BrokenEngine(delay=0)))
     page.send("hello")
-    assert types(window) == ["ElainaText", "Error"]
+    assert types(window) == ["NoirText", "Error"]
     assert window.events[-1]["text"] == UNEXPECTED_ERROR
 
 
-def test_closing_frees_elaina_and_stops_drawing():
+def test_closing_frees_noir_and_stops_drawing():
     closed = []
 
     class ClosingEngine(FakeEngine):
@@ -165,7 +165,7 @@ def test_pages_see_only_their_calls():
                    "hide_model", "add_custom_model", "remove_custom_model", "delete_model",
                    "browse_models", "get_model", "cancel_download", "downloads",
                    "recipes", "add_recipe", "post_agent",
-                   "welcome", "set_welcomed", "measure", "set_spot", "switch_agent",
+                   "welcome", "set_welcomed", "measure", "set_spot", "switch_agent", "setup_state", "setup_begin", "setup_finish",
                    "bring_in_history", "understand_history", "what_i_know", "keep_fact", "forget_history",
                    "open_export_page", "look_around", "find_downloads", "sign_in_account", "install_account", "check_accounts", "use_account", "usage",
                    "pinned_chats", "pin_chat", "search_chats",
@@ -230,7 +230,7 @@ def test_work_no_page_started_is_shown_on_every_page():
     hub.announce("send", "Grammar Fixer: me and him goes", False, user="Grammar Fixer: me and him goes")
     assert window.mirrored()[0] == {"state": "start", "user": "Grammar Fixer: me and him goes", "dots": True}
     assert window.mirrored()[-1] == {"state": "end"}
-    assert "ElainaText" in types(window)
+    assert "NoirText" in types(window)
 
 
 def test_pins_and_search_come_from_the_saved_chats():
@@ -314,7 +314,7 @@ windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Windows' own 
 
 @windows_only
 def test_a_second_copy_finds_the_first_even_in_another_process():
-    name = rf"Local\ElainaTest.{uuid.uuid4().hex}"
+    name = rf"Local\NoirTest.{uuid.uuid4().hex}"
     holder = subprocess.Popen(
         [sys.executable, "-c", f"from concierge.ui import window; print(window.first_copy({name!r}), flush=True); input()"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
@@ -338,7 +338,7 @@ def test_starting_again_brings_the_running_one_forward_and_opens_nothing(monkeyp
 def test_only_a_window_of_her_own_kind_is_brought_forward(monkeypatch):
     import tkinter
 
-    title = f"Elaina test {uuid.uuid4().hex[:8]}"
+    title = f"Noir test {uuid.uuid4().hex[:8]}"
     root = tkinter.Tk()
     root.withdraw()  # never on screen, and focus is never taken from the person running the tests
     root.title(title)

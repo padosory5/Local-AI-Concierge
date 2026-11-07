@@ -4,11 +4,11 @@ A small model's knowledge stops at its training date, so a question about today'
 weather, a price, the news, who holds an office or the newest version of something
 can't be answered from memory. Code decides when the web is needed (`wants_lookup`:
 words that mean the answer changes, and words that mean it never does, such as
-history, maths and meanings), her model is only asked about a question code can't
+history, maths and meanings), its model is only asked about a question code can't
 place (`model_form`, one word, forced by the schema), and nothing is sent anywhere
 until the user has said yes once (`allowed`, kept in research.json next to how many
 lookups were made). What comes back goes with the question as plain text, with the
-time it was found, so she answers from it and says so, and the sources go under her
+time it was found, so it answers from it and says so, and the sources go under its
 answer. Weather comes from Open-Meteo (no key, no account), the rest from
 DuckDuckGo through the ddgs package, and a Wikipedia summary when the question is
 about a person or thing. Only the question leaves the computer, never a file.
@@ -54,13 +54,13 @@ TIMEOUT = 8
 BRAVE_SEARCH = "https://api.search.brave.com/res/v1/web/search"
 SEARCH_KEY = "brave_search"
 SEARCH_KEY_PAGE = "https://brave.com/search/api/"
-USER_AGENT = "LocalAIConcierge/0.1 (https://github.com/padosory5/elaina-agents)"
+USER_AGENT = "NoirAgents/0.1 (https://github.com/padosory5/noir-agents)"
 GEOCODE = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST = "https://api.open-meteo.com/v1/forecast"
 WHERE_AM_I = "https://ipapi.co/json/"  # the city of the internet connection, when no place is named
 WIKIPEDIA = "https://{language}.wikipedia.org/w/api.php"
 # Prices come from the exchanges' own feeds, not search snippets: the pages a search
-# finds have the number, their snippets don't, and she then said she was offline.
+# finds have the number, their snippets don't, and it then said it was offline.
 YAHOO_SEARCH = "https://query2.finance.yahoo.com/v1/finance/search"
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 COINGECKO_SEARCH = "https://api.coingecko.com/api/v3/search"
@@ -81,7 +81,7 @@ CHANGING = re.compile(
     r"hurricane|flight|train|traffic|trending|best .{0,40}\b20(2[4-9]|3\d)\b|\b20(2[5-9]|3\d)\b)\b|"
     r"오늘|내일|어제|지금|현재|최근|최신|뉴스|가격|얼마|환율|주가|대통령|나이|몇 살|순위|결과|일정|날짜|몇 시",
     _I)
-# Words that mean the answer never changes, so her own knowledge is enough.
+# Words that mean the answer never changes, so its own knowledge is enough.
 TIMELESS = re.compile(
     r"\b(history|historical|ancient|medieval|century|centuries|in \d{3,4}\b|prove|proof|theorem|derive|derivative|"
     r"integral|integrate|equation|solve|calculate|compute|simplify|probability|formula|physics|chemistry|biology|"
@@ -106,7 +106,7 @@ PRICE_FILLER = re.compile(
     r"\b(what'?s|what is|whats|how much is|how much are|tell me|the|a|current|currently|right now|now|today|"
     r"latest|price|prices|stock|stocks|share|shares|of|for|in|is|are|at|worth|trading|value|usd|krw|dollars|won|"
     r"please)\b|[?.!,]|주가|주식|시세|가격|얼마|지금|현재|오늘|알려줘", _I)
-# A question that code didn't place, which her model is then asked about.
+# A question that code didn't place, which its model is then asked about.
 QUESTION = re.compile(r"\?\s*$|^\s*(what|who|which|when|where|how|is|are|was|were|does|do|did|has|have|can|will)\b"
                       r"|뭐|누구|언제|어디|무엇|나요|까요", _I)
 # The place in "weather in Busan tomorrow", "Busan weather", "부산 날씨".
@@ -124,7 +124,7 @@ SKY = {0: "clear", 1: "mainly clear", 2: "partly cloudy", 3: "overcast", 45: "fo
 @dataclass
 class Findings:
     kind: str
-    text: str = ""  # what her model reads, plain lines
+    text: str = ""  # what its model reads, plain lines
     sources: list[Source] = field(default_factory=list)  # path: the address, quote: the page's title
     images: list[Picture] = field(default_factory=list)
     when: str = ""  # when it was found, this computer's clock
@@ -135,7 +135,7 @@ class Findings:
 
 def wants_lookup(text: str) -> str | None:
     """What the web is needed for, decided from the words alone: WEATHER, IMAGES,
-    SEARCH, or None when her own knowledge will do or code can't tell."""
+    SEARCH, or None when its own knowledge will do or code can't tell."""
     if WEATHER_WORDS.search(text) and not TIMELESS.search(text):
         return WEATHER
     if IMAGE_WORDS.search(text):
@@ -148,13 +148,13 @@ def wants_lookup(text: str) -> str | None:
 
 
 def unsure(text: str) -> bool:
-    """A question that neither the changing nor the timeless words placed: her model is
+    """A question that neither the changing nor the timeless words placed: its model is
     asked whether its answer changes over time."""
     return bool(QUESTION.search(text.strip())) and not TIMELESS.search(text) and not CHANGING.search(text)
 
 
 def model_form(ollama, model: str):
-    """Her small model asked one thing: does the right answer change over time? The
+    """Its small model asked one thing: does the right answer change over time? The
     schema allows one word, so the reply is yes or no and nothing else."""
     schema = {"type": "object", "properties": {"changes": {"enum": ["yes", "no"]}}, "required": ["changes"]}
     note = ("Would the correct answer to this message be different a year from now, or depend on what is "
@@ -167,7 +167,7 @@ def model_form(ollama, model: str):
             reply = ollama.chat_json(model, [{"role": "system", "content": note},
                                              {"role": "user", "content": text}], schema, think=False)
         except Exception:
-            return False  # if in doubt, her own answer: a lookup she didn't need costs more trust
+            return False  # if in doubt, its own answer: a lookup it didn't need costs more trust
         return reply.get("changes") == "yes"
 
     return ask
@@ -177,7 +177,7 @@ def model_form(ollama, model: str):
 
 
 def settings_path() -> Path:
-    from .elaina import data_dir
+    from .noir import data_dir
 
     return data_dir() / SETTINGS
 
@@ -196,7 +196,7 @@ def _write(settings: dict) -> None:
 
 
 def allowed() -> bool | None:
-    """Whether the user said she may look things up: None until they've been asked."""
+    """Whether the user said it may look things up: None until they've been asked."""
     return _read().get("allowed")
 
 
@@ -314,7 +314,7 @@ def weather(place: str, get=_get) -> Findings:
              f"humidity {now.get('relative_humidity_2m')}%"]
     for i, label in enumerate(("Today", "Tomorrow", "The day after")):
         try:
-            # The weekday is spelled out: left to work it out, her model called a Saturday Tuesday.
+            # The weekday is spelled out: left to work it out, its model called a Saturday Tuesday.
             day = datetime.fromisoformat(daily["time"][i]).strftime("%A %Y-%m-%d")
             lines.append(f"- {label} ({day}): high {daily['temperature_2m_max'][i]}°C, low "
                          f"{daily['temperature_2m_min'][i]}°C, {SKY.get(daily['weather_code'][i], 'unknown sky')}, "
@@ -439,7 +439,7 @@ def _wants_wikipedia(question: str) -> bool:
 
 def look_up(question: str, kind: str, search=search, images=images, weather=weather, wikipedia=wikipedia,
             price=price, read=read_page, sent=record_sent, count=_count) -> Findings:
-    """What the web says, in one piece of plain text her model can read, with the
+    """What the web says, in one piece of plain text its model can read, with the
     sources and any pictures. Raises LookupError when nothing came back."""
     when = datetime.now().isoformat(timespec="minutes")
     if kind == WEATHER:
@@ -519,7 +519,7 @@ def look_up(question: str, kind: str, search=search, images=images, weather=weat
 
 
 def note(found: Findings) -> str:
-    """The findings as they go with the question, so she answers from them."""
+    """The findings as they go with the question, so it answers from them."""
     if found.kind == IMAGES and not found.text:
         titles = "; ".join(picture.title for picture in found.images if picture.title)
         return ("PICTURES FOUND ON THE WEB by the app, shown right under your answer (so don't say you can't show "

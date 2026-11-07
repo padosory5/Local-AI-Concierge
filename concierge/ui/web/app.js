@@ -19,14 +19,14 @@ window.app = (() => {
 
   let api = null;
   let busy = false;
-  let bubble = null; // Elaina's message that streamed text is added to
+  let bubble = null; // Noir's message that streamed text is added to
   let typing = null; // the "..." row shown until the first event arrives
   let currentChat = null; // id of the open conversation, from ChatList
-  let thinkMode = true; // the Think button: Elaina shows her full thinking
+  let thinkMode = true; // the Think button: Noir shows its full thinking
   let thinking = null; // the fog box of the current turn, while it is open
   let bubbleText = ""; // what's been said so far in that message, before formatting
   let modelName = ""; // who is answering, shown under each reply
-  let ownName = ""; // her own model, for an answer made here when the menu says Auto
+  let ownName = ""; // its own model, for an answer made here when the menu says Auto
   let turnStarted = 0;
   let attached = []; // { path, name } waiting to go with the next message
 
@@ -56,7 +56,7 @@ window.app = (() => {
 
   function message(who, text) {
     const node = el("div", `bubble ${who}`);
-    if (who === "elaina") node.append(...rich(text));
+    if (who === "noir") node.append(...rich(text));
     else if (who === "user") node.append(...rich(fenced(text)));
     else node.textContent = text;
     addRow(who, node);
@@ -105,7 +105,7 @@ window.app = (() => {
     return out.join("\n");
   }
 
-  // Elaina's replies come with small marks for lists, bold and italic words, code,
+  // Noir's replies come with small marks for lists, bold and italic words, code,
   // links and maths. They are turned into real elements here, still never as HTML:
   // maths goes through KaTeX and code through highlight.js, both shipped with the
   // app (web/vendor), so the page works with no internet. All the marks are found in
@@ -199,7 +199,7 @@ window.app = (() => {
     return pre;
   }
 
-  // A drawing she made as SVG, shown on a white card. Only shapes, lines and words
+  // A drawing it made as SVG, shown on a white card. Only shapes, lines and words
   // are kept: no scripts, no links, nothing fetched from anywhere.
   function drawing(text) {
     const doc = new DOMParser().parseFromString(text, "image/svg+xml");
@@ -326,7 +326,7 @@ window.app = (() => {
     return `${day}, ${time}`;
   }
 
-  // Where an answer she looked up came from, and when: small links above the line
+  // Where an answer it looked up came from, and when: small links above the line
   // under it. The time matters, because a looked-up answer goes stale.
   function showSources(row, sources, when) {
     if (!sources || !sources.length) return;
@@ -392,7 +392,7 @@ window.app = (() => {
 
   // Which model wrote an answer, as a dot at the start of the line under it: blue
   // on this computer, yellow from a plan or key, turning red as the plan fills up.
-  // `info` is the ElainaDone, or a saved transcript item (both have where, by,
+  // `info` is the NoirDone, or a saved transcript item (both have where, by,
   // saved, plan_used). Set phrases and chats saved before this have no `where`.
   function whoAnswered(row, info) {
     if (!info || !info.where) return;
@@ -412,8 +412,8 @@ window.app = (() => {
       saved.title = info.where === "here"
         ? "Answered on this computer instead of your plan. About what it would have used, "
           + "counting the instructions its app sends with every question."
-        : "Your plan only planned and checked; her model on this computer did the reading. About what "
-          + "the plan would have used doing every step itself. The details are in her thinking above.";
+        : "Your plan only planned and checked; the model on this computer did the reading. About what "
+          + "the plan would have used doing every step itself. The details are in the thinking above.";
       line.querySelector(".meta-copy") ? line.insertBefore(saved, line.querySelector(".meta-copy")) : line.append(saved);
     }
   }
@@ -482,7 +482,7 @@ window.app = (() => {
     bubbleText = "";
   }
 
-  // ------------------------------------------------- under her answer
+  // ------------------------------------------------- under its answer
 
   // Shorter, one click away under a long answer. Only under the newest answer, and
   // only under a real answer (the engine says which: a setup's message has nothing
@@ -576,9 +576,9 @@ window.app = (() => {
   }
 
   function showTyping() {
-    typing = el("div", "bubble elaina typing");
+    typing = el("div", "bubble noir typing");
     typing.append(el("span"), el("span"), el("span"));
-    addRow("elaina", typing);
+    addRow("noir", typing);
   }
 
   function hideTyping() {
@@ -599,7 +599,7 @@ window.app = (() => {
       $("about-device").textContent = e.device;
     },
 
-    // Elaina working it out: faded "fog" that streams in, then folds into
+    // Noir working it out: faded "fog" that streams in, then folds into
     // one line ("Thought for 12s") as soon as anything else arrives.
     Thinking(e) {
       const box = thinkingBox();
@@ -617,18 +617,18 @@ window.app = (() => {
       follow(() => {});
     },
 
-    ElainaText(e) {
-      if (!bubble) bubble = message("elaina", "");
+    NoirText(e) {
+      if (!bubble) bubble = message("noir", "");
       bubbleText += e.text;
       follow(() => bubble.replaceChildren(...rich(bubbleText)));
     },
 
-    ElainaDone(e) {
+    NoirDone(e) {
       finishBubble(e);
     },
 
     Question(e) {
-      const row = message("elaina", e.text).parentElement;
+      const row = message("noir", e.text).parentElement;
       if (e.choices && e.choices.length) row.append(choiceButtons(e.id, e.choices));
     },
 
@@ -640,7 +640,7 @@ window.app = (() => {
       card.append(el("div", "card-label", "Cannot do"), list("card-list", e.cannot_do));
       card.append(el("div", "card-label", "Runs on"), el("div", "card-value", e.runs_on));
       card.append(choiceButtons(e.id, e.actions));
-      addRow("elaina", card);
+      addRow("noir", card);
     },
 
     IdeaCard(e) {
@@ -659,7 +659,7 @@ window.app = (() => {
       if (e.difficulty) card.append(el("div", "card-label", "On this computer"), el("div", "card-value", e.difficulty));
       card.append(el("div", "idea-verdict", e.verdict));
       card.append(choiceButtons(e.id, e.actions));
-      addRow("elaina", card);
+      addRow("noir", card);
     },
 
     Progress(e) {
@@ -674,7 +674,7 @@ window.app = (() => {
         const quoted = e.sources.map((s) => (s.quote ? `${s.path}: “${s.quote}”` : s.path));
         box.append(list("sources", quoted));
       }
-      details(addRow("elaina", box), "", e.text);
+      details(addRow("noir", box), "", e.text);
     },
 
     AgentList(e) {
@@ -699,7 +699,7 @@ window.app = (() => {
           });
           use.title = `Ask ${name} something`;
         }
-        // Elaina asks to confirm in the chat, so the engine decides.
+        // Noir asks to confirm in the chat, so the engine decides.
         const remove = itemButton("item-delete", "✕", () => run(() => api.delete_agent(name)));
         remove.setAttribute("aria-label", `Delete ${name}`);
         remove.title = `Delete ${name}`;
@@ -725,11 +725,11 @@ window.app = (() => {
       for (const item of e.items) {
         if (item.role === "result") draw.Result(item);
         else {
-          const who = item.role === "user" ? "user" : item.role === "error" ? "error" : "elaina";
+          const who = item.role === "user" ? "user" : item.role === "error" ? "error" : "noir";
           const node = message(who, item.text);
-          // The same line as when it was said: the time (and day) and, for her, who wrote it.
+          // The same line as when it was said: the time (and day) and, for it, who wrote it.
           if (who === "user") details(node.parentElement, stamp(item.when));
-          if (who === "elaina") {
+          if (who === "noir") {
             details(node.parentElement, [stamp(item.when), item.by].filter(Boolean).join(" · "), item.text);
             whoAnswered(node.parentElement, item); // the same dot as when it was written
             showFound(node, item.images);
@@ -758,7 +758,7 @@ window.app = (() => {
     header.addEventListener("click", () => box.classList.toggle("open"));
     const body = el("div", "thinking-body");
     box.append(header, body);
-    addRow("elaina", box);
+    addRow("noir", box);
     thinking = { box, header, body, started: Date.now(), steps: 0, thought: null };
     return thinking;
   }
@@ -781,7 +781,7 @@ window.app = (() => {
     if (event.type !== "Thinking") finishThinking();
     // Progress is cleared by any other event, as events.py asks.
     if (event.type !== "Progress") $("progress").hidden = true;
-    // Anything drawn in the chat ends the message Elaina was streaming into.
+    // Anything drawn in the chat ends the message Noir was streaming into.
     if (["Question", "AgentCard", "IdeaCard", "Result", "Error"].includes(event.type)) finishBubble();
 
     const handler = draw[event.type];
@@ -917,8 +917,8 @@ window.app = (() => {
     sendButton.disabled = busy || !canSend();
   }
 
-  // The full window acts through the chat, so Elaina's replies and
-  // questions land in one place. Each returns false while she is busy.
+  // The full window acts through the chat, so Noir's replies and
+  // questions land in one place. Each returns false while it is busy.
 
   function say(text) {
     if (!api || busy) return false;
@@ -983,7 +983,7 @@ window.app = (() => {
 
   // A long paste becomes a file above the box, the way other AI apps do it, so the
   // box stays small and the chat shows "Pasted text" instead of a wall of words.
-  // It goes to her like any added file, cut to what a small model can read.
+  // It goes to it like any added file, cut to what a small model can read.
   const PASTE_AS_FILE_CHARS = 1500;
   const PASTE_AS_FILE_LINES = 20;
   input.addEventListener("paste", async (e) => {

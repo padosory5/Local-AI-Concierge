@@ -5,13 +5,13 @@ produces every event type, so each part of the UI can be built and clicked
 through. No Ollama or model is needed.
 
 What to type to see each flow:
-    anything               Elaina streams a chat reply
+    anything               Noir streams a chat reply
     "make an agent"        agent setup: Question (typed answer), Question
     (or mention documents,   with buttons, AgentCard, Progress, Result
     files or a folder)
     "ask ..."              run the existing agent: Progress, Result with sources
     "translate ...", "screenshot ..." or "idea"
-                           an IdeaCard: Elaina's verdict on a helper idea
+                           an IdeaCard: Noir's verdict on a helper idea
     "error"                an Error event
     "turn on the highlight explainer" or "install Grammar Fixer"
                            adds a ready-made agent (agents/starters.yaml),
@@ -43,8 +43,8 @@ from .events import (
     IdeaCard,
     IdeaStep,
     AgentList,
-    ElainaDone,
-    ElainaText,
+    NoirDone,
+    NoirText,
     Error,
     Event,
     Progress,
@@ -108,7 +108,8 @@ def practice_models(words: str = "", sort: str = "downloads", kind: str = "") ->
 
 
 class FakeEngine:
-    def __init__(self, delay: float = 0.03):
+    def __init__(self, delay: float = 0.03, setup: bool = False):
+        """setup: play the first-run setup page, fetching nothing (python -m concierge.ui --fake --setup)."""
         # Seconds between streamed pieces and progress steps; 0 for tests.
         self.delay = delay
         self.agents = ["Contracts helper", "Korean translator"]
@@ -122,6 +123,7 @@ class FakeEngine:
         self.book = ChatBook(None)
         self.settings: dict = {"base_model": "qwen3.5:4b"}  # practice only: nothing touches the real ones
         usage.in_memory()  # practice numbers never reach the real usage file
+        self.setup = PracticeSetup() if setup else None
         self.menu = ModelMenu(PracticeOllama(), lambda: (hardware.detect(), 3.0), load=lambda: dict(self.settings),
                               save=self._keep_settings, keys=PracticeKeys(), browse=practice_models,
                               accounts=PracticeAccounts())
@@ -170,7 +172,7 @@ class FakeEngine:
                 for word in "The user is saying hello, so a short friendly reply fits.".split(" "):
                     yield Thinking(word + " ", "thought")
             for event in self._reply(text):
-                yield done if done and isinstance(event, ElainaDone) else event
+                yield done if done and isinstance(event, NoirDone) else event
         yield from self.book.record(text, with_thinking())
 
     def ask_again(self) -> Iterator[Event]:
@@ -187,7 +189,7 @@ class FakeEngine:
             yield from self._say(self.answered, self._practice_done(False, cloud))
         yield from self.book.record(f"Ask {cloud} instead", again())
 
-    def _practice_done(self, here: bool, by: str, instead: str = "") -> ElainaDone:
+    def _practice_done(self, here: bool, by: str, instead: str = "") -> NoirDone:
         """The end of a practice answer, with made-up numbers kept in memory, so the
         dot under it and the saved tokens look the way they will for real."""
         chosen = self.menu.chosen() or {}
@@ -197,13 +199,13 @@ class FakeEngine:
             if chosen.get("auto"):
                 saved = usage.saved_estimate(source, 900, 60)
                 usage.record_saved(source, saved)
-            return ElainaDone(by=by, instead=instead, where=auto.HERE, saved=saved)
+            return NoirDone(by=by, instead=instead, where=auto.HERE, saved=saved)
         if source in ("codex", "claude_code"):
             # The practice plan counts its tokens and limits. Never a key's model:
             # that one would really go to the company.
             list(self.menu.talker("").chat())
         used = self.menu.plan_used(source) if source in ("codex", "claude_code") else -1.0
-        return ElainaDone(by=by, where=auto.CLOUD, plan_used=used)
+        return NoirDone(by=by, where=auto.CLOUD, plan_used=used)
 
     def choose(self, id: str, choice: str) -> Iterator[Event]:
         self.answered = ""
@@ -330,6 +332,12 @@ class FakeEngine:
     def forget_history(self) -> None:
         self._portrait = {}
 
+    def setup_state(self) -> dict:
+        return self.setup.state() if self.setup else {"needed": False}
+
+    def setup_begin(self, smallest: bool = False) -> dict:
+        return self.setup.begin(bool(smallest)) if self.setup else {"needed": False}
+
     def measure(self) -> dict:
         time.sleep(self.delay * 40)
         return {"device": "Practice graphics card · 8 GB", "words_per_second": 45,
@@ -402,7 +410,7 @@ class FakeEngine:
                  IdeaStep("The text you highlighted", "not_built"),
                  IdeaStep("Translate text (into Korean)", "not_built"),
                  IdeaStep("Show the result in a small bubble or notification", "not_built")],
-                "Easy: Elaina's own model can do this, nothing extra to download.",
+                "Easy: the built-in model can do this, nothing extra to download.",
                 "Your computer can do this, but the app can't build it yet. Save the idea, and "
                 "the most wanted parts get built first.",
                 "not_built", ["Save the idea", "Change the idea", "Cancel"],
@@ -458,11 +466,11 @@ class FakeEngine:
         else:
             yield Error(f"Nothing is waiting for an answer to {id!r}.")
 
-    def _say(self, text: str, done: ElainaDone | None = None) -> Iterator[Event]:
+    def _say(self, text: str, done: NoirDone | None = None) -> Iterator[Event]:
         for word in text.split(" "):
             time.sleep(self.delay)
-            yield ElainaText(word + " ")
-        yield done or ElainaDone()
+            yield NoirText(word + " ")
+        yield done or NoirDone()
 
     def _card(self) -> AgentCard:
         kinds = {"PDF only": "PDF files", "Word only": "Word files"}
@@ -474,7 +482,7 @@ class FakeEngine:
             reads=[f"{self.draft.get('folder', 'Documents')} ({files}, 23 files)"],
             can_do=["Find and quote passages", "Answer questions about them"],
             cannot_do=["Change, move or delete files", "Use the internet"],
-            runs_on="Qwen 3.5 4B (Elaina's model, no extra memory)",
+            runs_on="Qwen 3.5 4B (the built-in model, no extra memory)",
         )
 
     def _create(self) -> Iterator[Event]:
@@ -592,3 +600,54 @@ class PracticeAccounts:
                 pass
 
         return Practice()
+
+
+class PracticeSetup:
+    """The first-run setup page's three steps, played in a few seconds with nothing
+    fetched, installed or built, so the page can be tried without touching Ollama."""
+
+    STEPS = (("ollama", "Downloading Ollama from ollama.com...", 0.7), ("ollama", "Installing Ollama...", 0.0),
+             ("model", "Downloading Qwen 3.5 4B (3.3 GB)...", 3.3), ("noir", "Building Noir from the model...", 0.0))
+
+    def __init__(self):
+        self.done: set[str] = set()
+        self.step = self.note = self.error = ""
+        self.progress: tuple[int, int] | None = None
+        self.smallest = False
+        self._thread = None
+
+    def state(self) -> dict:
+        working = self._thread is not None and self._thread.is_alive()
+        return {"needed": "noir" not in self.done, "hardware": ["Windows 11, a practice computer (8 cores)",
+                "Memory: 32 GB (18 GB free right now)", "Graphics: NVIDIA GeForce RTX 5080, 16 GB", "Disk: 420 GB free"],
+                "device": "NVIDIA GeForce RTX 5080", "ollama": "running" if "ollama" in self.done else "missing",
+                "ollama_gb": 0.7, "can_install": True, "download_page": "https://ollama.com/download",
+                "model": {"tag": "qwen3.5:4b", "name": "Qwen 3.5 4B", "download_gb": 3.3, "memory_gb": 3.8,
+                          "have": "model" in self.done},
+                "fits": True, "reason": "", "noir": "noir" in self.done, "working": working, "step": self.step,
+                "note": self.note, "progress": {"done": self.progress[0], "total": self.progress[1]} if self.progress else None,
+                "waiting": "", "error": self.error, "mac": False}
+
+    def begin(self, smallest: bool = False) -> dict:
+        import threading
+
+        if self._thread is None or not self._thread.is_alive():
+            self.error = ""
+            self._thread = threading.Thread(target=self._play, daemon=True)
+            self._thread.start()
+        return self.state()
+
+    def _play(self) -> None:
+        import time
+
+        for step, note, gb in self.STEPS:
+            if step in self.done and not (step == "ollama" and "Installing" in note):
+                continue
+            self.step, self.note = step, note
+            total = int(gb * 1024 ** 3)
+            for tick in range(1, 21):
+                time.sleep(0.12)
+                self.progress = (total * tick // 20, total) if total else None
+            self.progress = None
+            self.done.add(step)
+        self.step = self.note = ""

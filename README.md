@@ -1,8 +1,29 @@
-# Local-AI-Concierge
+# Noir Agents
 
-Elaina: a simple app that sets up local AI for anyone. She checks your
+Noir: a simple app that sets up local AI for anyone. It checks your
 computer, picks a model that fits it, and chats with you, all on your own
 machine.
+
+## Install (no Python needed)
+
+Download the newest release from the Releases page and open it. Noir sets up
+everything else itself on the first run: Ollama (the free program that runs AI
+models), a model that fits the computer, and its own model built from it, with
+one button and every download's size said first.
+
+- **Windows**: `Noir-Setup-<version>.exe`. It installs for your user only, with
+  no admin prompt. The installer isn't signed yet, so Windows says "Windows
+  protected your PC": click *More info*, then *Run anyway*.
+- **Mac** (Apple Silicon, macOS 12 or newer): `Noir-<version>.dmg`. Drag Noir
+  into Applications. The app isn't signed yet, so the first time right-click it
+  and choose *Open*. On the Mac the window and the chat work; the Spot, highlight
+  helpers and its noticing are Windows only for now.
+
+What the app prints goes to `noir.log` in its data folder
+(`%LOCALAPPDATA%\NoirAgents` on Windows, `~/Library/Application
+Support/NoirAgents` on a Mac), which is the first thing to look at when
+something goes wrong. To build the installer yourself: `python packaging/build.py`
+(Inno Setup on Windows for the installer; the Mac makes the disk image itself).
 
 ## What works now (first process)
 
@@ -10,18 +31,18 @@ machine.
    CPU, memory, disk and graphics cards. NVIDIA through `nvidia-smi`, AMD and
    Intel through the Windows registry or Linux sysfs, Apple Silicon through
    its shared memory. Nothing is guessed.
-2. **Pick Elaina's model** (`concierge/catalog.py`, `concierge/models.yaml`).
-   Elaina stays loaded all the time, so she may only use a small share of the
+2. **Pick Noir's model** (`concierge/catalog.py`, `concierge/models.yaml`).
+   Noir stays loaded all the time, so it may only use a small share of the
    machine: 30% of a graphics card, 20% of a Mac's shared memory, or 18% of
    RAM (at most 3 GB) on the processor. The first model in the tested list
    that fits wins.
-3. **Make it Elaina** (`concierge/elaina.py`, `concierge/persona/`). Creates an
-   Ollama model named `elaina` from the chosen model, with her persona and the
+3. **Make it Noir** (`concierge/noir.py`, `concierge/persona/`). Creates an
+   Ollama model named `noir` from the chosen model, with its persona and the
    facts about this computer baked in. It is rebuilt automatically when the
    persona, the hardware or the chosen model changes.
-4. **Chat** (`ElainaChat` in `concierge/elaina.py`). Streams replies, keeps the
+4. **Chat** (`NoirChat` in `concierge/noir.py`). Streams replies, keeps the
    recent conversation, and turns off "thinking" so answers come quickly. The
-   terminal chat in `cli.py` is temporary; the real UI will reuse `ElainaChat`.
+   terminal chat in `cli.py` is temporary; the real UI will reuse `NoirChat`.
 
 ## Setup
 
@@ -41,20 +62,20 @@ On macOS or Linux use `python3.11 -m venv .venv` and `source .venv/bin/activate`
 ## Run
 
 ```bash
-python -m concierge             # show your computer and Elaina's model, set up if needed, chat
+python -m concierge             # show your computer and Noir's model, set up if needed, chat
 python -m concierge hardware    # what this computer has (--json for raw)
-python -m concierge recommend   # which model Elaina would use, and why
-python -m concierge setup       # download the model and rebuild Elaina
-python -m concierge chat        # talk with Elaina
+python -m concierge recommend   # which model Noir would use, and why
+python -m concierge setup       # download the model and rebuild Noir
+python -m concierge chat        # talk with Noir
 python -m concierge measure TAG # real graphics memory a model uses
-python -m concierge.ui          # the app; minimize it and Elaina becomes a small circle in the corner
-python -m concierge.ui --fake   # the same with a scripted Elaina, no model needed
+python -m concierge.ui          # the app; minimize it and Noir becomes a small circle in the corner
+python -m concierge.ui --fake   # the same with a scripted Noir, no model needed
 pytest                          # run the tests
 ```
 
 ## Agents
 
-Ask Elaina for help with your own files and she creates an agent for it:
+Ask Noir for help with your own files and it creates an agent for it:
 
 1. **Understand the task.** The router (`concierge/agents/router.py`) sorts
    each message into chat, a new agent, or a job for an existing agent. The
@@ -62,7 +83,7 @@ Ask Elaina for help with your own files and she creates an agent for it:
    an agent named in the message is used directly, "make an agent" always
    means a new one, and a quick search tells it which agent's files contain
    the message's words.
-2. **Ask if this agent is good.** Elaina offers a tested blueprint
+2. **Ask if this agent is good.** Noir offers a tested blueprint
    (`concierge/agents/blueprints/`), asks only what is missing (which folder),
    and shows an agent card written by code: what it reads, can do, cannot do.
 3. **Create it.** It reads the files (PDF, Word, text), saves the agent, and
@@ -78,23 +99,23 @@ router or a blueprint, check the router still scores 100%:
 python -m concierge.agents.eval_router
 ```
 
-## When Elaina uses graphics memory
+## When Noir uses graphics memory
 
-Elaina is loaded once you send the first message, stays loaded while the
+Noir is loaded once you send the first message, stays loaded while the
 program is open, and leaves when it closes. The settings are at the top of
-`concierge/elaina.py`:
+`concierge/noir.py`:
 
-- `UNLOAD_ON_EXIT`: unload her right away on `/exit`, Ctrl+C or closing the
+- `UNLOAD_ON_EXIT`: unload it right away on `/exit`, Ctrl+C or closing the
   window.
 - `KEEP_ALIVE` and `HEARTBEAT_SECONDS`: if the program is killed without a
-  chance to clean up (Task Manager, a crash), Ollama frees her `KEEP_ALIVE`
+  chance to clean up (Task Manager, a crash), Ollama frees it `KEEP_ALIVE`
   after the program's last check-in.
 
-To free her by hand: `ollama stop elaina`.
+To free it by hand: `ollama stop noir`.
 
 ## Growing the tested model list
 
-`models.yaml` is the list Elaina picks from, best first. Ollama's own memory
+`models.yaml` is the list Noir picks from, best first. Ollama's own memory
 figure is often wrong (it claimed 2.92 GB for qwen3.5:4b; the card used
 3.84 GB), so every entry should be measured on a real card:
 
@@ -113,8 +134,8 @@ concierge/
   hardware.py     step 1: read the computer
   catalog.py      step 2: pick a model from models.yaml
   models.yaml     the tested model list
-  elaina.py       step 3 and 4: build Elaina, chat session
-  persona/        Elaina's persona prompt
+  noir.py       step 3 and 4: build Noir, chat session
+  persona/        Noir's persona prompt
   ollama.py       small client for the local Ollama server
   cli.py          temporary terminal front end
   events.py       the contract between engine and UI (see CLAUDE.md)
@@ -130,5 +151,5 @@ tests/            pytest suite, no Ollama needed
 - One branch per feature (`git switch -c feature/<name>`), then a pull request.
 - New package? Add it to `requirements.txt` in the same commit.
 - Natural split right now: one person on hardware detection and the tested
-  model list (measuring models on different machines), the other on Elaina's
+  model list (measuring models on different machines), the other on Noir's
   persona and the chat session.

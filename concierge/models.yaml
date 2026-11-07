@@ -1,6 +1,6 @@
-# The tested model list for Elaina's own brain.
+# The tested model list for Noir's own brain.
 #
-# Elaina is the always-on concierge, so her model must be small enough to stay
+# Noir is the always-on concierge, so its model must be small enough to stay
 # loaded without slowing the computer down or crowding out the bigger model an
 # agent will use later. The picker in catalog.py takes the FIRST entry below
 # that fits the machine, so keep the list ordered best first.
@@ -60,9 +60,9 @@ models:
     languages: [en]
     notes: Last resort for very small machines. Often confused; tell the user.
 
-# Bigger models for agent jobs Elaina's own model is too small for. They load
-# only while such an agent works, next to Elaina, so they must fit in what
-# her model leaves free (see catalog.helper_room). Best first within a role.
+# Bigger models for agent jobs Noir's own model is too small for. They load
+# only while such an agent works, next to Noir, so they must fit in what
+# its model leaves free (see catalog.helper_room). Best first within a role.
 #
 #   role   general (bigger all-round model), vision (understands images),
 #          speech (speech to text; runs with faster-whisper, not Ollama)
@@ -84,7 +84,7 @@ helpers:
     memory_gb: 6.6
     measured: true
     languages: [en, ko, ja, zh]
-    notes: The old Elaina's model; fallback when Qwen 3.5 9B does not fit.
+    notes: The model from before; fallback when Qwen 3.5 9B does not fit.
 
   - tag: qwen3-vl:8b
     name: Qwen 3 VL 8B

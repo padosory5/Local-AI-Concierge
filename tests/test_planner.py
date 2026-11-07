@@ -44,7 +44,7 @@ def test_every_block_is_well_formed():
 def test_easy_idea_that_is_not_built_yet():
     a = assess(steps("hotkey", "selected_text", "rewrite", "replace_text"), BIG_PC, 3.8, BLUEPRINTS)
     assert a.level == "not_built"
-    assert a.difficulty.startswith("Easy: Elaina's own model")
+    assert a.difficulty.startswith("Easy: the built-in model")
     assert a.actions[0] == "Save the idea"
     assert [s.status for s in a.steps] == ["not_built", "ready", "ready", "not_built"]
 
@@ -146,7 +146,7 @@ def ideas_home(tmp_path, monkeypatch):
 
 
 def make(*plans):
-    return IdeaPlanner(FakeModel(*plans), "elaina", None, lambda: (BIG_PC, 3.8), BLUEPRINTS)
+    return IdeaPlanner(FakeModel(*plans), "noir", None, lambda: (BIG_PC, 3.8), BLUEPRINTS)
 
 
 def test_idea_card_then_save_it():
@@ -223,7 +223,7 @@ class ClassifyingModel(FakeModel):
 def test_typed_reply_about_something_else_drops_the_idea():
     model = ClassifyingModel(TRANSLATOR)
     model.about = "something else"
-    p = IdeaPlanner(model, "elaina", None, lambda: (BIG_PC, 3.8), BLUEPRINTS)
+    p = IdeaPlanner(model, "noir", None, lambda: (BIG_PC, 3.8), BLUEPRINTS)
     list(p.start("translate what I highlight"))
     assert list(p.answer("what's the weather like?")) == [] and p.handoff == "what's the weather like?"
 
@@ -231,7 +231,7 @@ def test_typed_reply_about_something_else_drops_the_idea():
 def test_typed_reply_about_the_idea_revises_it():
     model = ClassifyingModel(TRANSLATOR, TRANSLATOR)
     model.about = "the idea"
-    p = IdeaPlanner(model, "elaina", None, lambda: (BIG_PC, 3.8), BLUEPRINTS)
+    p = IdeaPlanner(model, "noir", None, lambda: (BIG_PC, 3.8), BLUEPRINTS)
     list(p.start("translate what I highlight"))
     assert isinstance(list(p.answer("make it Japanese instead"))[-1], IdeaCard)
 

@@ -1,7 +1,7 @@
 [project]
-name = "local-ai-concierge"
-version = "0.1.0"
-description = "Elaina: a local AI concierge that sets up local AI for anyone"
+name = "noir-agents"
+version = "0.2.0"
+description = "Noir: a local AI concierge that sets up local AI for anyone"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]

@@ -9,6 +9,7 @@ code (quick/translate.py).
 from __future__ import annotations
 
 import os
+import sys
 import re
 from collections import Counter
 from collections.abc import Iterator
@@ -16,8 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..catalog import find_model
-from ..elaina import load_state
-from ..events import AgentCard, AgentList, ElainaDone, ElainaText, Event, Progress, Question, Result, Thinking
+from ..noir import load_state
+from ..events import AgentCard, AgentList, NoirDone, NoirText, Event, Progress, Question, Result, Thinking
 from ..ollama import Ollama, OllamaError
 from . import runner, store
 from .blueprint import Blueprint
@@ -31,7 +32,10 @@ PLACES = ["Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos"]
 CANCEL_WORDS = ("cancel", "never mind", "nevermind", "forget it", "no thanks", "stop", "취소", "그만")
 YES_WORDS = ("yes", "yeah", "yep", "sure", "ok", "okay", "create", "do it", "go ahead", "응", "네", "좋아")
 # Folders an agent may never read, even if the user names them.
-BLOCKED = [Path(os.environ.get(v, "")) for v in ("SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData")]
+BLOCKED = ([Path(os.environ.get(v, "")) for v in ("SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData")]
+           if sys.platform == "win32" else
+           [Path(p) for p in ("/System", "/Library", "/Applications", "/usr", "/bin", "/sbin", "/etc", "/private",
+                              "/var", "/opt")])
 SKIP_WHILE_SEARCHING = {"appdata", "node_modules", ".git", "$recycle.bin", "library"}
 
 CARD, CHANGE, PICK_FOLDER, DUPLICATE = "card", "change", "pick_folder", "duplicate"
@@ -101,7 +105,7 @@ class AgentBuilder:
     def compose(self, request: str, blocks: list[str]) -> Iterator[Event]:
         """Make an agent from an idea's parts, with no kind of agent behind it:
         the shared template (custom.yaml) filled in from the parts, and an
-        instruction Elaina writes for what it does with the text."""
+        instruction Noir writes for what it does with the text."""
         self.draft = Draft(self.blueprints[CUSTOM], request=request, name_is_auto=False)
         slots = self.draft.slots
         slots["when"] = WHILE_ON if {"while_on", "selected_text"} & set(blocks) else IN_CHAT
@@ -485,7 +489,7 @@ class AgentBuilder:
             reads=reads,
             can_do=can_do,
             cannot_do=cannot_do,
-            runs_on=f"{_model_name()} (Elaina's model, no extra memory)",
+            runs_on=f"{_model_name()} (the built-in model, no extra memory)",
             actions=[SAVE_CHANGES if draft.editing else CREATE_IT, "Change something", "Cancel"],
         )
 
@@ -703,7 +707,7 @@ def custom_card(slots: dict, cannot_do: list[str]) -> tuple[list[str], list[str]
         can_do = [f"Does: {slots.get('instruction', '')}", f"Shows the result: {slots.get('show')}"]
         if slots.get("show") != CLIPBOARD:
             can_do.append(f"The result stays: {slots.get('keep')}")
-        cannot_do = list(cannot_do) + ["Work while it's switched off or Elaina's window is closed"]
+        cannot_do = list(cannot_do) + ["Work while it's switched off or the Noir window is closed"]
     else:
         reads = [f'What you send it in the chat, starting with its name ("{name}: ...")']
         can_do = [f"Does: {slots.get('instruction', '')}", "Answers in the chat"]
@@ -717,8 +721,8 @@ def _fill(template: str, slots: dict) -> str:
 
 
 def say(text: str) -> Iterator[Event]:
-    yield ElainaText(text)
-    yield ElainaDone()
+    yield NoirText(text)
+    yield NoirDone()
 
 
 def place_dirs(place: str) -> list[Path]:
@@ -792,4 +796,4 @@ def describe_files(files: list[Path]) -> str:
 def _model_name() -> str:
     tag = load_state().get("base_model", "")
     model = find_model(tag) if tag else None
-    return model.name if model else (tag or "Elaina's model")
+    return model.name if model else (tag or "the built-in model")

@@ -1,4 +1,4 @@
-"""Elaina notices what could help, asks once, and does the job.
+"""Noir notices what could help, asks once, and does the job.
 
 A messy Downloads folder is the first such job, and a lecture on the screen the
 second, though summarizing one is not built yet.
@@ -7,7 +7,7 @@ Everything here is plain code with no model involved: code can count files and
 read a window's title, and it does so without holding any graphics memory.
 Nothing is ever deleted or overwritten, and every sort can be undone for a week.
 
-She only notices anything after the user says yes once, and she asks at a break
+It only notices anything after the user says yes once, and it asks at a break
 between tasks, right after they switch to another window, never just because
 they stopped typing: a pause is usually someone thinking. Research on helpers
 that speak up found that asking sooner and more often turned most people against
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import sys
 import threading
 import time
 import traceback
@@ -26,7 +27,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from ..elaina import data_dir
+from ..noir import data_dir
 
 MIN_FILES = 30  # fewer loose files than this isn't a mess worth interrupting for
 SETTLE_SECONDS = 600  # a file newer than this may still be downloading
@@ -224,6 +225,8 @@ class BreakSpotter:
         self._switched = float("-inf")
 
     def __call__(self) -> bool:
+        if sys.platform != "win32":
+            return False  # breaks are spotted on Windows only for now, so there is never one
         from .glow import full_screen_in_use
 
         user32 = ctypes.windll.user32
@@ -247,7 +250,7 @@ class TidyWatch:
     """Notices what could help right now, asks, and does the job.
 
     It looks at two things: a messy Downloads folder, every so often, and a
-    lecture on the screen, every few seconds. Questions take turns, so she
+    lecture on the screen, every few seconds. Questions take turns, so it
     never asks two things at once.
 
     practice: nothing is looked at or moved; the questions come soon after
@@ -260,7 +263,7 @@ class TidyWatch:
                  quiet: Callable[[], bool] | None = None, watching: Callable[[], str] | None = None,
                  practice: bool = False, noticing: bool | None = None):
         """glow, ask, quiet and watching are replaced in tests. noticing: whether the
-        user said she may notice things; None means read what they said last time."""
+        user said it may notice things; None means read what they said last time."""
         self.folder = folder or downloads_dir()
         self.log = log or log_path()
         self.practice = practice
@@ -271,13 +274,16 @@ class TidyWatch:
         self.noticing = True if practice and noticing is None else noticing
         if self.noticing is None:
             self.noticing = self._read_settings().get("noticing")
+        if sys.platform != "win32":
+            # It notices nothing off Windows for now, so it never asks whether it may.
+            self.noticing = False
         self._answers = {} if practice else self._read_answers()
         self._watching = watching or (_practice_lecture if practice else _real_lecture)
         self._asleep_until = 0.0 if practice else self._read_snooze()
         self._video_asleep_until = 0.0
         self._video_seen = PRACTICE_LECTURE if practice else ""  # the lecture on screen at the last look
         self._video_asked: set[str] = set()
-        self._video_waiting = False  # she asked about a video and hasn't had an answer
+        self._video_waiting = False  # it asked about a video and hasn't had an answer
         self._doing: str | None = None  # the job running now, in the user's words
         self._practice_files = 60
         self._done = self._read_done()
@@ -286,16 +292,18 @@ class TidyWatch:
         self._turn = threading.Lock()  # one question at a time
         self._question_gone = threading.Event()  # answered somewhere else, so the note can go
         # No answer yet, so the first question needn't wait for the gap. Not 0.0: the
-        # clock here counts from boot, so that kept her quiet for the first three
+        # clock here counts from boot, so that kept it quiet for the first three
         # hours after every restart of the computer (and hung the tests after one).
         self._last_answer = float("-inf")
         self.asking = False  # a question is on the screen right now
         self.changed: Callable[[], None] = lambda: None  # told whenever today() would say something new
-        self.held: Callable[[], bool] = lambda: False  # true while she shouldn't ask anything yet
+        self.held: Callable[[], bool] = lambda: False  # true while it shouldn't ask anything yet
 
     # ----------------------------------------------------------- looking
 
     def start(self) -> None:
+        if sys.platform != "win32":
+            return  # no looking off Windows for now: jobs still run when asked, with no light
         threading.Thread(target=self._keep_looking, args=(self.look, FIRST_LOOK_SECONDS, LOOK_SECONDS,
                                                           PRACTICE_FIRST_LOOK_SECONDS),
                          name="tidy-watch", daemon=True).start()
@@ -561,10 +569,28 @@ class TidyWatch:
             self.changed()
 
     def _make_glow(self):
+        if sys.platform != "win32":
+            return _NoLight()
         from .glow import Glow
 
         self._glow = Glow()
         return self._glow
+
+
+class _NoLight:
+    """Stands in for the light where there is none yet (the Mac): the job runs, nothing shows."""
+
+    def started(self) -> None:
+        pass
+
+    def finished(self) -> None:
+        pass
+
+    def failed(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
 
 
 def _question(count: int) -> str:

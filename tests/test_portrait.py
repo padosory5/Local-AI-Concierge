@@ -1,8 +1,8 @@
 import pytest
 
 from concierge import portrait
-from concierge.elaina import ElainaChat
-from concierge.engine import ElainaEngine
+from concierge.noir import NoirChat
+from concierge.engine import NoirEngine
 from concierge.fake_engine import FakeEngine
 from concierge.history import CHATGPT, CLAUDE, PastChat
 
@@ -41,7 +41,7 @@ def chat(*asked, title="", when=1_700_000_000.0, source=CHATGPT):
 def test_kinds_are_counted_by_code_from_a_fixed_list():
     model = Model(kinds=["writing", "coding", "writing", "made-up"])
     chats = [chat(f"chat {n}") for n in range(4)]
-    kinds = portrait.sort_kinds(model, "elaina", chats)
+    kinds = portrait.sort_kinds(model, "noir", chats)
     assert [(k["id"], k["count"]) for k in kinds] == [("writing", 2), ("coding", 1), ("other", 1)]
     assert model.schemas[0]["properties"]["1"]["enum"] == list(portrait.KINDS)  # the model can't invent one
     assert kinds[0]["topic"] == "spot"  # writing points to the Spot on Help me
@@ -88,7 +88,7 @@ def test_only_facts_the_second_look_says_yes_to_survive():
     found = [(portrait.checked(suggestion("Works part-time at a cafe", "I work part-time at a cafe"), LINE), LINE[0][0]),
              (portrait.checked(suggestion("Works as a barista manager", "I work part-time at a cafe"), LINE), LINE[0][0])]
     model = Model(yes=lambda fact: "manager" not in fact)
-    assert [fact["fact"] for fact in portrait.confirmed(model, "elaina", found)] == ["Works part-time at a cafe"]
+    assert [fact["fact"] for fact in portrait.confirmed(model, "noir", found)] == ["Works part-time at a cafe"]
 
 
 def test_the_same_fact_from_two_chats_becomes_one_and_keeps_the_fuller_words():
@@ -118,7 +118,7 @@ def test_one_line_gives_at_most_two_facts():
     model = Model(facts=[suggestion("Builds an AI operating system", "building an AI operating system", about="goal"),
                          suggestion("Builds agents", "agents", about="goal"),
                          suggestion("Builds scheduling", "scheduling", about="goal")])
-    facts = portrait.find_facts(model, "elaina", [chat(line)])
+    facts = portrait.find_facts(model, "noir", [chat(line)])
     assert len(facts) == 2
 
 
@@ -136,9 +136,9 @@ def test_languages_are_told_apart_by_code():
 def test_understanding_again_never_asks_twice_about_the_same_fact():
     chats = [chat("I work part-time at a cafe in Sinchon on weekends.")]
     model = Model(kinds=["writing"], facts=[suggestion("Works part-time at a cafe", "I work part-time at a cafe")])
-    made = portrait.understand(model, "elaina", chats)
+    made = portrait.understand(model, "noir", chats)
     portrait.keep(made["facts"][0]["id"], False)
-    again = portrait.understand(model, "elaina", chats)
+    again = portrait.understand(model, "noir", chats)
     assert again["facts"][0]["kept"] is False
     assert again["chats"] == {CHATGPT: 1} and again["languages"] == {"English": 1}
 
@@ -155,7 +155,7 @@ def test_only_kept_facts_reach_her_and_personal_matters_never_do():
 
 
 class Ollama:
-    def __init__(self, system="I am Elaina."):
+    def __init__(self, system="I am Noir."):
         self.system, self.sent = system, None
 
     def capabilities(self, name):
@@ -171,10 +171,10 @@ class Ollama:
 
 def test_what_she_knows_goes_only_to_her_own_model_with_her_persona():
     own = Ollama()
-    chat_ = ElainaChat(own)
+    chat_ = NoirChat(own)
     chat_.about = "WHAT YOU KNOW ABOUT THE USER\n- Works at a cafe"
     list(chat_.send("hi"))
-    assert own.sent[0] == {"role": "system", "content": "I am Elaina.\n\nWHAT YOU KNOW ABOUT THE USER\n- Works at a cafe"}
+    assert own.sent[0] == {"role": "system", "content": "I am Noir.\n\nWHAT YOU KNOW ABOUT THE USER\n- Works at a cafe"}
     cloud = Ollama()
     chat_.talker = cloud  # a cloud model was picked in the menu
     list(chat_.send("hi again"))
@@ -184,7 +184,7 @@ def test_what_she_knows_goes_only_to_her_own_model_with_her_persona():
 
 def test_without_her_persona_nothing_about_the_user_is_sent():
     own = Ollama(system="")
-    chat_ = ElainaChat(own)
+    chat_ = NoirChat(own)
     chat_.about = "WHAT YOU KNOW ABOUT THE USER\n- Works at a cafe"
     list(chat_.send("hi"))
     assert all(message["role"] != "system" for message in own.sent)
@@ -195,7 +195,7 @@ def test_the_engine_says_plainly_when_theres_nothing_to_read(tmp_path, monkeypat
     from concierge.agents import store
 
     monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
-    engine = ElainaEngine(Ollama())
+    engine = NoirEngine(Ollama())
     assert "error" in engine.understand_history()
     (tmp_path / "notes.txt").write_text("hello")
     assert "ChatGPT or Claude" in engine.bring_in_history(str(tmp_path / "notes.txt"))["error"]
@@ -220,7 +220,7 @@ def test_what_the_computer_says_and_what_chats_say_live_side_by_side():
     portrait.keep("c1", True)
     chats = [chat("I work part-time at a cafe in Sinchon on weekends.")]
     model = Model(kinds=["writing"], facts=[suggestion("Works part-time at a cafe", "I work part-time at a cafe")])
-    made = portrait.understand(model, "elaina", chats)
+    made = portrait.understand(model, "noir", chats)
     assert [fact["source"] for fact in made["facts"]] == [CHATGPT, THIS_COMPUTER]
     assert made["facts"][1]["kept"] is True and made["computer"]["roles"] == {"developer": 4}
     again = portrait.add_computer({"looked": 2.0, "roles": {}}, [dict(computer[0], kept=None)])

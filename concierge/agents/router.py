@@ -1,4 +1,4 @@
-"""Decide what a message is: chat with Elaina, a request for a new agent, a
+"""Decide what a message is: chat with Noir, a request for a new agent, a
 job for an agent the user already has, or an idea for another kind of helper
 (which the idea planner talks through, see planner.py).
 

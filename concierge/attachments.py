@@ -1,6 +1,6 @@
 """What the user adds with the + button: files, folders and pictures.
 
-Only what fits goes to the model. A file's words stay in her memory like anything
+Only what fits goes to the model. A file's words stay in its memory like anything
 else that was said, so the user can ask about it again. Pictures are too big for
 that, so only the next reply sees them.
 """

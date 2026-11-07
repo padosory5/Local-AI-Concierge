@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ctypes
 import queue
+import sys
 import threading
 from ctypes import wintypes
 
@@ -22,7 +23,10 @@ GAP = 8  # pixels between the text and the bubble
 MAX_WIDTH = 460
 COLORS = {"bg": "#2a2a2d", "text": "#ececea", "muted": "#a09f9a", "accent": "#8f7ff0"}
 
-_user32 = ctypes.windll.user32
+if sys.platform == "win32":
+    _user32 = ctypes.windll.user32
+else:  # another system: the module imports, so the rest of the app starts, but no bubble shows
+    _user32 = None
 GWL_EXSTYLE = -20
 WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST = 0x08000000, 0x00000080, 0x00000008
 

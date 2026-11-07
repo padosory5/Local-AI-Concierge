@@ -1,4 +1,4 @@
-"""How much of a plan or an API key Elaina's answers have used, for the meter beside
+"""How much of a plan or an API key Noir's answers have used, for the meter beside
 the model button and the Accounts page. Only numbers are kept: which plan or company,
 which model, how many tokens, and the plan's own limits as its app reported them.
 Never any words.
@@ -28,7 +28,7 @@ _memory: dict | None = None  # the practice app keeps its numbers here, never in
 
 
 def usage_path() -> Path:
-    from .elaina import data_dir
+    from .noir import data_dir
     return data_dir() / "usage.json"
 
 
@@ -58,7 +58,7 @@ def _save(data: dict) -> None:
 
 
 def record_tokens(source: str, model: str, read: int, wrote: int, when: float | None = None) -> None:
-    """One answer: `read` is everything the model read (the conversation, her persona,
+    """One answer: `read` is everything the model read (the conversation, its persona,
     and for the apps their own instructions too), `wrote` is the answer."""
     when = time.time() if when is None else when
     day = date.fromtimestamp(when).isoformat()
@@ -96,7 +96,7 @@ def record_saved(source: str, tokens: int, when: float | None = None) -> None:
 
 def saved_estimate(source: str, read: int, wrote: int) -> int:
     """About what an answer written here would have cost from this plan or key: what
-    her model read and wrote, plus what the plan's app reads on top of every question
+    its model read and wrote, plus what the plan's app reads on top of every question
     (measured from its real answers, never guessed; nothing before there's one)."""
     with _lock:
         least = (_load().get(source) or {}).get("least_read", 0)

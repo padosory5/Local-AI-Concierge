@@ -1,4 +1,4 @@
-"""Elaina's way of answering, the same whichever model writes the words: her own,
+"""Noir's way of answering, the same whichever model writes the words: its own,
 Claude or GPT through the user's plan, or one with an API key.
 
 Two halves, because a model's habits win over a polite request. Each question goes
@@ -8,7 +8,7 @@ question. Then every answer passes through `tidy`, which does in code what model
 forget: it drops "Great question!", turns headings into bold lines, takes out lines
 and tables the window can't show, and closes up gaps. Closing offers ("Let me know
 if...") and a question tacked on after a whole answer are dropped by
-`elaina.without_closing_filler`.
+`noir.without_closing_filler`.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ SHORTER_SHARE = 0.5
 # Checked in this order: the first kind whose words appear wins. "Should I learn Python
 # or JavaScript?" is a choice, not a coding question, so choosing comes before code.
 # Small talk comes first: "hello" or "thanks!" is the whole message, with nothing to
-# answer, and the note for answers made her re-answer the last question instead.
+# answer, and the note for answers made its re-answer the last question instead.
 KIND_WORDS = (
     ("small_talk", r"^\s*(hi|hello|hey|yo|hiya|thanks?|thank you|thx|ty|ok(ay)?|cool|nice|great|awesome|perfect|"
                    r"good (morning|night|evening|afternoon)|bye|see (you|ya)|lol|haha|안녕\S*|고마워\S*|감사\S*|ㅋ+|ㅎ+|응|네|좋아\S*)"
@@ -75,7 +75,7 @@ KIND_WORDS = (
     ("explain", r"^\s*(what|why)\b|\bexplain\b|\bmean(s|ing)?\b|\btell me about\b|\bdescribe\b|뭐야|무엇|왜|설명|의미"),
 )
 STYLE = (
-    "How to answer (Elaina's way):\n"
+    "How to answer:\n"
     "- Start with the answer itself, in one or two short sentences of at most 15 words each. No greeting, "
     "no \"Great question\", and don't repeat the question.\n"
     "{more}\n"
@@ -85,9 +85,9 @@ STYLE = (
     "- Keep it under {words} words, in the same language as the user."
 )
 # Small talk isn't a question: a greeting answered "the answer first, no greeting" came
-# out as a list of what she can do, and "thanks!" as the last answer all over again.
+# out as a list of what it can do, and "thanks!" as the last answer all over again.
 SMALL_TALK_STYLE = (
-    "How to answer (Elaina's way):\n"
+    "How to answer:\n"
     "- This is small talk, not a question. Reply as yourself in one or two warm, natural sentences.\n"
     "- Don't answer an earlier question again, don't list what you can do, and don't explain how you answer.\n"
     "- Nothing about this computer, your model, or what you know about the user.\n"
@@ -102,7 +102,7 @@ POINTS = ("- Then, only if it helps, up to {points} short points, one line each,
           "\"- **Whole screen:** ...\", so someone who reads only the bold still gets it.")
 NO_POINTS = "- That's all it needs: no list and no extra facts."
 # An explanation is prose, as long as it needs and no longer: "no list" alone made
-# her clip a real explanation to one line.
+# its clip a real explanation to one line.
 EXPLAIN_SHAPE = ("- Then explain in plain words, in as many short paragraphs as it needs, usually one or two. "
                  "No list: write it as sentences.")
 EXTRA = {
@@ -115,7 +115,7 @@ EXTRA = {
 }
 # Maths and science have shapes of their own: the working, and the why with its equation.
 MATH_STYLE = (
-    "How to answer (Elaina's way):\n"
+    "How to answer:\n"
     "- Work it through step by step, one short numbered step per line, and say what each step does.\n"
     "- Write every formula and calculation in LaTeX between $...$, and the main equation or result on a line of "
     "its own between $$...$$. Never write maths as plain words or ASCII like x^2, sqrt() or 3/4.\n"
@@ -123,14 +123,14 @@ MATH_STYLE = (
     "- No headings, tables or emoji. Keep it under {words} words, in the same language as the user."
 )
 SCIENCE_STYLE = (
-    "How to answer (Elaina's way):\n"
+    "How to answer:\n"
     "- Start with the answer itself in one or two plain sentences, then explain why in a short paragraph or two.\n"
     "- Write any formula in LaTeX between $...$ (the key one on a line of its own between $$...$$), never as "
     "plain words or ASCII.\n"
     "- A list only if the answer has separate parts, up to 3 points, each starting with its key words in bold.{extra}\n"
     "- No headings, tables or emoji. Keep it under {words} words, in the same language as the user."
 )
-# Only a model that draws well is asked to: her own 4B model's drawings came out
+# Only a model that draws well is asked to: its own 4B model's drawings came out
 # black on black and off the edge, so hers draw only when the user asks for a drawing.
 DRAWING = (" If a simple drawing would make it clearer (forces on a body, a circuit, a graph's shape), add one as "
            "SVG in a ```svg code block: viewBox 0 0 480 300, black lines on white, arrows and short labels, "
@@ -169,7 +169,7 @@ def kind_of(question: str) -> str:
     lowered = question.strip().lower()
     kind = next((kind for kind, words in KIND_WORDS if re.search(words, lowered)), "chat")
     # "what?", "why?" or "and then?" after an answer is a follow-up to it, not a new
-    # question to explain at length: told to explain with points, her model made some up.
+    # question to explain at length: told to explain with points, its model made some up.
     if kind not in ("small_talk", "fact") and len(lowered.split()) <= 3:
         return "chat"
     return kind
@@ -178,7 +178,7 @@ def kind_of(question: str) -> str:
 def guide(question: str, kind: str = "", before: str = "", draws: bool = False) -> str:
     """The note that goes with a question: how to answer it, and in how many words.
     `kind` is set when code already knows it (the Shorter and More detail buttons);
-    `before` is her previous answer, which Shorter halves. `draws`: the model answering
+    `before` is its previous answer, which Shorter halves. `draws`: the model answering
     draws well, so a science answer may bring a drawing; any model may when asked to."""
     kind = kind if kind in BUDGETS else kind_of(question)
     words, points = BUDGETS[kind]
@@ -197,7 +197,7 @@ def guide(question: str, kind: str = "", before: str = "", draws: bool = False) 
 
 
 def tidy(chunks: Iterator[str]) -> Iterator[str]:
-    """A streamed answer, line by line, in Elaina's shape. Code blocks pass untouched."""
+    """A streamed answer, line by line, in Noir's shape. Code blocks pass untouched."""
     pending, table, started, in_code, gap = "", [], False, False, False
 
     def shaped(line: str) -> str | None:

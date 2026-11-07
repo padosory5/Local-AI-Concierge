@@ -107,7 +107,7 @@ def answer_with(monkeypatch, tmp_path, app, lines, code=0):
         program = tmp_path / ".local" / "bin" / "claude.exe"
         program.parent.mkdir(parents=True)
         program.write_text("")
-    model = AppModel(Accounts(home=tmp_path), app, "the-model", "You are Elaina.")
+    model = AppModel(Accounts(home=tmp_path), app, "the-model", "You are Noir.")
     return model, started
 
 
@@ -134,7 +134,7 @@ def test_claude_code_streams_pieces_and_has_no_tools_that_change_things(monkeypa
     assert list(model.chat("x", [{"role": "user", "content": "hi"}])) == ["Hel", "lo"]
     command = started[0][0]
     assert "Bash" in command[command.index("--disallowedTools") + 1] and command[command.index("--model") + 1] == "the-model"
-    assert command[command.index("--system-prompt") + 1] == "You are Elaina."
+    assert command[command.index("--system-prompt") + 1] == "You are Noir."
 
 
 def test_the_conversation_goes_as_one_question():
@@ -146,19 +146,19 @@ def test_the_conversation_goes_as_one_question():
 def test_a_plan_picked_in_the_menu_answers_and_falls_back_when_signed_out():
     fake = FakeEngine(delay=0)
     menu = fake.menu
-    assert menu.pick("codex", "practice-1")["current"] is None  # not signed in yet: her own model
+    assert menu.pick("codex", "practice-1")["current"] is None  # not signed in yet: its own model
     menu.sign_in_account("codex")
     assert menu.pick("codex", "practice-1")["current"]["name"] == "ChatGPT (practice)"
-    assert "Practice" in "".join(menu.talker("You are Elaina.").chat("x", []))
+    assert "Practice" in "".join(menu.talker("You are Noir.").chat("x", []))
     assert isinstance(ModelMenu(menu.ollama, menu.hardware, load=lambda: {}, save=lambda s: None).accounts, Accounts)
 
 
-def test_removing_a_plan_only_stops_elaina_using_it():
+def test_removing_a_plan_only_stops_noir_using_it():
     menu = FakeEngine(delay=0).menu
     menu.sign_in_account("claude_code")
     menu.pick("claude_code", "practice-1")
     info = menu.use_account("claude_code", False)
-    assert info["current"] is None  # back to her own model
+    assert info["current"] is None  # back to its own model
     assert next(plan for plan in info["accounts"] if plan["id"] == "claude_code")["hidden"] is True
     assert "claude_code" in menu.accounts.signed  # still signed in to the app itself
     assert menu.use_account("claude_code", True)["current"]["name"] == "Claude (practice)"

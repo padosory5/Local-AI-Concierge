@@ -1,5 +1,5 @@
-// Two tabs of Elaina's room that are only lists: What I see (everything she can
-// look at, and what she never does) and Reservations (booking an agent for later,
+// Two tabs of Noir's room that are only lists: What I see (everything it can
+// look at, and what it never does) and Reservations (booking an agent for later,
 // reservations.py through TodayBridge). Both only draw what Python says.
 
 window.roomPage = (() => {
@@ -32,8 +32,10 @@ window.roomPage = (() => {
     const toggle = button(`toggle ${on ? "on" : ""}`, "", () => setNoticing(!on));
     toggle.append(el("span", "track"), on ? "On" : "Off");
     toggle.setAttribute("aria-pressed", String(on));
+    // Its noticing reads the window in front and Downloads through Windows; a Mac has no switch yet.
     const master = el("div", "noticed", el("div", "ask-words", el("b", "", "Notice things for me"),
-                      el("span", "", "Off means I never look on my own. I still help whenever you ask.")), toggle);
+                      el("span", "", "Off means I never look on my own. I still help whenever you ask.")),
+                      state().windows ? toggle : el("span", "aside", "Windows for now"));
     const list = (rows, lit) => rows.map(([what, why]) =>
       el("div", "see", el("span", `dot ${lit ? "on" : ""}`), el("span", "", what, el("span", "see-why", why))));
     const answered = Object.entries(data.answers || {}).map(([which, counts]) =>
@@ -165,7 +167,7 @@ window.roomPage = (() => {
     const rows = bookings.map((item) => {
       const when = new Date(item.when).toLocaleString(LOCALE, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
       const finished = !item.active && item.repeat === "once";
-      const state_ = item.missed ? "Missed: Elaina was closed" : finished ? "Done" : REPEATS[item.repeat];
+      const state_ = item.missed ? "Missed: Noir was closed" : finished ? "Done" : REPEATS[item.repeat];
       const row = el("div", `booking ${item.active ? "" : "off"}`,
                      el("time", "", when),
                      el("span", "what", bookingWords(item)),

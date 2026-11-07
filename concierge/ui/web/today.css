@@ -2068,7 +2068,7 @@ body.side-over .side {
   line-height: 1.6;
 }
 
-.bubble.elaina {
+.bubble.noir {
   padding: 2px 0;
   border: 0;
   background: none;
@@ -2190,7 +2190,7 @@ body.side-over .side {
   margin: 0;
 }
 
-/* A drawing she made (SVG on a white card), and pictures found on the web. */
+/* A drawing it made (SVG on a white card), and pictures found on the web. */
 
 .bubble .drawing {
   margin: 0.5em 0 0.9em;
@@ -2313,7 +2313,7 @@ body.side-over .side {
 
 /* A photo beside the line it shows */
 
-.bubble.elaina {
+.bubble.noir {
   display: flow-root;
 }
 
@@ -2506,7 +2506,8 @@ body.side-over .side {
 
 body[data-view="agents"] .composer,
 body[data-view="models"] .composer,
-body[data-view="welcome"] .composer {
+body[data-view="welcome"] .composer,
+body[data-view="setup"] .composer {
   display: none;
 }
 
@@ -2946,7 +2947,7 @@ body[data-view="help"] .composer button#send:disabled {
   margin-top: 22px;
 }
 
-/* Elaina's room: one tab for each thing about her */
+/* Noir's room: one tab for each thing about it */
 .room-tabs {
   position: relative;
   z-index: 2;
@@ -2998,7 +2999,7 @@ body[data-view="help"] .composer button#send:disabled {
   padding-top: 30px;
 }
 
-/* Today: what she did this week */
+/* Today: what it did this week */
 .week-words {
   max-width: 1000px;
   margin: 12px 0 0;
@@ -3144,7 +3145,7 @@ body[data-view="help"] .composer button#send:disabled {
   line-height: 1.4;
 }
 
-/* Getting to know you: About you in Elaina's room, and step 3 of the first two minutes */
+/* Getting to know you: About you in Noir's room, and step 3 of the first two minutes */
 .knowing h1 {
   margin: 0 0 6px;
   font-family: var(--serif);
@@ -3502,7 +3503,7 @@ body[data-view="help"] .composer button#send:disabled {
   display: none;
 }
 
-/* A plan's windows and the tokens her answers used (models.js, usageBlock). */
+/* A plan's windows and the tokens its answers used (models.js, usageBlock). */
 .usage-block {
   display: grid;
   gap: 8px;
@@ -3617,4 +3618,143 @@ body[data-view="help"] .composer button#send:disabled {
 /* Set up for someone else: bigger words everywhere. */
 :root:has(body.simple) {
   font-size: clamp(19px, 17px + 0.2vw, 21px);
+}
+
+/* ------------------------------------------- the first run's setup page (setup.js) */
+
+.setup-computer {
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.7;
+}
+
+.setup-steps {
+  max-width: 720px;
+  margin-top: 30px;
+  border-top: 1px solid var(--border);
+}
+
+.setup-step {
+  display: grid;
+  grid-template-columns: 20px 1fr minmax(200px, 260px);
+  gap: 16px;
+  align-items: start;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.setup-step b {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  background: var(--raised);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+
+.setup-step.running b {
+  background: var(--accent);
+  color: #000;
+}
+
+.setup-step.done b {
+  color: var(--text);
+}
+
+.setup-title {
+  font-weight: 600;
+}
+
+.setup-what {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.setup-status {
+  margin-top: 3px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+.setup-status.done {
+  color: var(--accent);
+}
+
+.setup-running {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.setup-running .dots-track {
+  margin-top: 8px;
+}
+
+.setup-progress {
+  margin-top: 8px;
+}
+
+.setup-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.setup-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s;
+}
+
+.setup-bytes {
+  display: block;
+  margin-top: 5px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+
+.setup-waiting {
+  margin-top: 18px;
+  color: var(--accent);
+}
+
+.setup-error {
+  max-width: 720px;
+  margin-top: 18px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.setup-patience {
+  align-self: center;
+  color: var(--faint);
+  font-size: 0.88rem;
+}
+
+@media (max-width: 760px) {
+  .setup-step {
+    grid-template-columns: 20px 1fr;
+  }
+
+  .setup-step > :last-child {
+    grid-column: 2;
+  }
+
+  .setup-status {
+    text-align: left;
+  }
 }

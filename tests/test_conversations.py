@@ -4,7 +4,7 @@ from concierge.agents import store
 from concierge.agents.blueprint import load_blueprints
 from concierge.agents.builder import AgentBuilder
 from concierge.conversations import ChatBook, title_from
-from concierge.events import ChatList, ElainaDone, ElainaText, Question, Result, Source, Transcript
+from concierge.events import ChatList, NoirDone, NoirText, Question, Result, Source, Transcript
 from concierge.fake_engine import FakeEngine
 
 
@@ -14,7 +14,7 @@ def reply(*events):
 
 @pytest.fixture
 def memory():
-    """Stands in for Elaina's model history."""
+    """Stands in for Noir's model history."""
     return []
 
 
@@ -25,7 +25,7 @@ def book(tmp_path, memory):
 
 def talk(book, memory, user, answer):
     memory += [{"role": "user", "content": user}, {"role": "assistant", "content": answer}]
-    return list(book.record(user, reply(ElainaText(answer), ElainaDone())))
+    return list(book.record(user, reply(NoirText(answer), NoirDone())))
 
 
 def test_first_message_creates_a_saved_conversation(book, memory, tmp_path):
@@ -38,7 +38,7 @@ def test_new_chat_keeps_the_old_one_with_its_memory(book, memory):
     talk(book, memory, "My favourite colour is green", "Got it.")
     first = book.current.id
     book.new()
-    memory.clear()  # what the engine does to Elaina's memory after book.new()
+    memory.clear()  # what the engine does to Noir's memory after book.new()
     talk(book, memory, "Something else", "Sure.")
 
     opened = book.open(first)
@@ -52,7 +52,7 @@ def test_agent_answers_and_questions_are_kept(book, memory):
                    Result("Docs helper", "It ends in August.", [Source("lease.txt", "ends on 31 August")]))
     list(book.record("when does the lease end?", events))
     roles = [(i.role, i.agent) for i in book.transcript().items]
-    assert roles == [("user", ""), ("elaina", ""), ("result", "Docs helper")]
+    assert roles == [("user", ""), ("noir", ""), ("result", "Docs helper")]
     assert book.transcript().items[2].sources[0].path == "lease.txt"
 
 
@@ -122,7 +122,7 @@ def create(builder, folder):
 
 
 def test_same_folder_asks_before_making_a_second_agent(docs):
-    builder = AgentBuilder(FakeModel(), "elaina", None, load_blueprints())
+    builder = AgentBuilder(FakeModel(), "noir", None, load_blueprints())
     card = create(builder, docs)[-1]
     list(builder.choose(card.id, "Create it"))
 
@@ -134,7 +134,7 @@ def test_same_folder_asks_before_making_a_second_agent(docs):
 
 
 def test_replace_keeps_one_agent_with_the_same_name(docs):
-    builder = AgentBuilder(FakeModel(), "elaina", None, load_blueprints())
+    builder = AgentBuilder(FakeModel(), "noir", None, load_blueprints())
     list(builder.choose(create(builder, docs)[-1].id, "Create it"))
     question = create(builder, docs)[-1]
     card = list(builder.choose(question.id, "Replace it"))[-1]
@@ -144,7 +144,7 @@ def test_replace_keeps_one_agent_with_the_same_name(docs):
 
 
 def test_make_another_gives_it_a_new_name(docs):
-    builder = AgentBuilder(FakeModel(), "elaina", None, load_blueprints())
+    builder = AgentBuilder(FakeModel(), "noir", None, load_blueprints())
     list(builder.choose(create(builder, docs)[-1].id, "Create it"))
     question = create(builder, docs)[-1]
     card = list(builder.choose(question.id, "Make another one"))[-1]

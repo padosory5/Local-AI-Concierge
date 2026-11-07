@@ -1,6 +1,6 @@
-"""Pick Elaina's model from the tested list, based on the hardware report.
+"""Pick Noir's model from the tested list, based on the hardware report.
 
-The AI never makes this choice. The rules below decide how much memory Elaina
+The AI never makes this choice. The rules below decide how much memory Noir
 may take, and models.yaml says how much each model really uses.
 """
 
@@ -15,7 +15,7 @@ from .hardware import HardwareReport
 
 CATALOG_PATH = Path(__file__).with_name("models.yaml")
 
-# How much of the machine Elaina's model may use. She stays loaded all the
+# How much of the machine Noir's model may use. It stays loaded all the
 # time, so most of the memory is left for the user's apps and for the bigger
 # model an agent loads when it works.
 GPU_SHARE = 0.30  # of a graphics card's memory
@@ -23,7 +23,7 @@ APPLE_SHARE = 0.20  # of the memory Apple Silicon shares between CPU and GPU
 CPU_SHARE = 0.18  # of system memory when there is no usable graphics card
 # On the processor alone, a bigger model answers too slowly to feel like a chat.
 CPU_MAX_GB = 3.0
-# Memory that must stay free next to Elaina for the desktop and open apps.
+# Memory that must stay free next to Noir for the desktop and open apps.
 GPU_HEADROOM_GB = 1.0
 RAM_HEADROOM_GB = 2.0
 # Free disk space to keep after the download.
@@ -58,7 +58,7 @@ class HelperModel(ModelEntry):
 
 
 # On the processor, a helper model may use up to this share of system
-# memory together with Elaina; beyond it the whole computer slows down.
+# memory together with Noir; beyond it the whole computer slows down.
 CPU_HELPER_SHARE = 0.5
 
 
@@ -72,8 +72,8 @@ def load_helpers(path: Path = CATALOG_PATH) -> list[HelperModel]:
     return [HelperModel(**entry) for entry in data.get("helpers", [])]
 
 
-def helper_room(report: HardwareReport, elaina_gb: float) -> tuple[float, bool]:
-    """(GB a helper model may use next to Elaina, whether it runs on the processor).
+def helper_room(report: HardwareReport, noir_gb: float) -> tuple[float, bool]:
+    """(GB a helper model may use next to Noir, whether it runs on the processor).
 
     Uses the device's total memory, not what happens to be free right now:
     the question is whether the computer can do the job, not whether it can
@@ -81,21 +81,21 @@ def helper_room(report: HardwareReport, elaina_gb: float) -> tuple[float, bool]:
     """
     gpu = report.best_gpu()
     if gpu and gpu.vendor == "apple":
-        return round(gpu.vram_total_gb - elaina_gb - RAM_HEADROOM_GB, 1), False
+        return round(gpu.vram_total_gb - noir_gb - RAM_HEADROOM_GB, 1), False
     if gpu:
-        return round(gpu.vram_total_gb - elaina_gb - GPU_HEADROOM_GB, 1), False
-    return round(report.ram_total_gb * CPU_HELPER_SHARE - elaina_gb, 1), True
+        return round(gpu.vram_total_gb - noir_gb - GPU_HEADROOM_GB, 1), False
+    return round(report.ram_total_gb * CPU_HELPER_SHARE - noir_gb, 1), True
 
 
-def pick_helper(role: str, report: HardwareReport, elaina_gb: float) -> tuple[HelperModel | None, float, bool]:
-    """The best helper model for a role that fits next to Elaina.
+def pick_helper(role: str, report: HardwareReport, noir_gb: float) -> tuple[HelperModel | None, float, bool]:
+    """The best helper model for a role that fits next to Noir.
 
     Returns (model or None, room in GB, runs on the processor). Speech models
     are small enough to run on the processor whatever the graphics card.
     """
-    room, on_cpu = helper_room(report, elaina_gb)
+    room, on_cpu = helper_room(report, noir_gb)
     if role == "speech":
-        room, on_cpu = max(room, report.ram_total_gb * CPU_HELPER_SHARE - elaina_gb), on_cpu
+        room, on_cpu = max(room, report.ram_total_gb * CPU_HELPER_SHARE - noir_gb), on_cpu
     for helper in load_helpers():
         if helper.role == role and helper.memory_gb <= room:
             return helper, room, on_cpu
@@ -144,7 +144,7 @@ def recommend(report: HardwareReport, catalog: list[ModelEntry] | None = None) -
             left_free_gb=round(device_total - model.memory_gb, 1),
             reason=(
                 f"Largest tested model that fits in {budget:g} GB, the share of "
-                f"{device_name} Elaina may use while staying loaded."
+                f"{device_name} Noir may use while staying loaded."
             ),
         )
 
@@ -157,6 +157,6 @@ def recommend(report: HardwareReport, catalog: list[ModelEntry] | None = None) -
     else:
         reason = (
             f"Even the smallest tested model needs {min(m.memory_gb for m in catalog):g} GB, "
-            f"and Elaina may only use {budget:g} GB here without slowing the computer down."
+            f"and Noir may only use {budget:g} GB here without slowing the computer down."
         )
     return Recommendation(None, device, device_name, budget, None, reason)

@@ -18,9 +18,9 @@ Clippy failed for how it behaved more than for being a character: it interrupted
 - **[R, weak, 2025]** Microsoft's Copilot character Mico (October 2025) hides a tap-to-reveal Clippy Easter egg, described as cosmetic rather than a return to interrupting — [Windows Forum](https://windowsforum.com/windows-news.4/microsoft-copilot-unveils-mico-avatar-and-clippy-easter-egg.386074/) (snippet, low-quality source).
 
 ### Inferences
-- Likeability testing did not predict tolerance. Clippy was tested for being liked and then failed in use, so a charming Elaina tested in still images says little about her being welcome at 4pm on a deadline.
-- The reported timing change is the main warning: the pressure to show the feature more often is what damaged it. Elaina's thresholds (30 files, two looks in a row, turns between questions, snooze on "No") should be treated as protected, and any change to them should need evidence.
-- Nass suggests a wrong guess can be partly repaid by behaviour, not just accuracy: ask, accept "no", take the blame. Elaina's "No keeps her quiet for a while" is the feature Clippy lacked.
+- Likeability testing did not predict tolerance. Clippy was tested for being liked and then failed in use, so a charming Noir tested in still images says little about her being welcome at 4pm on a deadline.
+- The reported timing change is the main warning: the pressure to show the feature more often is what damaged it. Noir's thresholds (30 files, two looks in a row, turns between questions, snooze on "No") should be treated as protected, and any change to them should need evidence.
+- Nass suggests a wrong guess can be partly repaid by behaviour, not just accuracy: ask, accept "no", take the blame. Noir's "No keeps her quiet for a while" is the feature Clippy lacked.
 - The Clippy revival suggests the character itself is not toxic. People now use it to stand for software that respected them.
 
 ### Gaps
@@ -84,9 +84,9 @@ The failures cluster into four causes: on by default or hard to remove, wrong in
 | Friend | Records others; offers friendship rather than help | Medium |
 | Rewind | Not clearly rejected: the company changed course and the app was turned off | Medium |
 
-- Elaina's yes-or-no question avoids the two biggest Windows mistakes, since nothing happens unasked and she can be left off. Removal must be as easy as Microsoft's eventually became.
+- Noir's yes-or-no question avoids the two biggest Windows mistakes, since nothing happens unasked and she can be left off. Removal must be as easy as Microsoft's eventually became.
 - Apple's fix is a pattern to copy: pause the risky category, then return it as a choice with a plain warning.
-- Rewind shows that a local tool can still vanish overnight if it depends on a company. An Elaina that works with no server has a real advantage to state plainly.
+- Rewind shows that a local tool can still vanish overnight if it depends on a company. An Noir that works with no server has a real advantage to state plainly.
 - Rabbit's 5% is the number to fear: novelty sells and habit does not follow. Retention at week four matters more than first-day delight.
 
 ### Gaps
@@ -108,9 +108,9 @@ Solid user evidence is thin, and the best numbers come from developers. Hotkey t
 - **Razer AVA.** **[R, weak]** A holographic desk companion running on Grok that watches the screen, with a $20 deposit and launch planned for the second half of 2026; PC Gamer's headline stressed that it watches everything — [PC Gamer](https://www.pcgamer.com/software/ai/project-ava-is-a-desktop-ai-assistant-that-promises-to-watch-your-every-move-to-offer-both-gaming-advice-and-wardrobe-tips/); [Razer](https://www.razer.com/razer-ava) (snippets).
 
 ### Inferences
-- The evidence favours help the user calls up over help that watches. Elaina's highlight agents sit between the two: they fire on every highlight, but only after the user switches them on, for one job.
+- The evidence favours help the user calls up over help that watches. Noir's highlight agents sit between the two: they fire on every highlight, but only after the user switches them on, for one job.
 - A highlighted word is a weak signal of wanting help. Pu et al. (section 4) found selection triggers often went unused. Test how often bubbles are actually read, since people also highlight just to keep their place.
-- Elaina's sort needing no model is a strong safety position. Any future model that reads file contents opens the same door as Cowork and OpenClaw.
+- Noir's sort needing no model is a strong safety position. Any future model that reads file contents opens the same door as Cowork and OpenClaw.
 - OpenClaw's skills store warns against sharing agents without review. This repo's community list (`concierge/agents/community.py`) already allows only words and settings, never code, and a person must approve each entry. Keep both rules, because a shared instruction could itself carry a hidden prompt.
 
 ### Gaps
@@ -145,7 +145,7 @@ Proactive help is welcome when it is relevant, rare, at a natural break and chea
 - **[V, weak as reported]** Microsoft's figure of 275 pings a day applies to the top 20% of users by volume, over 24 hours; a ping every two minutes is a derived average — [Silicon Canals](https://siliconcanals.com/t-work-interruptions-23-minutes-275-pings-organisational-focus/) (snippet).
 
 ### Inferences
-- About 70% rejection is survivable when rejecting costs nothing. Copilot's ghost text disappears as you keep typing. A question in a box costs more, so Elaina needs a far higher hit rate, and an unanswered question should leave quietly with no penalty. The code already does this: the note goes after 30 seconds (`SHOW_SECONDS` in `quick/note.py`), and an unanswered question waits a day (`IGNORED_DAYS` in `quick/tidy.py`).
+- About 70% rejection is survivable when rejecting costs nothing. Copilot's ghost text disappears as you keep typing. A question in a box costs more, so Noir needs a far higher hit rate, and an unanswered question should leave quietly with no penalty. The code already does this: the note goes after 30 seconds (`SHOW_SECONDS` in `quick/note.py`), and an unanswered question waits a day (`IGNORED_DAYS` in `quick/tidy.py`).
 - **Waiting until the user stops typing is not a task boundary.** Both CHI 2025 studies warn that a pause is often thinking. Better signals for ordinary users: a window closed, an app switched, a file saved, a video ended.
 - The 90% to 47% drop came from small changes to timing and volume (waiting 5 seconds rather than 20, showing 5 suggestions rather than 3). Frequency deserves more care than wording. Keep the long gap between questions, and raise it rather than lower it.
 - People complained of relevance, not correctness. "Is this about what I am doing now?" is the test for each question.
@@ -178,7 +178,7 @@ Trust grows from narrow permission, a visible plan, reversible action, a record,
 - **[R, medium]** PromptArmor's Shankar Krishnan said the Windows Downloads folder is a high-risk source of hidden prompts, since it mostly holds third-party data — [SC World](https://www.scworld.com/news/new-agent-workspace-feature-comes-with-security-warning-from-microsoft) (snippet; the page itself would not open).
 
 ### Inferences
-- The common failure is an agent assuming a step worked and then doing something it cannot take back. Elaina's rules (moves only, never deletes or overwrites, Undo restores) sit on the right side of every incident here. Keep them in code, never in a prompt.
+- The common failure is an agent assuming a step worked and then doing something it cannot take back. Noir's rules (moves only, never deletes or overwrites, Undo restores) sit on the right side of every incident here. Keep them in code, never in a prompt.
 - Add a check after each move, and test OneDrive placeholder files, the Windows equivalent of the iCloud stub problem. This is a suggested test, not a known bug.
 - One yes for a whole job, with the plan stated ("Sort 46 files into 5 folders?"), avoids the fatigue that per-step prompts cause. Show a short list of what moved, and keep Undo visible for days, not seconds.
 - Permission can widen over time. Offer "always sort when there are 30 files" only after several good runs, matching the slow rise in the Claude Code data.
@@ -203,7 +203,7 @@ Keeping data local reassures some people but does not remove the feeling of bein
 
 ### Inferences
 - "Everything stays on your computer" is necessary but will not carry the argument alone. It should come with the concrete limit. For what she notices herself, she reads only the title of the window in front and the list of files in Downloads. She checks only how long since the last key or mouse input, never what was typed (`user_is_quiet` uses Windows' last-input time). She keeps no pictures of the screen. Highlight agents read highlighted text only while the user has them switched on.
-- Elaina's design differs from Recall in the part that mattered: no screenshots, so no store worth stealing. This is her strongest privacy argument and any change would give it up.
+- Noir's design differs from Recall in the part that mattered: no screenshots, so no store worth stealing. This is her strongest privacy argument and any change would give it up.
 - The GenAI phone study warns that explaining mechanics can raise concern. Say what she does not see in short plain words, and let curious users open the details.
 - She should also state what she noticed when she asks: "You have 46 loose files in Downloads" shows exactly what she looked at.
 - A clear "stop noticing things" switch, separate from quitting her, follows from Horvitz's point on easy termination and users' requests for control.
@@ -234,19 +234,19 @@ Companion apps have huge reach and real harms. Simple desktop characters that as
 - **[R, medium]** Friend's founder said some users could replace human friends and that he does not want to be responsible for that — [CNN via KVIA](https://kvia.com/news/business-technology/cnn-business-consumer/2025/11/16/how-this-tiny-device-became-a-symbol-for-the-backlash-against-ai/).
 
 ### Inferences
-- What seems lovable: small, silent, reacts to you, asks nothing, gives something back. Bongo Cat is the opposite of Clippy, and it shows a screen character is welcome when it does not compete for attention. Elaina's drifting dots follow that pattern.
+- What seems lovable: small, silent, reacts to you, asks nothing, gives something back. Bongo Cat is the opposite of Clippy, and it shows a screen character is welcome when it does not compete for attention. Noir's drifting dots follow that pattern.
 - What seems creepy: claiming a relationship, watching everything, recording others, or keeping people talking.
 - Keep her a capable helper with a personality rather than a friend. Avoid wording that invites emotional dependence. Nothing here shows friendship helps a task assistant, and the risks are large.
 - Personality is a promise. Replika suggests that changing how a character behaves in an update can hurt people, so keep her voice steady across model swaps and warn before changes.
-- A local model has no provider watching for a crisis. If someone tells Elaina they are in danger, the response must be decided in code, as the project's rule on reliability already says.
+- A local model has no provider watching for a crisis. If someone tells Noir they are in danger, the response must be decided in code, as the project's rule on reliability already says.
 - Age is an open issue: the serious harms involve minors, and a local app has no easy age check. Decide early.
 
 ### Gaps
 - No data on any AI character that acts on a user's files and has an emotional bond with them. No Mico usage or sentiment figures from a reliable source. Rewind-style memory is covered only by shutdown reporting, not by satisfaction data. Razer AVA has no user reception yet.
 
 #### Gaps across all seven questions
-- **Who was studied.** Almost all measured data on proactive help, acceptance rates and agent trust comes from programmers and students, mostly in English-speaking countries. No study measured non-technical adults, the people Elaina is for.
-- **Yes-or-no prompts on the desktop.** No published acceptance, dismissal or annoyance rate exists for a desktop assistant that asks one short question unprompted. This is the most important missing number, and Elaina's own local logs are the only practical way to get it.
+- **Who was studied.** Almost all measured data on proactive help, acceptance rates and agent trust comes from programmers and students, mostly in English-speaking countries. No study measured non-technical adults, the people Noir is for.
+- **Yes-or-no prompts on the desktop.** No published acceptance, dismissal or annoyance rate exists for a desktop assistant that asks one short question unprompted. This is the most important missing number, and Noir's own local logs are the only practical way to get it.
 - **Retention.** Apart from Rabbit's 5% daily use, no product here published how many people still used it after a month. No figures were found for Recall, Copilot on Windows, Apple Intelligence, Gemini in Chrome, ChatGPT agent, Cowork or Highlight.
 - **Local versus cloud.** No direct comparison was found of how acceptance changes when the same assistant runs locally rather than in the cloud. The evidence is indirect: Recall, and two small interview studies.
 - **Sources read only as excerpts.** Many findings marked (snippet) come from search summaries, not opened pages. The fully read primary sources are Horvitz 1999, Chen et al. 2025, Pu et al. 2025, the Anthropic autonomy and auto-mode posts, the Recall and OpenClaw Wikipedia pages, Nass's excerpt, The Register on Clippy's designer, CNN on Friend, The Next Web and Windows Latest on Copilot, the TotalRecall Reloaded report, and the Cowork incident entry and GitHub issue.
