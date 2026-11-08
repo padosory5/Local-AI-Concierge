@@ -3758,3 +3758,119 @@ body[data-view="help"] .composer button#send:disabled {
     text-align: left;
   }
 }
+
+/* ------------------------------------------------------ the Chores page (chores.js) */
+
+.chore-askbox {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 720px;
+  margin: 22px 0 6px;
+  padding: 12px 18px;
+  border: 1px solid #3a3340;
+  border-radius: 14px;
+  background: #0a090c;
+}
+
+.chore-askbox:focus-within {
+  border-color: var(--accent);
+}
+
+.chore-plus {
+  color: var(--accent);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.chore-ask {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.chore-ask::placeholder {
+  color: var(--faint);
+}
+
+.chore-list,
+.job-list {
+  max-width: 720px;
+  border-top: 1px solid var(--border);
+}
+
+.chore-row,
+.job-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.chore-name {
+  font-weight: 600;
+}
+
+.chore-row.off .chore-name {
+  color: var(--muted);
+}
+
+.chore-how {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.chore-last {
+  margin-top: 4px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.chore-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.chore-remove {
+  font-size: 0.8rem;
+}
+
+.job-row {
+  display: block;
+}
+
+.job-what {
+  font-weight: 500;
+}
+
+.job-meta {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.job-time {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+.chore-hint {
+  max-width: 720px;
+  margin-top: 30px;
+  color: var(--faint);
+  font-size: 0.9rem;
+}

@@ -16,13 +16,14 @@ from collections.abc import Iterator
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from . import (activity, auto, cloud, noir, hardware, history, pictures, portrait, research, researcher, safety, signs,
+from . import (activity, auto, chores, cloud, noir, hardware, history, pictures, portrait, research, researcher, safety, signs,
                sources, usage, voice)
 from .accounts import APPS
 from .agents import community, runner, store
 from .agents.blueprint import load_blueprints
-from .agents.builder import AgentBuilder, say
+from .agents.builder import AgentBuilder, say, YES_WORDS
 from .agents.planner import IDEA, IDEA_CHANGE, MAKE_IT, IdeaPlanner, describe_ideas
+from .agents.router import WANTS_NEW as WANTS_NEW_AGENT, wants_change
 from .agents.router import names_an_agent, refers_to, route, wants_change
 from .agents.starters import Starter, asks_for, install
 from .attachments import NOTHING_SAID, Attached, read_attachments
@@ -37,6 +38,8 @@ from .quick.agents import QuickAgents
 from .quick.tidy import downloads_dir
 from .agents.recipe import (BUBBLE, CLIPBOARD, CUSTOM, MECHANICS, WHILE_ON, describe, is_switchable, migrate,
                             needs_language, run_instruction, target_language, with_language)
+from .organizer import ORGANIZER, Organizer
+from .organizer import how as organizer_how
 from .quick.translate import language_in
 from .setup import Setup
 
@@ -46,6 +49,34 @@ WANTS_DELETE = re.compile(r"\b(delete|remove|get rid of|uninstall)\b|삭제|지�
 WANTS_IDEAS = re.compile(r"\b(my|saved)\s+ideas\b|\bideas\s+(list|i saved)\b|아이디어\s*(목록|보여)",
                          re.IGNORECASE)
 # "turn on the Korean translator", "switch off my translator", "번역기 켜줘"
+# With a file organizer: where a file went, and "organize it" for what just landed.
+WANTS_WHERE = re.compile(r"(\bwhere(?:'s|s)?\b|\bwhich folder\b).*\b(files?|folders?|pdf|documents?|it|that|them|put|moved?|went|created|made|saved|sorted)\b",
+                         re.IGNORECASE)
+WANTS_STATUS = re.compile(r"\b(what (did|have) you (do|done|moved?|sorted?)|did you (move|sort|do|put|organi[sz]e) "
+                          r"(anything|something|it|them|the|my)|what are you doing|what('s| is) (running|on|going on)|"
+                          r"which folders? (do you have|did you make|are there|exist)|how many files)\b", re.IGNORECASE)
+WANTS_ORGANIZE = re.compile(r"\borgani[sz]e\b|\bsort (it|this|that|them|these|my|the)\b|\bdownloaded\b|\bfile (it|this|that|them)\b|"
+                            r"\bmove (the|my|these|those) (files|documents|pdfs)\b|\bgo through\b", re.IGNORECASE)
+# "Why didn't you move the receipt?", "why is my tuition statement still in downloads?":
+# answered from the organizer's record of each verdict, never by the chat model.
+WANTS_WHY = re.compile(r"\bwhy\b.*\b(move|moved|sort|sorted|organi[sz]ed?|put|filed?|still|left|skip|skipped|touch|touched|"
+                       r"ignore|ignored|stay|stayed)\b", re.IGNORECASE)
+WHERE_WORDS = re.compile(r"\bwhere(?:'s|s)?\b|\bwhich folder\b", re.IGNORECASE)
+# A message about the organizer's own work, which its facts answer here, never the web.
+ABOUT_CHORES = re.compile(r"\b(organi[sz]ers?|organi[sz]e[ds]?|organi[sz]ing|watch(es|ing|ed)?|sort(s|ed|ing)?|folders?|"
+                          r"files?|pdfs?|documents?|chores?|moved?|moving|downloads)\b", re.IGNORECASE)
+# A message that asks something rather than tells an agent to do it.
+WANTS_ANSWER = re.compile(r"\?|^\s*(which|where|what|why|how|when|who|is|are|was|were|did|do|does|can|could|have|has|"
+                          r"will|would|should)\b", re.IGNORECASE)
+# A plain no, for the organizer's question about a kind of file (yes is the builder's YES_WORDS).
+NO_WORDS = ("no", "nope", "no thanks", "leave it", "leave them", "don't", "dont", "not now", "아니", "아니요", "싫어")
+# Words of a question that never name a file.
+_ASKING_WORDS = {"why", "did", "didn", "didnt", "not", "you", "the", "file", "files", "pdf", "move", "moved", "sort", "sorted",
+                 "still", "downloads", "download", "folder", "folders", "into", "that", "this", "them", "what", "about",
+                 "organize", "organise", "left", "behind", "there", "here", "with", "from", "have", "haven", "were", "was",
+                 "your", "put", "where", "wheres", "which", "inside", "created", "document", "documents", "and", "for",
+                 "are", "its", "how", "all", "any", "one", "now", "yet", "too", "but", "can", "has", "had", "new"}
+WANTS_EVERYTHING = re.compile(r"\b(everything|all (the |of )?(files|documents|of them|of it)|whole folder|all my)\b", re.IGNORECASE)
 WANTS_ON = re.compile(r"\b(turn|switch)\s+on\b|\b(start|enable|activate)\b|켜", re.IGNORECASE)
 WANTS_OFF = re.compile(r"\b(turn|switch)\s+off\b|\b(stop|disable|deactivate)\b|꺼|끄", re.IGNORECASE)
 # "it's not showing anything", "the translator doesn't work", "안 나와"
@@ -73,6 +104,26 @@ MEASURED_JOBS = (
 # The two buttons under an answer, and what each says in the chat. Code knows what they
 # mean, so they skip the router, where "shorter" could change one of the user's agents.
 FOLLOW_UPS = {"shorter": "Shorter, please.", "more": "Tell me more."}
+# After a file organizer is made: go through what is in the folder already, or not.
+ORGANIZE_NOW = "organize_now"
+GO_THROUGH, ONLY_NEW = "Yes, go through them", "Only new files from now on"
+
+
+def _plain_answer(text: str) -> bool | None:
+    """True for a plain yes, False for a plain no, None for anything more."""
+    words = text.strip().lower().strip("!. ")
+    if words in YES_WORDS:
+        return True
+    if words in NO_WORDS:
+        return False
+    return None
+
+
+def _mentions(text: str, name: str) -> bool:
+    """Whether a question names this file: a word of the question is in the file's name, so
+    "the tuition pdf" finds UWTuitionStatement.pdf and "the receipt" bookstore_receipt.pdf."""
+    lowered = name.lower()
+    return any(word in lowered for word in re.findall(r"[a-z0-9]{3,}", text.lower()) if word not in _ASKING_WORDS)
 
 
 class NoirEngine:
@@ -97,6 +148,10 @@ class NoirEngine:
         # first yes, and what the last lookup found, for the sources under the answer.
         self.pending_lookup: tuple[str, bool, str] | None = None
         self.found: research.Findings | None = None
+        # File organizers (organizer.py) run on every system, so they are made here, not at startup.
+        self.organizer = Organizer(self.ollama, noir.NOIR_MODEL, noir.data_dir() / "organizer.json",
+                                   noir.data_dir() / "organizer_done.json")
+        self.organizing: str | None = None  # the organizer just made, waiting for "go through them?"
         self.menu = ModelMenu(self.ollama, self._hardware)
         self.menu.changed = self._use_chosen_model
         self.setup = Setup(self.ollama)  # the first run's one button (setup.py)
@@ -137,6 +192,7 @@ class NoirEngine:
         # Switch-on agents read highlights through Windows; on a Mac there are none yet.
         self.quick = QuickAgents(self.ollama, noir.NOIR_MODEL, self.chat.think) if sys.platform == "win32" else None
         migrate()  # agents of retired blueprints become agents made from parts
+        self.organizer.refresh(store.list_agents())
         yield self._agent_list()
         yield self.book.chat_list()
 
@@ -298,7 +354,9 @@ class NoirEngine:
         if agent is None and on and (recipe := community.find(store.slugify(name))):
             community.install(recipe)
             agent = store.find_agent(name)
-        if agent and self.quick and self._switchable(agent):
+        if agent and agent.blueprint == ORGANIZER:
+            self.organizer.switch(agent, on)
+        elif agent and self.quick and self._switchable(agent):
             self.quick.switch(agent, on)
         yield self._agent_list()
 
@@ -431,6 +489,7 @@ class NoirEngine:
         self.book.save()
         if self.quick:
             self.quick.stop()
+        self.organizer.stop()
         if self.chat:
             self.chat.close()
 
@@ -450,7 +509,7 @@ class NoirEngine:
             # the user moved on, it hands the message back for normal routing.
             for flow in (self.builder, self.planner):
                 if flow.active:
-                    yield from flow.answer(text)
+                    yield from (self._building(flow.answer(text)) if flow is self.builder else flow.answer(text))
                     if flow.handoff is None:
                         return
                     text, flow.handoff = flow.handoff, None
@@ -478,6 +537,46 @@ class NoirEngine:
                 yield Thinking(f"This is a change to your {about.name}, not a new agent.")
                 yield from self.builder.edit(about, text)
                 return
+            organizers = [a for a in agents if a.blueprint == ORGANIZER]
+            pending = self.organizer.questions() if organizers else []
+            if pending and (said := _plain_answer(text)) is not None:
+                # "yes" to "hw3.xlsx looks like CSE163 material. Sort .xlsx files like it from now on?"
+                ext = pending[0]["id"].rsplit(":", 1)[-1]
+                moved = self.organizer.answer(pending[0]["id"], said)
+                yield Thinking(f"That answers the organizer's question about {ext} files.")
+                if said:
+                    yield from say(f"Okay: {ext} files are sorted from now on. "
+                                   + (f"{moved} just went in; Undo is in your chores." if moved else "Nothing to move right now."))
+                else:
+                    yield from say(f"Okay, {ext} files stay where they land.")
+                return
+            if organizers and WANTS_WHY.search(text) and not WANTS_NEW_AGENT.search(text):
+                yield Thinking("This asks why a file stayed or moved: the organizer kept its reason for each one.")
+                yield from self._say_why(text, organizers)
+                return
+            asks_where = WANTS_WHERE.search(text) or (WHERE_WORDS.search(text) and self._names_a_file(text))
+            if organizers and asks_where and not WANTS_NEW_AGENT.search(text):
+                yield Thinking("This asks where a file or folder is, which the organizer's own record answers.")
+                yield from self._say_where(text, organizers)
+                return
+            if organizers and WANTS_STATUS.search(text):
+                yield Thinking("This asks what the organizer has been doing: its record answers, not a guess.")
+                yield from self._say_status(organizers)
+                return
+            if organizers and WANTS_ORGANIZE.search(text) and len(text.split()) <= 20 and not WANTS_NEW_AGENT.search(text):
+                chosen = next((a for a in organizers if Path(a.slots.get("folder", "")).name.lower() in text.lower()), organizers[0])
+                everything = bool(WANTS_EVERYTHING.search(text))
+                yield Thinking(f"This is a job for {chosen.name}: "
+                               + ("everything in its folder." if everything else "what has landed since it was switched on."))
+                yield from self._organize_now(chosen, everything=everything)
+                return
+            if organizers and ABOUT_CHORES.search(text) and WANTS_ANSWER.search(text) \
+                    and not WANTS_NEW_AGENT.search(text) and not any(wants_change(text, a) for a in organizers):
+                # "can you also sort pictures?": a question about the chore. Sent on, the router
+                # once took it for an idea and began a second organizer for Pictures.
+                yield Thinking("This asks about the organizer, so I'll answer from its facts rather than start anything.")
+                yield from self._answer(text, think)
+                return
             if WANTS_IDEAS.search(text):
                 yield from say(describe_ideas(*self._hardware(), self.blueprints))
                 return
@@ -497,7 +596,7 @@ class NoirEngine:
                     yield Thinking(f"{name}'s files mention: {', '.join(words)}.")
             if where.kind == "new_agent":
                 yield Thinking(f"This asks for a new agent: {self.blueprints[where.blueprint].name}.")
-                yield from self.builder.start(where.blueprint, text)
+                yield from self._building(self.builder.start(where.blueprint, text))
             elif where.kind == "idea":
                 yield Thinking("This is an idea for a new kind of helper, so I'll check what it needs.")
                 yield from self._idea(text, where.request)
@@ -506,7 +605,7 @@ class NoirEngine:
                 yield from self.builder.edit(agent, text)
             elif where.kind == "run_agent":
                 yield Thinking(f"This is a job for {where.agent}.")
-                yield from self._run_agent(where.agent, where.request, text)
+                yield from self._run_agent(where.agent, where.request, text, think)
             else:
                 if not self.auto_cloud:  # with Auto, _reply says who answers and why
                     yield Thinking(f"This is just a chat, so I'll ask {self.talker_name}." if self.talker_name
@@ -578,6 +677,10 @@ class NoirEngine:
     def _lookup_kind(self, text: str) -> str | None:
         """Whether this message needs the web, and for what. Code decides from the
         words; only a question code can't place is put to its model, as one word."""
+        if ABOUT_CHORES.search(text) and any(a.blueprint == ORGANIZER for a in store.list_agents()):
+            # "is the organizer still on?", "can you also sort pictures?": about its own chore,
+            # answered here from its facts; "pictures" would otherwise send it to an image search.
+            return None
         kind = research.wants_lookup(text)
         if kind is None and research.allowed() is not False and research.unsure(text):
             kind = research.SEARCH if research.model_form(self.ollama, noir.NOIR_MODEL)(text) else None
@@ -739,6 +842,7 @@ class NoirEngine:
             yield Thinking("Loading my model into memory first, which takes a few seconds.")
 
     def _answer(self, text: str, think: bool) -> Iterator[Event]:
+        self.chat.jobs = self._chores_note()
         # Small talk gets no thinking: its model thought to its limit over "how are you",
         # then wrote the answer a second time, so a greeting took the longest of all.
         if think and self.chat.can_think and voice.kind_of(text) != "small_talk":
@@ -879,9 +983,16 @@ class NoirEngine:
                     yield from self.planner.choose(id, choice)
             except OllamaError as exc:
                 yield Error(str(exc))
+        elif id == ORGANIZE_NOW:
+            name, self.organizing = self.organizing, None
+            agent = store.find_agent(name) if name else None
+            if choice == GO_THROUGH and agent:
+                yield from self._organize_now(agent, everything=True)
+            else:
+                yield from say("Okay, only new files from now on.")
         elif self.builder and self.builder.active:
             try:
-                yield from self.builder.choose(id, choice)
+                yield from self._building(self.builder.choose(id, choice))
             except OllamaError as exc:
                 yield Error(str(exc))
         else:
@@ -914,7 +1025,7 @@ class NoirEngine:
         if blueprint == CUSTOM:
             yield from self.builder.compose(request, blocks)
         else:
-            yield from self.builder.start(blueprint, request)
+            yield from self._building(self.builder.start(blueprint, request))
 
     def _add_starter(self, starter: Starter, switch_on: bool) -> Iterator[Event]:
         """A ready-made agent: added at once, and switched on if the user said so."""
@@ -936,6 +1047,203 @@ class NoirEngine:
     def _switchable(self, agent: store.Agent) -> bool:
         return is_switchable(agent, self.blueprints)
 
+    def _is_on(self, agent: store.Agent) -> bool:
+        if agent.blueprint == ORGANIZER:
+            return self.organizer.is_on(agent.name)
+        return bool(self.quick and self.quick.is_on(agent.name))
+
+    def _building(self, events: Iterator[Event]) -> Iterator[Event]:
+        """The builder's events, then what happens once an agent is made: a file
+        organizer is switched on at once and offered a first pass over its folder."""
+        yield from events
+        created = self.builder.take_created() if self.builder else None
+        if created is None or created.blueprint != ORGANIZER:
+            return
+        self.organizer.refresh(store.list_agents())
+        self.organizer.switch(created, True)
+        yield self._agent_list()
+        folder = Path(created.slots.get("folder", "")).name
+        count = self.organizer.count_files(created)
+        yield Thinking("What each file is about is a job for the built-in model: it reads text well, and the "
+                       "files never leave this computer.")
+        if count:
+            self.organizing = created.name
+            yield Question(ORGANIZE_NOW, f"It's on: new documents in {folder} get sorted as they land, and every "
+                           f"move shows in your chores with Undo. There {'is' if count == 1 else 'are'} "
+                           f"{count} document{'' if count == 1 else 's'} there already. Go through them now?",
+                           [GO_THROUGH, ONLY_NEW])
+        else:
+            yield from say(f"It's on: new documents in {folder} get sorted as they land, and every move shows "
+                           "in your chores with Undo.")
+
+    def _places(self, organizers: list[store.Agent]) -> str:
+        """Where each organizer keeps its folders, as whole paths."""
+        return " ".join(f"{a.name} keeps its folders in {a.slots.get('into') or a.slots.get('folder', '')}"
+                        f" ({a.slots.get('groups', '')})." for a in organizers)
+
+    def _say_where(self, text: str, organizers: list[store.Agent]) -> Iterator[Event]:
+        """Where the organizer put a file, and where its folders are, from its own record
+        and settings, never from the model's memory. Always the whole path."""
+        moves = self.organizer.last_moves()
+        named = [m for m in moves if _mentions(text, m["name"])]
+        stayed = [s for s in self.organizer.last_skipped(20) if _mentions(text, s["name"])]
+        if stayed and not named:
+            yield from say("; ".join(f"{s['name']} is still in {s['where']}, where it stayed: {s['why']}" for s in stayed[:3])
+                           + ".")
+            return
+        about_folder = bool(re.search(r"\bfolders?\b", text, re.IGNORECASE)) and not re.search(r"\bfiles?\b|\.pdf\b", text, re.IGNORECASE)
+        if (about_folder and not named) or not moves:
+            where = self._places(organizers)
+            if moves:
+                where += f" The last file, {moves[0]['name']}, went to {moves[0]['to']} ({chores.ago(moves[0]['when'])})."
+            else:
+                where += (" Nothing has been moved yet: a download needs about 20 seconds to settle before I read "
+                          "it, and only files that land after the organizer was switched on count.")
+            yield from say(where)
+            return
+        picked = named or moves[:3]
+        lines = [f"{m['name']} is in {m['to']} ({chores.ago(m['when'])})" for m in picked]
+        yield from say(("" if len(lines) == 1 else "The last ones: ") + "; ".join(lines) + ". Undo is in your chores.")
+
+    def _names_a_file(self, text: str) -> bool:
+        """Whether the message names a file the organizer moved or left ("the physics lab")."""
+        return any(_mentions(text, item["name"])
+                   for item in [*self.organizer.last_moves(20), *self.organizer.last_skipped(20)])
+
+    def _say_why(self, text: str, organizers: list[store.Agent]) -> Iterator[Event]:
+        """Why a file stayed, or why it moved, from the organizer's own record of each verdict."""
+        skipped = self.organizer.last_skipped(10)
+        moves = self.organizer.last_moves(10)
+        left = [s for s in skipped if _mentions(text, s["name"])]
+        moved = [m for m in moves if _mentions(text, m["name"])]
+        if left:
+            lines = [f"{s['name']} stayed in {s['where']}: {s['why']}." for s in left[:3]]
+            yield from say(" ".join(lines) + " I only move what clearly reads as material for one of the folders; "
+                           "if it belongs in one, drag it there.")
+        elif moved:
+            lines = [f"I put {m['name']} in {m['to']} because its text reads as material for that folder "
+                     f"({chores.ago(m['when'])})." for m in moved[:3]]
+            yield from say(" ".join(lines) + " Undo is in your chores if that was wrong.")
+        elif skipped:
+            yield from say("These stayed where they were: "
+                           + "; ".join(f"{s['name']} ({s['why']})" for s in skipped[:4]) + ".")
+        elif moves:
+            yield from say(f"Nothing has been left behind: everything I read went into a folder. The last, "
+                           f"{moves[0]['name']}, went to {moves[0]['to']}.")
+        else:
+            yield from say("Nothing has been looked at yet: only documents that land after the organizer was switched "
+                           "on count, and a download needs about 20 seconds to settle. Say \"organize it\" to go through "
+                           "what has landed, or \"go through everything\" for all of it.")
+
+    def _say_status(self, organizers: list[store.Agent]) -> Iterator[Event]:
+        """What the organizers are and did lately, from their records."""
+        parts = []
+        for agent in organizers:
+            on = self.organizer.is_on(agent.name)
+            parts.append(f"{agent.name} is {'on' if on else 'off'}: it watches {agent.slots.get('folder', '')} and puts new "
+                         f"documents into {agent.slots.get('into') or agent.slots.get('folder', '')} ({agent.slots.get('groups', '')}).")
+        moves = self.organizer.last_moves(3)
+        if moves:
+            parts.append("Lately: " + "; ".join(f"{m['name']} went to {m['to']} ({chores.ago(m['when'])})" for m in moves)
+                         + ". Undo is in your chores.")
+        else:
+            parts.append("Nothing has been moved yet.")
+        by_why: dict[str, list[str]] = {}
+        for item in self.organizer.last_skipped(6):
+            by_why.setdefault(item["why"], []).append(item["name"])
+        if by_why:
+            parts.append("Left where they were: "
+                         + "; ".join(f"{', '.join(names)} ({why})" for why, names in by_why.items()) + ".")
+        for question in self.organizer.questions():
+            parts.append(f"Waiting for your answer: {question['text']}")
+        yield from say(" ".join(parts))
+
+    def _chores_note(self) -> str:
+        """What the chat model is told about the organizers before each answer, so a question
+        it gets anyway is answered from facts, with whole paths, not from what it imagines."""
+        organizers = [a for a in store.list_agents() if a.blueprint == ORGANIZER]
+        if not organizers:
+            return ""
+        lines = ["YOUR CHORES RIGHT NOW (facts: when asked where a file or folder is, give the whole path from here, "
+                 "and never say you can't move files, since this chore does)"]
+        for agent in organizers:
+            lines.append(f"- {agent.name} is {'on' if self.organizer.is_on(agent.name) else 'off'}: it watches "
+                         f"{agent.slots.get('folder', '')} and puts new documents into folders inside "
+                         f"{agent.slots.get('into') or agent.slots.get('folder', '')} ({agent.slots.get('groups', '')}).")
+        for move in self.organizer.last_moves(3):
+            lines.append(f"- {move['name']} was put in {move['to']} ({chores.ago(move['when'])}).")
+        for item in self.organizer.last_skipped(3):
+            lines.append(f"- {item['name']} stayed in {item['where']}: {item['why']}.")
+        lines.append("- It reads documents, code, spreadsheets, slides, zips (by the files inside) and pictures (through "
+                     "a vision model, when one is installed), all on this computer, and the rest by name. Documents and "
+                     "code it sorts at once; a kind it hasn't sorted before (a spreadsheet, a picture) it asks about "
+                     "once, then sorts from then on.")
+        seer = self.organizer.seer()
+        lines.append(f"- A vision model is installed ({seer}), so pictures are read and sorted too." if seer
+                     else "- No vision model is installed, so a picture goes by its file name only.")
+        for question in self.organizer.questions():
+            lines.append(f"- Waiting for the user's yes or no: {question['text']} (they can answer yes or no here)")
+        return "\n".join(lines)
+
+    def _organize_now(self, agent: store.Agent, everything: bool = False) -> Iterator[Event]:
+        """Go through the organizer's folder now, saying how it goes: what has landed since it
+        was switched on, or (everything) all of it."""
+        outcome: dict = {"moved": 0, "where": [], "left": 0, "why": [], "looked": 0}
+        for step in self.organizer.run_once(agent, everything=everything):
+            if isinstance(step, str):
+                yield Progress(step)
+            else:
+                outcome = step
+        if outcome["moved"]:
+            activity.record(activity.SORTED, outcome["moved"])
+        where = " · ".join(f"{w['folder']} {w['count']}" for w in outcome["where"])
+        moved, left = outcome["moved"], outcome["left"]
+        folder = Path(agent.slots.get("folder", "")).name
+        if not outcome["looked"]:
+            text = (f"Nothing new in {folder} since the organizer was switched on. A download needs about 20 "
+                    "seconds to settle before I read it; ask again in a moment, or say which file.")
+            self.chat.remember(f"{agent.name}: organize now", f"({agent.name} answered) {text}")
+            yield Result(agent.name, text)
+            return
+        text = (f"Sorted {moved} document{'' if moved == 1 else 's'}: {where}." if moved
+                else "Nothing moved.")
+        if left:
+            reasons = ", ".join(f"{r['why']} ({r['count']})" if len(outcome["why"]) > 1 else r["why"] for r in outcome["why"])
+            text += f" {left} left where {'it was' if left == 1 else 'they were'}: {reasons}."
+        if moved:
+            text += " Undo is in your chores."
+        self.chat.remember(f"{agent.name}: organize now", f"({agent.name} answered) {text}")
+        yield Result(agent.name, text)
+
+    # The chores list (chores.py), drawn by the drawer and the Chores page: the
+    # switch-on agents as chores, what the organizers did, and putting a move back.
+
+    def organizer_questions(self) -> list[dict]:
+        """The organizers' questions waiting for an answer, for the drawer and Today."""
+        return self.organizer.questions()
+
+    def organizer_answer(self, id: str, yes: bool) -> int:
+        """The user's answer to one, from any window. Returns how many files moved."""
+        return self.organizer.answer(id, bool(yes))
+
+    def chore_agents(self) -> list[dict]:
+        lines = []
+        for agent in store.list_agents():
+            if agent.blueprint == ORGANIZER:
+                lines.append({"name": agent.name, "kind": "organizer", "on": self.organizer.is_on(agent.name),
+                              "how": organizer_how(agent)})
+            elif self._switchable(agent) and self.quick:
+                lines.append({"name": agent.name, "kind": "highlight", "on": self.quick.is_on(agent.name),
+                              "how": "While it's on, what you highlight in any program goes through it, and the "
+                                     "answer shows above the text."})
+        return lines
+
+    def organizer_done(self) -> list[dict]:
+        return self.organizer.done_lately()
+
+    def undo_move(self, id: str) -> int:
+        return self.organizer.undo(id)
+
     def details(self, name: str) -> dict:
         """What an agent's page shows. Empty if there's no such agent."""
         agent = store.find_agent(name)
@@ -945,8 +1253,8 @@ class NoirEngine:
         agents = store.list_agents()
         return AgentList(
             [a.name for a in agents],
-            [a.name for a in agents if self.quick and self._switchable(a)],  # none switch on a Mac yet
-            [a.name for a in agents if self.quick and self.quick.is_on(a.name)],
+            [a.name for a in agents if self._switchable(a) and (a.blueprint == ORGANIZER or self.quick)],
+            [a.name for a in agents if self._is_on(a)],
         )
 
     def _full_lists(self, events: Iterator[Event]) -> Iterator[Event]:
@@ -954,6 +1262,7 @@ class NoirEngine:
         which agents can be switched on and which are on."""
         for event in events:
             if isinstance(event, AgentList):
+                self.organizer.refresh(store.list_agents())
                 if self.quick:
                     self.quick.refresh(store.list_agents())  # changed settings apply at once
                 event = self._agent_list()
@@ -961,6 +1270,14 @@ class NoirEngine:
 
     def _toggle(self, name: str, on: bool | None = None) -> Iterator[Event]:
         agent = store.find_agent(name)
+        if agent is not None and agent.blueprint == ORGANIZER:
+            on = not self.organizer.is_on(agent.name) if on is None else on
+            self.organizer.switch(agent, on)
+            folder = Path(agent.slots.get("folder", "")).name
+            yield from say(f"{agent.name} is on. New documents in {folder} get sorted as they land, and every "
+                           "move shows in your chores with Undo." if on else f"{agent.name} is off.")
+            yield self._agent_list()
+            return
         if agent is not None and self._switchable(agent) and self.quick is None:
             yield Error(f"Switch-on helpers work on Windows for now. You can still ask {agent.name} in the chat.")
             return
@@ -1055,10 +1372,19 @@ class NoirEngine:
         model = find_model(tag) if tag else recommend(report).model
         return report, model.memory_gb if model else 3.0
 
-    def _run_agent(self, name: str, request: str, text: str) -> Iterator[Event]:
+    def _run_agent(self, name: str, request: str, text: str, think: bool = False) -> Iterator[Event]:
         agent = store.find_agent(name)
         if agent is None:
             yield Error(f"I can't find an agent called {name}.")
+            return
+        if agent.blueprint == ORGANIZER:
+            if WANTS_ORGANIZE.search(text) or not WANTS_ANSWER.search(text):
+                yield from self._organize_now(agent)
+            else:
+                # A question about it ("which folder is the physics lab in now?"), sent here by
+                # the router: answered with the facts note in front, not run as a pass.
+                yield Thinking("That's a question about the organizer, so I'll answer it from what it has done.")
+                yield from self._answer(text, think)
             return
         if agent.blueprint == CUSTOM:
             # Asked in the chat ("Word explainer: serendipity"): do its job here.

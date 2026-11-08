@@ -34,7 +34,9 @@ from ..noir import data_dir
 from ..engine import FOLLOW_UPS, NoirEngine
 from ..events import Engine, Error
 from ..fake_engine import FakeEngine
-from .. import __version__
+from .. import __version__, chores
+from ..quick.drawer import OPEN_PIXELS, screen_at
+from ..quick.drawer import real_pixels as drawer_pixels
 from ..quick.tidy import TidyWatch
 from ..reservations import RUN, SORT, TURN_ON, Reservation, ReservationError, Reservations
 
@@ -46,14 +48,17 @@ UNEXPECTED_ERROR = "Something went wrong on my side. Please try again, or restar
 
 # All sizes are in logical pixels, the ones Windows display scaling multiplies.
 EDGE_GAP = 16  # between the see-through window and the edge of the screen
-GLASS_SIZE = (380, 130)  # quiet, its height follows what it has to say
-GLASS_MIN_HEIGHT = 110
-GLASS_CHAT_HEIGHT = 560  # the tallest it gets while talking
-GLASS_GROW_STEPS, GLASS_GROW_SECONDS = 12, 0.012
-GLASS_ABOVE = 84  # its bottom stays above minimized Noir
-GLASS_ALPHA = 253  # 0 to 255: nearly solid, because text behind it made it hard to read
-GLASS_FADE_STEPS, GLASS_FADE_SECONDS = 10, 0.012
-GLASS_LOAD_SECONDS = 20  # at most, while the app starts
+# The drawer (glass.html): pulled out of the screen's right edge with Ctrl held, as tall
+# as the screen's work area less a gap, see-through with the desktop blurred behind it.
+DRAWER_WIDTH = 380
+DRAWER_GAP = 16  # from the top of the work area, in logical pixels
+MOVE_NOTE_SECONDS = 12  # how long "Put practice5.py in College\CSE163 · Undo" stays by the circle
+ASK_NOTE_SECONDS = 30  # how long "hw3.xlsx looks like CSE163 material. Sort .xlsx files like it?" stays
+DRAWER_HEIGHT_SHARE = 0.62  # of the work area: tall enough for a day's chores, not a tower
+DRAWER_MAX_HEIGHT, DRAWER_MIN_HEIGHT = 680, 200
+DRAWER_SLIDE_STEPS, DRAWER_SLIDE_SECONDS = 14, 0.01
+DRAWER_FOG = 3  # Windows' frosted glass behind the window (DWMWA_SYSTEMBACKDROP_TYPE; 3 is acrylic)
+DRAWER_LOAD_SECONDS = 20  # at most, while the app starts
 FULL_SHARE = 0.9  # of the screen when the app opens, so it has the user's attention
 FULL_MIN_SIZE = (640, 560)  # half of a small screen, for working side by side
 SCREEN_SETTLE_SECONDS = 0.25  # for the window to be gone before a screenshot
@@ -150,6 +155,28 @@ class ChatHub:
         """Pins and searching, from the engine's saved conversations."""
         call = getattr(getattr(self._engine, "book", None), name, None)
         return call(*args) if call else default
+
+    def on_chores(self, callback) -> None:
+        """Told whenever an organizer did something, so the lists redraw."""
+        organizer = getattr(self._engine, "organizer", None)
+        if organizer is not None:
+            organizer.changed = callback
+
+    def on_move(self, callback) -> None:
+        """Told of each file an organizer moved on its own, for a small note on the screen."""
+        organizer = getattr(self._engine, "organizer", None)
+        if organizer is not None:
+            organizer.moved = callback
+
+    def on_ask(self, callback) -> None:
+        """Told of each question an organizer has (a new kind of file), for a note on the screen."""
+        organizer = getattr(self._engine, "organizer", None)
+        if organizer is not None:
+            organizer.asked = callback
+
+    def latest(self, kind: str) -> dict:
+        """The last event of a remembered kind (an AgentList, say), for lists drawn outside the chat."""
+        return dict(self._latest.get(kind, {}))
 
     def reset(self) -> None:
         with self._lock:
@@ -250,14 +277,34 @@ class WatchBridge(ChatBridge):
         self._overlay = overlay
 
     def today(self) -> dict:
+        """What the watch noticed and is doing, plus an organizer's question when the watch
+        has none: both windows draw it the same way, with Yes and No."""
         watch = self._overlay.watch
-        return watch.today() if watch else {}
+        today = dict(watch.today()) if watch else {}
+        if not today.get("noticed"):
+            pending = self._hub.ask("organizer_questions", default=[]) or []
+            if pending:
+                today["noticed"] = {"id": pending[0]["id"], "text": pending[0]["text"]}
+        return today
+
+    def chores(self) -> dict:
+        """The chores list (chores.py): every chore, on or off, and the jobs done lately, by day."""
+        watch = self._overlay.watch
+        done = (watch.done_lately() if watch else []) + list(self._hub.ask("organizer_done", default=[]) or [])
+        return chores.listing(watch.today() if watch else {}, done, self._hub.ask("chore_agents", default=[]) or [],
+                              self._overlay.bookings.listing())
 
     def answer(self, which: str, yes: bool) -> None:
+        if which.startswith("kind:"):  # an organizer's question about a kind of file
+            self._hub.ask("organizer_answer", which, bool(yes), default=0)
+            self._overlay.refresh_mini()
+            return
         if self._overlay.watch:
             self._overlay.watch.answer(which, bool(yes))
 
     def undo_sorting(self, id: str = "") -> None:
+        if id and self._hub.ask("undo_move", id, default=0):
+            return  # an organizer's move, put back by the engine
         if self._overlay.watch:
             self._overlay.watch.undo(id or None)
 
@@ -527,16 +574,13 @@ class TodayBridge(WatchBridge):
 
 
 class GlassBridge(WatchBridge):
-    """The see-through window's page."""
+    """The drawer's page."""
 
     def open_app(self) -> None:
         self._overlay.open_app()
 
-    def hide_glass(self) -> None:
-        self._overlay.hide_glass()
-
-    def fit_glass(self, height: int, talking: bool = False) -> None:
-        self._overlay.fit_glass(height, talking)
+    def hide_drawer(self) -> None:
+        self._overlay.hide_drawer()
 
 
 class SpotBridge:
@@ -581,17 +625,23 @@ def centered(size: tuple[int, int], work: Area) -> tuple[int, int]:
     return x + (width - size[0]) // 2, y + (height - size[1]) // 2
 
 
-def glass_height(height: int, talking: bool, work: Area) -> int:
-    """Always fits on the screen, under the circle's reach."""
-    room = work[3] - GLASS_ABOVE - EDGE_GAP
-    return min(max(int(height), GLASS_MIN_HEIGHT), GLASS_CHAT_HEIGHT, room)
+def drawer_bounds(work: Area, scale: float = 1.0) -> tuple[int, int, int, int]:
+    """Where the drawer sits open: flush with the right edge of this screen's work area, a
+    gap from the top, about two thirds of the way down. In the screen's real pixels, so the
+    mouse and the window agree."""
+    x, y, width, height = work
+    gap, drawer_width = round(DRAWER_GAP * scale), round(DRAWER_WIDTH * scale)
+    tallest = min(round(DRAWER_MAX_HEIGHT * scale), height - 2 * gap)
+    drawer_height = max(min(round(height * DRAWER_HEIGHT_SHARE), tallest), min(round(DRAWER_MIN_HEIGHT * scale), height))
+    return x + width - drawer_width, y + gap, drawer_width, drawer_height
 
 
-def place_glass(size: tuple[int, int], work: Area) -> tuple[int, int]:
-    """In the bottom right corner, just above minimized Noir."""
-    x, y, screen_width, screen_height = work
-    width, height = size
-    return x + screen_width - width - EDGE_GAP, y + screen_height - height - GLASS_ABOVE
+def drawer_x(distance: int, bounds: tuple[int, int, int, int], closing: bool = False) -> int:
+    """Its left edge while the mouse pulls: it follows the hand out of the edge and stops
+    once it is all the way out, or, pushed back, all the way in."""
+    x, _, width, _ = bounds
+    distance = max(0, min(distance, width))
+    return x + distance if closing else x + width - distance
 
 
 def place_spot(height: int, anchor: tuple[int, int, int], work: Area) -> tuple[int, int]:
@@ -640,8 +690,14 @@ class Overlay:
         self._spot_anchor = (0, 0, 0)
         self._work: Area = (0, 0, 0, 0)
         self._full_open = True
-        self._glass_open = False
-        self._glass_size = GLASS_SIZE
+        self._drawer_open = False
+        self._drawer_bounds: tuple[int, int, int, int] | None = None  # where it is, in real pixels
+        self._pull: tuple = (0, None, False)  # how far the mouse has pulled, on which screen, which way
+        self._pulling = False
+        self._puller = None
+        self._drawer_lock = threading.Lock()  # one movement of the drawer at a time
+        self._note_lock = threading.Lock()  # one move note on the screen at a time
+        self._note_cancel = threading.Event()  # set when quitting, so a note up at the time goes
         self._quitting = False
         # Clicks arrive on several threads; one window change at a time.
         self._lock = threading.RLock()
@@ -667,18 +723,22 @@ class Overlay:
             text_select=True,
         )
         glass_bridge = GlassBridge(self.hub, self)
+        # Made off the right edge of the screen: a see-through window shows itself once its
+        # page loads (pywebview's doing), and out there nobody sees it until it is pulled in.
         self._glass = webview.create_window(
-            f"{TITLE} messages",
+            f"{TITLE} drawer",
             str(WEB_DIR / "glass.html"),
             js_api=glass_bridge,
-            width=GLASS_SIZE[0],
-            height=GLASS_SIZE[1],
-            min_size=(GLASS_SIZE[0], GLASS_MIN_HEIGHT),  # or Windows keeps it taller than its words
+            width=DRAWER_WIDTH,
+            height=drawer_bounds(self._work)[3],
+            x=self._work[0] + self._work[2] + DRAWER_WIDTH,
+            y=self._work[1] + DRAWER_GAP,
             hidden=True,
             resizable=False,
             frameless=True,
             easy_drag=False,
             on_top=True,
+            transparent=True,
             background_color="#0A090C",
         )
         self._spot = webview.create_window(
@@ -703,7 +763,7 @@ class Overlay:
         self._full.events.restored += self.unfold
         self._full.events.maximized += self.unfold  # it comes back maximized if it left that way
         self._full.events.closing += self._closing(self._full.minimize)
-        self._glass.events.closing += self._closing(self.hide_glass)
+        self._glass.events.closing += self._closing(self.hide_drawer)
         self._spot.events.closing += self._closing(self.hide_spot)
 
         try:
@@ -723,11 +783,12 @@ class Overlay:
     def _ready(self) -> None:
         """The windows exist: it can start noticing things."""
         # A hidden window only has its handle, and stops changing, once its page is in.
-        self._glass.events.loaded.wait(GLASS_LOAD_SECONDS)
-        _prepare_glass(self._glass, self._glass_size)
-        # The Spot, the circle and the icon by the clock are Windows for now: on a Mac the
-        # full window is all there is, and it minimizes to the Dock.
-        if self._spot.events.loaded.wait(GLASS_LOAD_SECONDS) and sys.platform == "win32":
+        self._glass.events.loaded.wait(DRAWER_LOAD_SECONDS)
+        _prepare_drawer(self._glass)
+        self._glass.hide()  # pywebview shows a see-through window as its page loads
+        # The Spot, the drawer's pull, the circle and the icon by the clock are Windows for
+        # now: on a Mac the full window is all there is, and it minimizes to the Dock.
+        if self._spot.events.loaded.wait(DRAWER_LOAD_SECONDS) and sys.platform == "win32":
             from ..quick.spot import DoubleTap
 
             _prepare_spot(self._spot)
@@ -738,7 +799,11 @@ class Overlay:
             from .mini import Mini
             from .tray import Tray
 
-            self._mini = Mini(self.toggle_glass)
+            from ..quick.drawer import EdgePull
+
+            self._puller = EdgePull(self.pull_drawer, self.release_drawer, self._open_rect)
+            self._puller.start()
+            self._mini = Mini(self.toggle_drawer)
             self._tray = Tray(self.open_app, self.quit, self.watch)
             self._tray.start()
         if self.watch:
@@ -747,6 +812,9 @@ class Overlay:
             self.watch.held = lambda: self._full_open
             self.watch.start()
         self.bookings.start(self._run_booking, self._bookings_changed)
+        self.hub.on_chores(self._chores_changed)
+        self.hub.on_move(self._moved)
+        self.hub.on_ask(self._asked)
         if self._settings_path:  # the practice run looks at no real downloads
             threading.Thread(target=self._watch_exports, name="exports", daemon=True).start()
 
@@ -782,58 +850,160 @@ class Overlay:
         else:
             self.hub.announce("set_agent", item.agent, item.action == TURN_ON)
 
+    def _chores_changed(self) -> None:
+        if not self._quitting:
+            self.refresh_mini()
+            self._full.run_js("window.today && today.refresh()")
+            self._glass.run_js("window.app && app.refresh()")
+
+    def refresh_mini(self) -> None:
+        """The circle's state: a line going round while a job runs, rings while a question
+        waits (the watch's or an organizer's), dots otherwise."""
+        from .mini import ASKING, IDLE, WORKING
+
+        if not self._mini or self._quitting:
+            return
+        working = bool(self.watch and self.watch.today().get("working"))
+        asking = bool(self.watch and self.watch.asking) or bool(self.hub.ask("organizer_questions", default=[]))
+        self._mini.set_state(WORKING if working else ASKING if asking else IDLE)
+
+    def _asked(self, question: dict) -> None:
+        """An organizer wants a yes or no about a kind of file: a note by the circle asks, the
+        same one as the watch's questions; left alone, the question waits in both windows."""
+        if sys.platform != "win32" or self._quitting:
+            return
+        threading.Thread(target=self._show_question, args=(question,), name="ask-note", daemon=True).start()
+
+    def _show_question(self, question: dict) -> None:
+        from ..quick import note
+        from ..quick.glow import full_screen_in_use
+
+        if full_screen_in_use():
+            return
+        with self._note_lock:
+            if self._quitting:
+                return
+            answer = note.ask(question["text"], "Yes", "No", self._note_cancel, seconds=ASK_NOTE_SECONDS)
+        if answer in ("Yes", "No"):
+            self.hub.ask("organizer_answer", question["id"], answer == "Yes", default=0)
+            self._chores_changed()
+
+    def _moved(self, move: dict) -> None:
+        """An organizer moved a file while the user worked: a small note by the circle says
+        which and where, with Undo, for a few seconds (quick/note.py, the same note as its
+        questions). Windows for now, like the note; never during a game, a video or a slideshow."""
+        if sys.platform != "win32" or self._quitting:
+            return
+        threading.Thread(target=self._show_move, args=(move,), name="move-note", daemon=True).start()
+
+    def _show_move(self, move: dict) -> None:
+        from ..quick import note
+        from ..quick.glow import full_screen_in_use
+
+        if full_screen_in_use():
+            return
+        with self._note_lock:  # a second move waits its turn, never two notes at once
+            if self._quitting:
+                return
+            answer = note.ask(f"Put {move['name']} in {move['folder']}", "Undo", "OK", self._note_cancel,
+                              seconds=MOVE_NOTE_SECONDS)
+        if answer == "Undo" and move.get("sort"):
+            self.hub.ask("undo_move", move["sort"], default=0)
+            self._chores_changed()
+
     def _bookings_changed(self) -> None:
         if not self._quitting:
             self._full.run_js("window.today && today.refresh()")
 
     def _watch_changed(self) -> None:
-        from .mini import ASKING, IDLE, WORKING
-
         if self._quitting:
             return
         if self._tray:
             self._tray.refresh()
-        working = self.watch.today()["working"]
-        if self._mini:
-            self._mini.set_state(WORKING if working else ASKING if self.watch.asking else IDLE)
+        self.refresh_mini()
         self._full.run_js("window.today && today.refresh()")
         self._glass.run_js("window.app && app.refresh()")
 
     # These run on the page's, the circle's or the icon's thread when the user clicks something.
 
-    def toggle_glass(self) -> None:
-        with self._lock:
-            if self._glass_open:
-                self.hide_glass()
-                return
-            _set_bounds(self._glass, (*place_glass(self._glass_size, self._work), *self._glass_size))
-            self._glass.show()
-            self._glass_open = True
-            self._glass.run_js("window.app && app.shown()")
-            _fade(self._glass, 0, GLASS_ALPHA)
+    # The drawer: pulled out of the screen's right edge (quick/drawer.py), or out and
+    # back from the circle. Every move is in the screen's real pixels.
 
-    def fit_glass(self, height: int, talking: bool = False) -> None:
-        """It's exactly as tall as the page asks, rising smoothly out of the
-        corner when the user is talking."""
-        with self._lock:
-            start = self._glass_size[1]
-            end = glass_height(height, talking, self._work)
-            self._glass_size = (GLASS_SIZE[0], end)
-            if self._quitting or self._glass.native is None or start == end:
-                return
-            steps = GLASS_GROW_STEPS if self._glass_open and talking else 1
-            for step in range(1, steps + 1):
-                now = round(start + (end - start) * step / steps)
-                _set_bounds(self._glass, (*place_glass((GLASS_SIZE[0], now), self._work), GLASS_SIZE[0], now))
-                if steps > 1:
-                    time.sleep(GLASS_GROW_SECONDS)
+    def _open_rect(self) -> tuple[int, int, int, int] | None:
+        return self._drawer_bounds if self._drawer_open else None
 
-    def hide_glass(self) -> None:
-        with self._lock:
-            if self._glass_open:
-                _fade(self._glass, GLASS_ALPHA, 0)
+    def toggle_drawer(self) -> None:
+        """From the circle or the icon: out of the right edge of the screen the mouse is on, or back in."""
+        if self._drawer_open:
+            self.hide_drawer()
+            return
+        drawer_pixels()
+        screen = screen_at(*_cursor())
+        self._settle_drawer(drawer_bounds(screen[:4], screen[4]), opening=True)
+
+    def hide_drawer(self) -> None:
+        if not self._drawer_open or self._drawer_bounds is None:
+            return
+        drawer_pixels()
+        self._settle_drawer(self._drawer_bounds, opening=False)
+
+    def pull_drawer(self, distance: int, screen, closing: bool) -> None:
+        """Runs inside the mouse hook, so it only remembers where the hand is; a thread
+        of its own moves the window after it."""
+        self._pull = (distance, screen, closing)
+        if not self._pulling:
+            self._pulling = True
+            threading.Thread(target=self._follow_pull, name="drawer-pull", daemon=True).start()
+
+    def _follow_pull(self) -> None:
+        drawer_pixels()
+        with self._drawer_lock:
+            shown, bounds = False, None
+            while self._pulling and not self._quitting:
+                distance, screen, closing = self._pull
+                if bounds is None:
+                    bounds = self._drawer_bounds if closing and self._drawer_bounds else drawer_bounds(screen[:4], screen[4])
+                _set_pixels(self._glass, (drawer_x(distance, bounds, closing), bounds[1], bounds[2], bounds[3]))
+                if not shown and not closing:
+                    self._glass.show()
+                    self._glass.run_js("window.app && app.shown()")
+                    shown = True
+                time.sleep(DRAWER_SLIDE_SECONDS)
+
+    def release_drawer(self, distance: int, screen, closing: bool) -> None:
+        """The mouse let go: far enough and the drawer settles the way it was going,
+        otherwise it slides back where it came from."""
+        self._pulling = False
+        drawer_pixels()
+        bounds = self._drawer_bounds if closing and self._drawer_bounds else drawer_bounds(screen[:4], screen[4])
+        far_enough = distance >= OPEN_PIXELS
+        self._settle_drawer(bounds, opening=not far_enough if closing else far_enough,
+                            from_x=drawer_x(distance, bounds, closing))
+
+    def _settle_drawer(self, bounds: tuple[int, int, int, int], opening: bool, from_x: int | None = None) -> None:
+        """Slide the rest of the way out, or back in and away."""
+        with self._drawer_lock:
+            if self._quitting or self._glass is None or self._glass.native is None:
+                return
+            x, y, width, height = bounds
+            closed_x = x + width
+            if from_x is None:
+                from_x = closed_x if opening else x
+                if opening:
+                    _set_pixels(self._glass, (from_x, y, width, height))
+                    self._glass.show()
+                    self._glass.run_js("window.app && app.shown()")
+            self._slide(bounds, from_x, x if opening else closed_x)
+            self._drawer_open, self._drawer_bounds = opening, bounds
+            if not opening:
                 self._glass.hide()
-                self._glass_open = False
+
+    def _slide(self, bounds: tuple[int, int, int, int], from_x: int, to_x: int) -> None:
+        _, y, width, height = bounds
+        for step in range(1, DRAWER_SLIDE_STEPS + 1):
+            eased = 1 - (1 - step / DRAWER_SLIDE_STEPS) ** 3  # quick to start, soft to stop
+            _set_pixels(self._glass, (round(from_x + (to_x - from_x) * eased), y, width, height))
+            time.sleep(DRAWER_SLIDE_SECONDS)
 
     def open_app(self) -> None:
         _bring_back(self._full)
@@ -844,7 +1014,7 @@ class Overlay:
         with self._lock:
             if self._quitting:
                 return
-            self.hide_glass()
+            self.hide_drawer()
             if self._mini:
                 self._mini.hide()
             self._full_open = True
@@ -990,8 +1160,11 @@ class Overlay:
             if self._quitting:
                 return
             self._quitting = True
+        self._note_cancel.set()
         if self._tap:
             self._tap.stop()
+        if self._puller:
+            self._puller.stop()
         for window in (self._full, self._glass, self._spot):
             if window is not None:  # quitting while the app is still starting
                 window.destroy()
@@ -1010,21 +1183,46 @@ class Overlay:
         return handler
 
 
-def _prepare_glass(window, size: tuple[int, int]) -> None:
-    """Ready the see-through window while it is still hidden, so it never
-    flashes up solid: keep it out of the taskbar and Alt+Tab, like other
-    overlays, and let Windows blend it with whatever is behind it."""
+def _prepare_drawer(window) -> None:
+    """Ready the drawer while it is still off the screen: out of the taskbar and Alt+Tab,
+    round corners, and Windows' frosted glass behind it, so the desktop shows through
+    blurred wherever the page is see-through."""
     if sys.platform != "win32":
         return
     import ctypes
 
-    gwl_exstyle, ws_ex_toolwindow, ws_ex_appwindow, ws_ex_layered = -20, 0x80, 0x40000, 0x80000
+    gwl_exstyle, ws_ex_toolwindow, ws_ex_appwindow = -20, 0x80, 0x40000
     user32 = ctypes.windll.user32
     hwnd = window.native.Handle.ToInt32()
     style = user32.GetWindowLongW(hwnd, gwl_exstyle)
-    user32.SetWindowLongW(hwnd, gwl_exstyle, (style | ws_ex_toolwindow | ws_ex_layered) & ~ws_ex_appwindow)
-    _see_through(hwnd, 0)
-    _rounded(window, size)
+    user32.SetWindowLongW(hwnd, gwl_exstyle, (style | ws_ex_toolwindow) & ~ws_ex_appwindow)
+    dark_mode, corners, backdrop = 20, 33, 38
+    for attribute, value in ((dark_mode, 1), (corners, 2), (backdrop, DRAWER_FOG)):
+        setting = ctypes.c_int(value)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(setting), ctypes.sizeof(setting))
+
+
+def _cursor() -> tuple[int, int]:
+    """Where the mouse is, in real pixels."""
+    if sys.platform != "win32":
+        return 0, 0
+    import ctypes
+    from ctypes import wintypes
+
+    point = wintypes.POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
+    return point.x, point.y
+
+
+def _set_pixels(window, bounds: tuple[int, int, int, int]) -> None:
+    """Move and size a window in the screen's real pixels, which is how the drawer is
+    placed, since the mouse speaks in them."""
+    if sys.platform != "win32" or window is None or window.native is None:
+        return
+    import ctypes
+
+    swp_nozorder, swp_noactivate = 0x4, 0x10
+    ctypes.windll.user32.SetWindowPos(window.native.Handle.ToInt32(), None, *bounds, swp_nozorder | swp_noactivate)
 
 
 def _prepare_spot(window) -> None:
@@ -1164,23 +1362,6 @@ def bring_forward(title: str = TITLE, kind: str = "WindowsForms10.") -> bool:
             _to_front(hwnd)
             return True
     return False
-
-
-def _see_through(hwnd: int, alpha: int) -> None:
-    import ctypes
-
-    lwa_alpha = 2
-    ctypes.windll.user32.SetLayeredWindowAttributes(hwnd, 0, alpha, lwa_alpha)
-
-
-def _fade(window, start: int, end: int) -> None:
-    """Fade a see-through window in or out, instead of it popping up."""
-    if sys.platform != "win32":
-        return
-    hwnd = window.native.Handle.ToInt32()
-    for step in range(1, GLASS_FADE_STEPS + 1):
-        _see_through(hwnd, round(start + (end - start) * step / GLASS_FADE_STEPS))
-        time.sleep(GLASS_FADE_SECONDS)
 
 
 def _set_bounds(window, bounds: tuple[int, int, int, int]) -> None:

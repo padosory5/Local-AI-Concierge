@@ -10,12 +10,11 @@ from concierge.events import NoirText
 from concierge.ui import window
 from concierge.fake_engine import FakeEngine
 from concierge.ui.window import (
+    DRAWER_GAP,
+    DRAWER_MIN_HEIGHT,
+    DRAWER_WIDTH,
     EDGE_GAP,
     FULL_MIN_SIZE,
-    GLASS_ABOVE,
-    GLASS_CHAT_HEIGHT,
-    GLASS_MIN_HEIGHT,
-    GLASS_SIZE,
     UNEXPECTED_ERROR,
     WEB_DIR,
     ChatBridge,
@@ -23,9 +22,9 @@ from concierge.ui.window import (
     GlassBridge,
     TodayBridge,
     centered,
+    drawer_bounds,
+    drawer_x,
     full_size,
-    glass_height,
-    place_glass,
 )
 
 SCREEN = (0, 0, 1920, 1032)  # a 1080p screen without the taskbar
@@ -158,7 +157,7 @@ def test_pages_see_only_their_calls():
                   "new_chat", "open_chat", "delete_chat", "delete_agent", "toggle_agent"}
     hub = ChatHub(FakeEngine())
     assert public(ChatBridge(hub)) == chat_calls
-    jobs = {"today", "answer", "undo_sorting", "set_noticing", "privacy", "activity", "set_web", "open_link", "set_search_key"}
+    jobs = {"today", "chores", "answer", "undo_sorting", "set_noticing", "privacy", "activity", "set_web", "open_link", "set_search_key"}
     full_window = {"quit_app", "agent_details", "send_files", "pick_files", "pick_images", "pick_folder", "screenshot", "paste_text",
                    "follow_up", "after_answer", "pictures",
                    "models", "pick_model", "save_key", "forget_key", "more_models", "open_key_page",
@@ -171,7 +170,7 @@ def test_pages_see_only_their_calls():
                    "pinned_chats", "pin_chat", "search_chats",
                    "reservations", "add_reservation", "remove_reservation", "switch_reservation"}
     assert public(TodayBridge(hub, None)) == chat_calls | jobs | full_window
-    assert public(GlassBridge(hub, None)) == chat_calls | jobs | {"open_app", "hide_glass", "fit_glass"}
+    assert public(GlassBridge(hub, None)) == chat_calls | jobs | {"open_app", "hide_drawer"}
 
 
 def page_ids(name):
@@ -207,10 +206,12 @@ def test_fonts_ship_with_the_app():
         assert "http" not in css
 
 
-def test_see_through_window_sits_in_the_corner_above_the_circle():
-    x, y = place_glass(GLASS_SIZE, SCREEN)
-    assert x + GLASS_SIZE[0] == 1920 - EDGE_GAP
-    assert y + GLASS_SIZE[1] == 1032 - GLASS_ABOVE
+def test_the_drawer_sits_flush_with_the_right_edge_with_a_gap_above_and_below():
+    x, y, width, height = drawer_bounds(SCREEN)
+    assert (x + width, y, width, height) == (1920, DRAWER_GAP, DRAWER_WIDTH, round(1032 * 0.62))
+    assert drawer_bounds((0, 0, 2560, 1400))[3] == 680  # never a tower on a tall screen
+    x, y, width, height = drawer_bounds(SCREEN, scale=1.5)
+    assert (x + width, y, width) == (1920, 24, 570)
 
 
 def test_an_agents_page_gets_what_the_agent_really_does():
@@ -287,26 +288,28 @@ def test_the_app_opens_in_the_middle_of_the_screen():
     assert x == (1920 - size[0]) // 2 and y == (1032 - size[1]) // 2
 
 
-def test_the_card_is_as_tall_as_the_page_asks_within_limits():
-    assert glass_height(240, False, SCREEN) == 240
-    assert glass_height(430, True, SCREEN) == 430
-    assert glass_height(10, False, SCREEN) == GLASS_MIN_HEIGHT
-    assert glass_height(9999, True, SCREEN) == GLASS_CHAT_HEIGHT
+def test_the_drawer_follows_the_hand_out_of_the_edge_and_stops_when_it_is_out():
+    bounds = drawer_bounds(SCREEN)
+    assert drawer_x(0, bounds) == 1920  # still off the edge
+    assert drawer_x(100, bounds) == 1820
+    assert drawer_x(5000, bounds) == 1920 - DRAWER_WIDTH  # all the way out
+    assert drawer_x(100, bounds, closing=True) == 1920 - DRAWER_WIDTH + 100  # pushed back in
+    assert drawer_x(-30, bounds) == 1920  # a pull the wrong way does nothing
 
 
-def test_the_card_always_fits_on_a_short_screen():
-    short = (0, 0, 1280, 500)
-    assert glass_height(9999, True, short) == 500 - GLASS_ABOVE - EDGE_GAP
+def test_the_drawer_keeps_a_least_height_but_never_outgrows_the_screen():
+    assert drawer_bounds((0, 0, 1280, 300))[3] == DRAWER_MIN_HEIGHT  # 62% would be too little to read
+    assert drawer_bounds((0, 0, 1280, 100))[3] == 100
 
 
-def test_the_card_has_every_part_it_draws_into():
-    assert {"card", "status", "thread", "ask", "text", "send", "summary", "open", "hide", "mark"} <= page_ids("glass.html")
+def test_the_drawer_has_every_part_it_draws_into():
+    assert {"card", "status", "list", "back", "thread", "ask", "text", "send", "summary", "open", "hide", "mark"} <= page_ids("glass.html")
 
 
-def test_see_through_window_stays_on_a_screen_to_the_side():
+def test_the_drawer_stays_on_a_screen_to_the_side():
     left_screen = (-1920, 0, 1920, 1032)
-    x, _ = place_glass(GLASS_SIZE, left_screen)
-    assert x + GLASS_SIZE[0] == -EDGE_GAP
+    x, _, width, _ = drawer_bounds(left_screen)
+    assert x + width == 0
 
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Windows' own named lock")

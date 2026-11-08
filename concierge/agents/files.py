@@ -8,6 +8,8 @@ embedding model can replace it later if keyword search proves too weak.
 
 from __future__ import annotations
 
+import html
+import json
 import math
 import os
 import re
@@ -17,6 +19,15 @@ from pathlib import Path
 
 TEXT_TYPES = {".txt", ".md", ".markdown", ".csv", ".log", ".rst", ".json", ".html", ".htm"}
 SUPPORTED = TEXT_TYPES | {".pdf", ".docx"}
+# Office and OpenDocument files are zips of XML: the words are read straight out of the
+# parts named here, with no spreadsheet or slides library needed.
+OFFICE_PARTS = {".xlsx": ("xl/sharedStrings.xml", "xl/worksheets/"), ".xlsm": ("xl/sharedStrings.xml", "xl/worksheets/"),
+                ".pptx": ("ppt/slides/slide",), ".odt": ("content.xml",), ".ods": ("content.xml",), ".odp": ("content.xml",)}
+ARCHIVES = {".zip", ".jar", ".tar", ".tgz", ".gz"}  # read by the names of the files inside
+MARKUP = {".html", ".htm", ".xhtml", ".xml", ".svg"}
+TEXT_SAMPLE = 16384  # bytes looked at to tell text (code, settings, a log) from a program or a picture
+OFFICE_CHARS = 20000
+MAX_LISTED = 60
 
 MAX_FILES = 2000
 MAX_FILE_MB = 30
@@ -73,6 +84,10 @@ def read_pages(path: Path) -> list[tuple[int | None, str]]:
 
         reader = PdfReader(str(path))
         return [(i + 1, page.extract_text() or "") for i, page in enumerate(reader.pages)]
+    if suffix == ".ipynb":
+        # A notebook is JSON; its cells' words are what it says.
+        cells = json.loads(path.read_text(encoding="utf-8", errors="replace")).get("cells", [])
+        return [(None, "\n".join("".join(cell.get("source", [])) for cell in cells if isinstance(cell, dict)))]
     if suffix == ".docx":
         import docx
 
@@ -82,7 +97,79 @@ def read_pages(path: Path) -> list[tuple[int | None, str]]:
             for row in table.rows:
                 parts.append(" | ".join(cell.text for cell in row.cells))
         return [(None, "\n".join(parts))]
-    return [(None, path.read_text(encoding="utf-8", errors="replace"))]
+    if suffix in OFFICE_PARTS:
+        return [(None, office_text(path, OFFICE_PARTS[suffix]))]
+    if suffix in ARCHIVES:
+        return [(None, archive_listing(path))]
+    if suffix in MARKUP:
+        return [(None, without_tags(path.read_text(encoding="utf-8", errors="replace")))]
+    if suffix in TEXT_TYPES:
+        return [(None, path.read_text(encoding="utf-8", errors="replace"))]
+    return [(None, text_of(path))]
+
+
+def text_of(path: Path, sample: int = TEXT_SAMPLE) -> str:
+    """The start of a file as text, if it is text at all: code in any language, settings, a
+    log, anything written in letters. A program, a picture or an archive gives ""."""
+    try:
+        with path.open("rb") as f:
+            head = f.read(sample)
+    except OSError:
+        return ""
+    if not head:
+        return ""
+    if head.startswith((b"\xff\xfe", b"\xfe\xff")):
+        text = head.decode("utf-16", errors="replace")
+    else:
+        text = head.decode("utf-8-sig", errors="replace")
+    odd = text.count("\ufffd") + sum(1 for ch in text if ch < " " and ch not in "\n\r\t")
+    return text if odd <= max(2, len(text) // 50) else ""
+
+
+def without_tags(markup: str) -> str:
+    """The words of an HTML or XML file."""
+    text = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", markup)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
+
+
+def office_text(path: Path, parts: tuple[str, ...], limit: int = OFFICE_CHARS) -> str:
+    """The words in a spreadsheet, slides or an OpenDocument file: the text of the XML
+    parts inside its zip, tags taken out."""
+    import zipfile
+
+    pieces: list[str] = []
+    try:
+        with zipfile.ZipFile(path) as inside:
+            for name in sorted(inside.namelist()):
+                if not any(name == part or name.startswith(part) for part in parts):
+                    continue
+                pieces.append(without_tags(inside.read(name).decode("utf-8", errors="replace")))
+                if sum(map(len, pieces)) >= limit:
+                    break
+    except (OSError, zipfile.BadZipFile):
+        return ""
+    return "\n".join(piece for piece in pieces if piece)[:limit]
+
+
+def archive_listing(path: Path, limit: int = MAX_LISTED) -> str:
+    """What a zip or tar holds, by the names of the files inside."""
+    import tarfile
+    import zipfile
+
+    try:
+        if tarfile.is_tarfile(path):  # first: a tar holding a zip looks like a zip from the end
+            with tarfile.open(path) as inside:
+                names = inside.getnames()
+        elif zipfile.is_zipfile(path):
+            with zipfile.ZipFile(path) as inside:
+                names = inside.namelist()
+        else:
+            return ""
+    except (OSError, zipfile.BadZipFile, tarfile.TarError):
+        return ""
+    names = [name for name in names if not name.endswith("/")][:limit]
+    return "Files inside: " + ", ".join(names) if names else ""
 
 
 def split(text: str) -> list[str]:

@@ -135,6 +135,7 @@ class NoirChat:
         self._asked = ""  # the user's own words this time, without any file added to them
         self.kind = ""  # the kind of answer, when code already knows it (voice.BUDGETS); used once
         self.about = ""  # what it knows about the user and they kept (portrait.about_you)
+        self.jobs = ""  # what its chores are doing right now, set by the engine before each answer
         self.draws = False  # the model answering draws well enough to add SVG drawings unasked
         self._persona = None
         self._closed = threading.Event()
@@ -164,11 +165,12 @@ class NoirChat:
         before = next((m["content"] for m in reversed(self.history[:-1]) if m["role"] == "assistant"), "")
         note = voice.guide(self._asked, kind, before, draws=getattr(self, "draws", False))
         messages[-1] = {**messages[-1], "content": f"{messages[-1]['content']}\n\n{note}"}
-        if self.about and self.talker is self.ollama and self.persona():
-            # Only its own model on this computer reads about the user. A system
-            # message here takes the place of the one built into its model, so
+        extra = "\n\n".join(part for part in (self.about, self.jobs) if part)
+        if extra and self.talker is self.ollama and self.persona():
+            # Only its own model on this computer reads about the user and their files. A
+            # system message here takes the place of the one built into its model, so
             # its persona goes along with it.
-            messages = [{"role": "system", "content": f"{self.persona()}\n\n{self.about}"}, *messages]
+            messages = [{"role": "system", "content": f"{self.persona()}\n\n{extra}"}, *messages]
         return messages
 
     def persona(self) -> str:

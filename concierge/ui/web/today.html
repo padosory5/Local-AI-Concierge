@@ -27,6 +27,9 @@
     <button id="start" class="side-item start" type="button" data-icon="plus" title="New chat (Ctrl N)">
       <span class="side-word">New chat</span><kbd class="side-hint side-word">Ctrl N</kbd>
     </button>
+    <button class="side-item" type="button" data-view="chores" data-icon="chores" title="Chores">
+      <span class="side-word">Chores</span>
+    </button>
     <button class="side-item" type="button" data-view="room" data-icon="room" title="Settings">
       <span class="side-word">Settings</span>
     </button>
@@ -84,6 +87,7 @@
       </section>
 
       <section id="view-today" class="view" aria-label="Today" hidden></section>
+      <section id="view-chores" class="view" aria-label="Chores" hidden></section>
       <section id="view-agents" class="view discover-page" aria-label="Agents" hidden></section>
       <section id="view-models" class="view discover-page" aria-label="Models" hidden></section>
       <section id="view-helper" class="view agent-page" aria-label="Agent" hidden></section>
@@ -165,6 +169,7 @@
   <script src="help.js"></script>
   <script src="about.js"></script>
   <script src="setup.js"></script>
+  <script src="chores.js"></script>
   <script src="room.js"></script>
   <script src="discover.js"></script>
   <script src="models.js"></script>

@@ -1,5 +1,5 @@
-/* The card that grows out of minimized Noir (glass.html). Windows lets a little
-   of the screen through; the page stays solid enough to read over anything. */
+/* The drawer (glass.html): see-through, with Windows blurring the desktop behind it,
+   so the page's dark is only a tint and everything on it must read over fog. */
 
 @font-face {
   font-family: "Instrument Serif";
@@ -10,9 +10,11 @@
 :root {
   --lilac: #c4b4cc;
   --white: #fbfafc;
-  --mute: #a297a8;
-  --line: #262129;
-  --panel: #1a171d;
+  --mute: #a8a0ad;
+  --faint: #8a8290;
+  --line: rgba(255, 255, 255, 0.07);
+  --panel: rgba(28, 25, 32, 0.9);
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
   color-scheme: dark;
   font-family: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
   font-size: 14px;
@@ -27,26 +29,23 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: #0d0b0f;
+  background: rgba(13, 11, 15, 0.72);
   color: var(--white);
 }
 
 #card {
   display: flex;
   flex-direction: column;
-}
-
-/* Talking, the card fills its window and only the conversation moves. */
-body.talking #card {
   height: 100vh;
 }
 
 header {
   position: relative;
   display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
-  padding: 12px 10px 11px 14px;
+  padding: 14px 10px 10px 16px;
 }
 
 /* A little of the app's print shading, behind the header. */
@@ -138,26 +137,156 @@ svg {
   padding: 0 12px;
 }
 
+#back {
+  flex: none;
+  align-self: flex-start;
+  margin: 0 8px 4px 10px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* ----------------------------------------------------------- the list */
+
+#list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 0 10px;
+  scrollbar-color: #3a3340 transparent;
+  scrollbar-width: thin;
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+/* Typing folds the list away: it fades and lifts, and the conversation has the room. */
+body.talking #list {
+  flex: none;
+  height: 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
+
+.cap {
+  padding: 14px 18px 5px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.chore,
+.job {
+  padding: 10px 18px 11px;
+  border-bottom: 1px solid var(--line);
+  animation: arrive 0.22s ease both;
+}
+
+.chore .name {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.chore .name i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lilac);
+  box-shadow: 0 0 8px var(--lilac);
+}
+
+.chore.off .name i {
+  background: none;
+  border: 1px solid var(--faint);
+  box-shadow: none;
+}
+
+.chore.off .name {
+  color: var(--mute);
+}
+
+.chore .how {
+  margin-top: 3px;
+  color: var(--mute);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.chore .last,
+.job .meta {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-top: 3px;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.chore .last {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.job .what {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.job .meta .time {
+  flex: none;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.job .meta .details {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job .meta .undo {
+  flex: none;
+  margin-left: auto;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.nothing {
+  padding: 18px;
+  color: var(--faint);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------- the conversation */
+
 #thread {
   position: relative;
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 9px;
-  max-height: 200px;
   padding: 2px 12px 10px;
   overflow-y: auto;
   scrollbar-color: #3a3340 transparent;
   scrollbar-width: thin;
 }
 
-#thread:empty {
-  display: none;
-}
-
 body.talking #thread {
+  display: flex;
   flex: 1;
   min-height: 0;
-  max-height: none;
 }
 
 /* A short conversation sits down by the box, the way a chat does. */
@@ -215,6 +344,31 @@ body.talking #thread {
   font-weight: 600;
 }
 
+/* An agent card in the conversation: the same lines as the full window's card. */
+.card-label {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.card-list {
+  margin: 2px 0 0;
+  padding-left: 17px;
+  color: var(--mute);
+}
+
+.card-list li {
+  margin: 1px 0;
+}
+
+.card-value {
+  margin-top: 2px;
+  color: var(--mute);
+}
+
 .typing {
   display: flex;
   align-items: center;
@@ -256,7 +410,7 @@ body.talking #thread {
 
 .choice {
   padding: 5px 11px;
-  border: 1px solid #443c4a;
+  border: 1px solid #514857;
   border-radius: 8px;
   color: var(--white);
   font-size: 13px;
@@ -359,43 +513,16 @@ body.talking #thread {
   animation: moving 2.2s linear infinite;
 }
 
-.on-agents {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.on-agent {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 10px 4px 9px;
-  border-radius: 999px;
-  background: var(--panel);
-  font-size: 12.5px;
-  font-weight: 500;
-  animation: arrive 0.28s ease both;
-}
-
-.on-agent::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--lilac);
-  box-shadow: 0 0 8px var(--lilac);
-}
-
 #ask {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 6px;
-  margin: 4px 12px 12px;
+  margin: 6px 12px 12px;
   padding: 3px 5px 3px 13px;
-  border: 1px solid #332d38;
+  border: 1px solid #4a4250;
   border-radius: 10px;
-  background: #121014;
+  background: rgba(18, 16, 20, 0.92);
 }
 
 #ask:focus-within {
@@ -421,27 +548,38 @@ body.talking #thread {
   display: grid;
   flex: none;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   background: var(--lilac);
   color: #000;
 }
 
-#send[hidden] {
-  display: none;
+#send svg {
+  width: 15px;
+  height: 15px;
 }
 
 @keyframes arrive {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
 @keyframes breathe {
-  50% {
+  0%,
+  100% {
     opacity: 0.3;
+  }
+
+  50% {
+    opacity: 1;
   }
 }
 
@@ -452,11 +590,5 @@ body.talking #thread {
 
   to {
     -webkit-mask-position: -20% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation: none !important;
   }
 }

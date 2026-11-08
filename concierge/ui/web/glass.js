@@ -1,8 +1,9 @@
-// The card from minimized Noir. Above: what it needs answered and what's
-// running. Below: the conversation, oldest at the top and newest by the box, the
-// same one as in the full window. It only draws. Everything comes from the same
-// events as the chat, plus what Python says about its jobs (WatchBridge in
-// window.py).
+// The drawer, pulled out of the screen's right edge. It has two faces. Quiet, it
+// is the chores list: anything it needs answered, the chores it takes care of, and
+// what it did, by day, newest first (WatchBridge.chores in window.py, from
+// chores.py). Typing folds the list away and the conversation takes the drawer,
+// the same one as in the full window, oldest at the top and newest by the box. It
+// only draws: everything comes from the same events as the chat.
 //
 // New messages are added to the conversation, never redrawn, so nothing that is
 // already on screen moves or flickers while it answers.
@@ -10,21 +11,17 @@
 window.app = (() => {
   const $ = (id) => document.getElementById(id);
   const thread = $("thread");
-  const FIRST_NOTES = 3; // finished jobs shown when the card first opens
-  // Talking, the card only grows through these heights. Following every new line
-  // would make it twitch; a few calm steps keep it close to what it has to show.
-  const STEPS = [300, 430, 560];
 
   let api = null;
   let active = []; // agents switched on
   let info = {}; // what Python says about its jobs
+  let listing = { chores: [], days: [] }; // the chores list
   let busy = false;
   let bubble = null; // Noir's message that streamed text is added to
   let typing = null; // the dots shown until its answer starts
   let statusKey = "";
-  let fitted = "";
-  let chatHeight = 0; // the step it has reached in this conversation
-  const seen = new Set(); // finished jobs already in the conversation
+  let listKey = "";
+  let talking = false; // the conversation has the drawer instead of the list
 
   function el(tag, className, ...children) {
     const node = document.createElement(tag);
@@ -40,10 +37,6 @@ window.app = (() => {
     return node;
   }
 
-  function clockTime(seconds) {
-    return new Date(seconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  }
-
   // ------------------------------------------------------- the conversation
 
   function follow() {
@@ -52,7 +45,6 @@ window.app = (() => {
 
   function add(row) {
     thread.append(row);
-    settle();
     follow();
     return row;
   }
@@ -84,6 +76,12 @@ window.app = (() => {
     bubble = null;
   }
 
+  function lines(items) {
+    const list = el("ul", "card-list");
+    for (const item of items || []) list.append(el("li", "", item));
+    return list;
+  }
+
   function choices(id, options) {
     const group = el("div", "choices");
     for (const option of options) {
@@ -101,10 +99,19 @@ window.app = (() => {
     finishBubble();
   }
 
+  // The list or the conversation. Talking folds the list away with its animation.
+  function setTalking(on) {
+    talking = on;
+    document.body.classList.toggle("talking", on);
+    $("back").hidden = !on;
+    if (on) follow();
+  }
+
   const draw = {
     AgentList(e) {
       active = e.active || [];
       drawStatus();
+      refresh();
     },
 
     Thinking(e) {
@@ -122,7 +129,6 @@ window.app = (() => {
         bubble.classList.add("streaming");
       }
       bubble.append(e.text);
-      settle();
       follow();
     },
 
@@ -137,14 +143,28 @@ window.app = (() => {
       follow();
     },
 
+    // The whole card, as in the full window: the drawer once showed only the name, so
+    // "File organizer" was all there was to judge it by.
     AgentCard(e) {
       beforeAnswer();
-      reply(el("div", "from", e.kind), el("div", "strong", e.name), choices(e.id, e.actions));
+      const row = reply(el("div", "from", e.kind), el("div", "strong", e.name));
+      row.append(el("div", "card-label", "Reads"), lines(e.reads));
+      row.append(el("div", "card-label", "Can do"), lines(e.can_do));
+      row.append(el("div", "card-label", "Can't do"), lines(e.cannot_do));
+      row.append(el("div", "card-label", "Runs on"), el("div", "card-value", e.runs_on));
+      row.append(choices(e.id, e.actions));
+      follow();
     },
 
     IdeaCard(e) {
       beforeAnswer();
-      reply(el("div", "from", "Your idea"), el("div", "strong", e.title), e.verdict, choices(e.id, e.actions));
+      const words = { ready: "Ready", not_built: "Not built yet", not_possible: "Not possible", unclear: "Not sure" };
+      const steps = (e.steps || []).map((s) => `${words[s.status] || s.status}: ${s.text}${s.note ? ` (${s.note})` : ""}`);
+      const row = reply(el("div", "from", "Your idea"), el("div", "strong", e.title));
+      row.append(el("div", "card-label", "What it needs"), lines(steps));
+      if (e.difficulty) row.append(el("div", "card-label", "On this computer"), el("div", "card-value", e.difficulty));
+      row.append(el("div", "card-value", e.verdict), choices(e.id, e.actions));
+      follow();
     },
 
     Result(e) {
@@ -165,7 +185,6 @@ window.app = (() => {
         else if (item.role === "result") draw.Result(item);
         else reply(item.text);
       }
-      settle();
       follow();
     },
   };
@@ -181,7 +200,6 @@ window.app = (() => {
     finishBubble();
     busy = false;
     drawStatus();
-    settle();
   }
 
   // Called from Python when the full window starts or finishes a call.
@@ -193,11 +211,13 @@ window.app = (() => {
       drawStatus();
     } else {
       ending();
+      refresh();
     }
   }
 
   async function talk(call, words) {
     busy = true;
+    setTalking(true);
     you(words);
     showTyping();
     drawStatus();
@@ -208,6 +228,7 @@ window.app = (() => {
       draw.Error({ text: "Something went wrong on my side. Please try again." });
     } finally {
       ending();
+      refresh();
       $("text").focus();
     }
   }
@@ -226,14 +247,15 @@ window.app = (() => {
   function summary() {
     if (info.noticed) return "Has a question for you";
     if (busy || info.working) return "Working on it";
-    if (active.length) return `${active.length} agent${active.length === 1 ? " is" : "s are"} on`;
+    const on = listing.chores.filter((chore) => chore.on).length;
+    if (on) return `${on} chore${on === 1 ? "" : "s"} on`;
     return "All quiet";
   }
 
   // Redrawn only when something in it changed, so it never blinks.
   function drawStatus() {
     $("summary").textContent = summary();
-    const key = JSON.stringify([info.noticed, info.working, active]);
+    const key = JSON.stringify([info.noticed, info.working]);
     if (key === statusKey) return;
     statusKey = key;
     const parts = [];
@@ -247,67 +269,67 @@ window.app = (() => {
       parts.push(el("div", "block", el("div", "what", info.working),
                     el("div", "dots-track", el("div", "working-dots"))));
     }
-    if (active.length) parts.push(el("div", "on-agents", ...active.map((name) => el("span", "on-agent", name))));
     $("status").replaceChildren(...parts);
-    settle();
   }
 
-  // Finished jobs join the conversation as small notes, once each.
-  function addNotes() {
-    const fresh = (info.done || []).filter((job) => !seen.has(`${job.when}${job.text}`));
-    const firstTime = seen.size === 0;
-    for (const job of fresh) seen.add(`${job.when}${job.text}`);
-    for (const job of (firstTime ? fresh.slice(0, FIRST_NOTES) : fresh).reverse()) {
-      const row = el("div", "note", el("span", "text", job.text), el("time", "", clockTime(job.when)));
-      if (job.undo) row.append(button("undo", "Undo", () => api.undo_sorting()));
-      add(row);
+  // The chores list, the way Notes lists things: what it takes care of, then each day's jobs.
+  function drawList() {
+    const key = JSON.stringify([listing.chores, listing.days]);
+    if (key === listKey) return;
+    listKey = key;
+    const parts = [];
+    if (listing.chores.length) {
+      parts.push(el("div", "cap", "Handling"));
+      for (const chore of listing.chores) {
+        const row = el("div", `chore ${chore.on ? "" : "off"}`,
+                       el("div", "name", el("i"), chore.name), el("div", "how", chore.how));
+        if (chore.last) row.append(el("div", "last", chore.last));
+        parts.push(row);
+      }
     }
-    thread.querySelectorAll(".undo").forEach((undo) => (undo.hidden = !info.can_undo));
+    for (const day of listing.days) {
+      parts.push(el("div", "cap", day.day));
+      for (const job of day.jobs) {
+        const meta = el("div", "meta", el("span", "time", job.time), el("span", "details", job.details || ""));
+        if (job.undo) meta.append(button("undo", "Undo", () => api.undo_sorting(job.sort || "").then(refresh)));
+        parts.push(el("div", "job", el("div", "what", job.text), meta));
+      }
+    }
+    if (!parts.length) {
+      parts.push(el("div", "nothing", "Nothing yet. Tell Noir a chore below, like keeping Downloads tidy, and it shows up here with what it did."));
+    }
+    $("list").replaceChildren(...parts);
   }
 
   async function refresh() {
     if (!api) return;
     info = (await api.today()) || {};
+    listing = (await api.chores()) || { chores: [], days: [] };
     drawStatus();
-    addNotes();
-    settle();
+    drawList();
   }
 
-  function neededToTalk() {
-    const first = thread.firstElementChild;
-    const last = thread.lastElementChild;
-    const words = last.offsetTop + last.offsetHeight - first.offsetTop;
-    const around = $("card").offsetHeight - thread.clientHeight;
-    return words + around + 26;
-  }
-
-  // Quiet, the card is as tall as what it says. Talking, it rises a step at a
-  // time, never shrinks, and the conversation scrolls inside it.
-  function settle() {
-    const talking = thread.querySelector(".talk") !== null;
-    document.body.classList.toggle("talking", talking);
-    if (!talking) chatHeight = 0;
-    else chatHeight = Math.max(chatHeight, STEPS.find((step) => step >= neededToTalk()) || STEPS[STEPS.length - 1]);
-    const height = talking ? chatHeight : Math.ceil($("card").getBoundingClientRect().height);
-    const key = `${talking} ${height}`;
-    if (api && key !== fitted) {
-      fitted = key;
-      api.fit_glass(height, talking);
-    }
-  }
-
+  // Called from Python when the drawer comes out.
   function shown() {
     refresh();
+    setTalking(busy);
     follow();
     $("text").focus();
   }
 
   $("ask").addEventListener("submit", ask);
-  $("text").addEventListener("input", () => ($("send").hidden = !$("text").value.trim()));
+  $("text").addEventListener("input", () => {
+    const words = $("text").value.trim();
+    $("send").hidden = !words;
+    if (words && !talking) setTalking(true);
+  });
+  $("back").addEventListener("click", () => setTalking(false));
   $("open").addEventListener("click", () => api && api.open_app());
-  $("hide").addEventListener("click", () => api && api.hide_glass());
+  $("hide").addEventListener("click", () => api && api.hide_drawer());
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && api) api.hide_glass();
+    if (event.key !== "Escape" || !api) return;
+    if (talking && !busy && !$("text").value.trim()) setTalking(false);
+    else api.hide_drawer();
   });
 
   // The same small shaded mark as the full window.
@@ -334,7 +356,6 @@ window.app = (() => {
 
   if (window.pywebview && window.pywebview.api && window.pywebview.api.startup) start();
   else window.addEventListener("pywebviewready", start);
-  drawStatus();
 
   return { onEvent, mirror, shown, refresh };
 })();

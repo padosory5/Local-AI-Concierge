@@ -48,7 +48,7 @@ blocks:
     kind: trigger
     name: When a new file appears in a folder
     ai: none
-    status: planned
+    status: ready
   schedule:
     kind: trigger
     name: At set times, like every morning or every week
@@ -105,8 +105,8 @@ blocks:
     kind: action
     name: Move, rename or sort files into folders
     ai: none
-    status: planned
-    note: Moving files will always show a preview first and can be undone.
+    status: ready
+    note: Every move shows in your chores and can be undone for a week.
   read_image:
     kind: action
     name: Read the text in an image or understand what it shows

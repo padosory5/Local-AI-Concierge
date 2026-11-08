@@ -61,6 +61,12 @@ def describe(agent) -> dict:
                           ["Knows", f"{files} file{'' if files == 1 else 's'}"],
                           ["How it answers", "In the chat"], ["Runs on", "This computer"]],
                 "sample": SAMPLE_QUESTION}
+    if agent.blueprint == "organizer":
+        return {"does": "Puts each new document in the folder it watches into a folder by what the document is about.",
+                "facts": [["Watches", Path(slots.get("folder", "")).name or "a folder"],
+                          ["Tells files apart by", slots.get("by", "")], ["Folders", slots.get("groups", "")],
+                          ["Runs on", "This computer"]],
+                "sample": "organize now"}
     when = slots.get("when", WHILE_ON)
     facts = [["When it works", when]]
     if when == WHILE_ON:

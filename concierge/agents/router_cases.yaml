@@ -58,3 +58,5 @@ cases:
   - {text: "Korean translator: see you tomorrow", kind: run_agent, agent: Korean translator}
   - {text: "make an agent that explains difficult English words I highlight in simple Korean", kind: idea}
   - {text: "I want something that fixes the grammar of sentences I paste here", kind: idea}
+  - {text: "organize my school files into folders by course as I download them", kind: new_agent, blueprint: organizer}
+  - {text: "when I download a physics pdf put it in a physics folder", kind: new_agent, blueprint: organizer}

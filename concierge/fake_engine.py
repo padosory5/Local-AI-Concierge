@@ -112,9 +112,9 @@ class FakeEngine:
         """setup: play the first-run setup page, fetching nothing (python -m concierge.ui --fake --setup)."""
         # Seconds between streamed pieces and progress steps; 0 for tests.
         self.delay = delay
-        self.agents = ["Contracts helper", "Korean translator"]
-        self.switchable = {"Korean translator"}
-        self.on: set[str] = set()
+        self.agents = ["Contracts helper", "Korean translator", "School files"]
+        self.switchable = {"Korean translator", "School files"}
+        self.on: set[str] = {"School files"}
         self.draft: dict = {}
         self.waiting_for: str | None = None  # which typed answer we expect next
         self.deleting: str | None = None
@@ -331,6 +331,24 @@ class FakeEngine:
 
     def forget_history(self) -> None:
         self._portrait = {}
+
+    def chore_agents(self) -> list[dict]:
+        return [{"name": "School files", "kind": "organizer", "on": "School files" in self.on,
+                 "how": "Watches Downloads and moves each new document into folders it names as it goes, by what's inside each one."},
+                {"name": "Korean translator", "kind": "highlight", "on": "Korean translator" in self.on,
+                 "how": "While it's on, what you highlight in any program goes through it, and the answer shows above the text."}]
+
+    def organizer_done(self) -> list[dict]:
+        import time
+
+        now = time.time()
+        return [{"when": now - 5400, "text": "Put Lecture 7 notes.pdf in Physics 122", "undo": True, "details": "from Downloads",
+                 "sort": "practice-1", "agent": "School files"},
+                {"when": now - 1800, "text": "Put problem-set-3.pdf in Calculus", "undo": True, "details": "from Downloads",
+                 "sort": "practice-2", "agent": "School files"}]
+
+    def undo_move(self, id: str) -> int:
+        return 0
 
     def setup_state(self) -> dict:
         return self.setup.state() if self.setup else {"needed": False}

@@ -6,9 +6,10 @@
   <title>Noir</title>
   <link rel="stylesheet" href="glass.css">
 </head>
-<!-- The card that grows out of minimized Noir. Quiet, it's just what it's doing
-     and anything it needs answered. Once the user talks, it becomes a small chat
-     that reads downward to the box, the same conversation as the full window. -->
+<!-- The drawer, pulled out of the screen's right edge over the user's work. Above: any
+     question waiting, then the chores the app takes care of and what it did, the way
+     the Notes app lists things. Below: a line to tell it a chore or ask. Typing folds
+     the list away and the conversation, the same one as the full window, takes its place. -->
 <body>
   <section id="card">
     <header>
@@ -20,14 +21,16 @@
       <button id="open" type="button" title="Open the full window" aria-label="Open the full window">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h10v10M19 5 6 18"/></svg>
       </button>
-      <button id="hide" type="button" title="Close" aria-label="Close">
+      <button id="hide" type="button" title="Put it back (Esc)" aria-label="Put the drawer back">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
       </button>
     </header>
     <div id="status"></div>
+    <button id="back" type="button" hidden>‹ Chores</button>
+    <main id="list" aria-label="Chores"></main>
     <main id="thread" aria-live="polite"></main>
     <form id="ask" autocomplete="off">
-      <input id="text" placeholder="Ask Noir" aria-label="Ask Noir">
+      <input id="text" placeholder="Tell Noir a chore, or ask" aria-label="Tell Noir a chore, or ask">
       <button id="send" type="submit" aria-label="Send" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v8H6M10 8.5 5.5 13l4.5 4.5"/></svg>
       </button>

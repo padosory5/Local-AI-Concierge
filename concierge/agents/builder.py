@@ -23,6 +23,9 @@ from ..ollama import Ollama, OllamaError
 from . import runner, store
 from .blueprint import Blueprint
 from .files import scan
+from ..organizer import (BY_NAME, CONTENT, ORGANIZER, courses_in, destination_from, groups_from, organizer_card,
+                         watched_from)
+from ..places import known_folder
 from ..quick.agents import BOTH, CLIPBOARD
 from ..quick.translate import LANGUAGES, language_in
 from .recipe import (CUSTOM, IN_CHAT, MECHANICS, WHILE_ON, needs_language, rewrite_instruction, run_instruction,
@@ -76,6 +79,11 @@ class AgentBuilder:
         # handles this text normally after the setup has been dropped.
         self.handoff: str | None = None
 
+    def take_created(self) -> store.Agent | None:
+        """The agent made by the last Create it, once; None otherwise."""
+        created, self.created = getattr(self, "created", None), None
+        return created
+
     @property
     def active(self) -> bool:
         return self.draft is not None
@@ -90,7 +98,11 @@ class AgentBuilder:
         if self.draft.slots:
             found = "; ".join(f"{bp.slot(k).label.lower()}: {v}" for k, v in self.draft.slots.items() if bp.slot(k))
             yield Thinking(f"From your message: {found}.")
-        if bp.slot("folder"):
+        if bp.id == ORGANIZER and (watched := watched_from(request)) and watched.is_dir():
+            # "from Downloads": the folder to watch, said plainly. Asked as a free question, the
+            # model once took "a folder on my desktop called College", the destination, for it.
+            yield from self._use_folder(watched)
+        elif bp.slot("folder"):
             yield from self._take_folder(request, from_request=True)
         else:
             yield from self._next()
@@ -201,6 +213,8 @@ class AgentBuilder:
             yield from self._take_instruction(text)
         elif draft.waiting == TARGET_LANGUAGE:
             yield from self._take_target_language(text)
+        elif self._slot_type(draft.waiting) == "text":
+            yield from self._set_slot(draft.waiting, self._plain(draft.waiting, text))
         elif self._slot_type(draft.waiting) == "choice" and self._match_choice(draft.waiting, text):
             yield from self._set_slot(draft.waiting, self._match_choice(draft.waiting, text))
         elif draft.waiting == CARD and any(lowered == w or lowered.startswith(w) for w in YES_WORDS):
@@ -251,7 +265,10 @@ class AgentBuilder:
         elif id == DUPLICATE and choice.startswith("Use "):
             name = draft.duplicate_of
             self.draft = None
-            if draft.blueprint.switchable:
+            if draft.blueprint.id == ORGANIZER:
+                yield from say(f'Okay, keep using {name}. Say "organize it" and it goes through what has landed since '
+                               'it was switched on, or "go through everything" for all of it.')
+            elif draft.blueprint.switchable:
                 yield from say(f"Okay, keep using {name}. Switch it on in your helpers list.")
             else:
                 yield from say(f'Okay, keep using {name}. Ask it anything, like "{name}: what does it say about...".')
@@ -272,6 +289,8 @@ class AgentBuilder:
             yield from self._take_language(choice)
         elif self._slot_type(id) == "choice":
             yield from self._set_slot(id, choice)
+        elif self._slot_type(id) == "text":
+            yield from self._set_slot(id, self._plain(id, choice))
         elif id == PICK_FOLDER and choice != "None of these":
             yield from self._use_folder(Path(choice))
         elif id == PICK_FOLDER:
@@ -313,8 +332,21 @@ class AgentBuilder:
             yield from say("That's a system folder, so for safety an agent can't read it.")
             yield Question("folder", "Which other folder should it read?")
             return
+        if draft.blueprint.extra.get("watches") and draft.slots.get("into") and Path(draft.slots["into"]) == folder:
+            draft.waiting = "folder"
+            yield from say("That's where the sorted folders go, not where new files land.")
+            yield Question("folder", "Which folder should it watch for new files? Downloads is where most things land.")
+            return
         yield Progress(f"Looking in {folder}...")
         files = scan(folder).files
+        if draft.blueprint.extra.get("watches"):
+            # Watched, not read for answers: it may be empty today, and another kind of
+            # agent reading the same folder is no duplicate.
+            draft.slots["folder"] = str(folder)
+            draft.file_count = len(files)
+            draft.file_summary = describe_files(files) if files else "nothing to read yet"
+            yield from self._next()
+            return
         if not files:
             draft.waiting = "folder"
             yield from say(f"{folder} has no files I can read. I can read PDF, Word and text files.")
@@ -477,6 +509,8 @@ class AgentBuilder:
         draft.waiting = CARD
         if draft.blueprint.id == CUSTOM:
             reads, can_do, cannot_do = custom_card(draft.slots, draft.blueprint.cannot_do)
+        elif draft.blueprint.id == ORGANIZER:
+            reads, can_do, cannot_do = organizer_card(draft.slots, draft.blueprint.cannot_do)
         else:
             reads = ([f"{draft.slots['folder']} ({draft.file_summary})"] if "folder" in draft.slots
                      else [draft.blueprint.reads])
@@ -489,7 +523,8 @@ class AgentBuilder:
             reads=reads,
             can_do=can_do,
             cannot_do=cannot_do,
-            runs_on=f"{_model_name()} (the built-in model, no extra memory)",
+            runs_on=(f"{_model_name()}, reading each file on this computer; pictures through a vision model when one is installed"
+                     if draft.blueprint.id == ORGANIZER else f"{_model_name()} (the built-in model, no extra memory)"),
             actions=[SAVE_CHANGES if draft.editing else CREATE_IT, "Change something", "Cancel"],
         )
 
@@ -497,7 +532,17 @@ class AgentBuilder:
         """Fill in what the first message already says, so it is not asked again."""
         draft = self.draft
         for slot in draft.blueprint.slots:
-            if slot.type == "language" and (language := language_in(request, target_only=True)):
+            if slot.key == "into" and draft.blueprint.id == ORGANIZER:
+                if (into := destination_from(request)) is not None:
+                    draft.slots["into"] = into
+            elif slot.key == "groups" and draft.blueprint.id == ORGANIZER and courses_in(request):
+                draft.slots["groups"] = courses_in(request)
+            elif slot.key == "by" and draft.blueprint.id == ORGANIZER:
+                if re.search(r"inside|contents?|what (it|they|the files?)('s| is| are| was)? about|what's in", request, re.IGNORECASE):
+                    draft.slots["by"] = CONTENT
+                elif re.search(r"\bby (their |the |file )?names?\b|filenames?", request, re.IGNORECASE):
+                    draft.slots["by"] = BY_NAME
+            elif slot.type == "language" and (language := language_in(request, target_only=True)):
                 draft.slots[slot.key] = language
             elif slot.type == "choice" and (choice := self._match_choice(slot.key, request, strict=True)):
                 draft.slots[slot.key] = choice
@@ -549,6 +594,16 @@ class AgentBuilder:
         self.draft.slots[key] = value
         yield from self._next()
 
+    @staticmethod
+    def _plain(key: str, text: str) -> str:
+        """A typed or clicked answer to a plain text slot, read the way the slot means it."""
+        if key == "groups":
+            return groups_from(text)
+        if key == "into":
+            where = destination_from(text)
+            return "" if where is None or text.strip().lower() == "inside that folder" else where
+        return text.strip()
+
     def _slot_type(self, key: str | None) -> str | None:
         slot = self.draft.blueprint.slot(key) if (self.draft and key) else None
         return slot.type if slot else None
@@ -574,6 +629,13 @@ class AgentBuilder:
         agent = store.Agent(name=draft.slots["name"], blueprint=draft.blueprint.id, slots=dict(draft.slots))
         if draft.blueprint.id == CUSTOM:
             yield from self._create_custom(agent, draft)
+            return
+        if draft.blueprint.id == ORGANIZER:
+            store.save(agent)
+            self.created = agent
+            self.draft = None
+            yield from say(f"{agent.name} is ready.")
+            yield AgentList([a.name for a in store.list_agents()])
             return
         try:
             index = yield from runner.refresh_index(agent)  # reads the files and saves the agent
@@ -726,18 +788,27 @@ def say(text: str) -> Iterator[Event]:
 
 
 def place_dirs(place: str) -> list[Path]:
+    """Where a named place is: what Windows says first (the Desktop may be OneDrive's),
+    then the plain and OneDrive folders of that name."""
     home = Path.home()
     if place == "home":
         return [home]
-    candidates = [home / place] + [d / place for d in home.glob("OneDrive*") if d.is_dir()]
+    candidates = [known_folder(place), home / place] + [d / place for d in home.glob("OneDrive*") if d.is_dir()]
+    candidates = list(dict.fromkeys(candidates))
     return [d for d in candidates if d.is_dir()]
 
 
 def find_folders(name: str, place: str | None, limit: int = 6) -> list[Path]:
     """Existing folders matching what the user said, best matches first."""
     if name and re.match(r"^([A-Za-z]:[\\/]|~|/)", name):
-        path = Path(os.path.expanduser(name))
-        return [path] if path.is_dir() else []
+        # A path, maybe with more words after it ("C:/Users/me/Downloads by what's inside
+        # them"): the longest start that is a folder wins, so a path with spaces still works.
+        words = name.split(" ")
+        for end in range(len(words), 0, -1):
+            path = Path(os.path.expanduser(" ".join(words[:end]).rstrip(".,;:!?")))
+            if path.is_dir():
+                return [path]
+        return []
 
     for known in [*PLACES, "home"]:
         if name.lower() == known.lower() or (not name and place == known):

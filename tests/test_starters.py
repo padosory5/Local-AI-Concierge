@@ -127,5 +127,5 @@ def test_the_fake_engine_adds_them_too():
     engine = FakeEngine(delay=0)
     events = list(engine.send("turn on the highlight explainer"))
     agents = last_list(events)
-    assert "Highlight Explainer" in agents.agents and agents.active == ["Highlight Explainer"]
+    assert "Highlight Explainer" in agents.agents and agents.active == ["Highlight Explainer", "School files"]
     assert "Grammar Fixer" not in last_list(engine.send("install Grammar Fixer")).switchable

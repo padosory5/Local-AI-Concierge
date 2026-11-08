@@ -71,7 +71,9 @@ SYSTEM_FILES = {"desktop.ini", "thumbs.db"}
 
 
 def downloads_dir() -> Path:
-    return Path.home() / "Downloads"
+    from ..places import known_folder
+
+    return known_folder("Downloads")
 
 
 def log_path() -> Path:
@@ -167,6 +169,20 @@ def sort_folder(folder: Path, log: Path, now: float | None = None) -> int:
             when = time.time()
             _keep(log, [*_sorts(log), {"id": str(int(when * 1000)), "when": when, "moves": moved}])
     return len(moved)
+
+
+def record_moves(log: Path, moves: list[dict], agent: str = "") -> str:
+    """Write down moves another job made (an organizer's), so undo_sort can put them
+    back like a sort of its own. Returns the new entry's id."""
+    when = time.time()
+    sort = {"id": f"{int(when * 1000)}-{len(_sorts(log))}", "when": when, "moves": list(moves), "agent": agent}
+    _keep(log, [*_sorts(log), sort])
+    return sort["id"]
+
+
+def sorts_on_record(log: Path) -> list[dict]:
+    """Every sort that can still be undone, oldest first: {"id", "when", "moves", "agent"}."""
+    return _sorts(log)
 
 
 def last_sort(log: Path) -> dict | None:
@@ -450,6 +466,12 @@ class TidyWatch:
                 for job in reversed(self._done) if job["when"] >= midnight]
         return {"working": self._doing, "noticed": noticed, "done": done, "can_undo": bool(undoable),
                 "noticing": self.noticing}
+
+    def done_lately(self) -> list[dict]:
+        """Every finished job still remembered, oldest first, for the chores list, with
+        undo true only while that sort can still go back."""
+        undoable = [] if self.practice else [sort["id"] for sort in _sorts(self.log)]
+        return [{**job, "undo": job.get("sort") in undoable} for job in self._done]
 
     def answer(self, which: str, yes: bool) -> None:
         """The user answered in the note or in one of the windows."""

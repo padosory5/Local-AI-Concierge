@@ -13,6 +13,7 @@ window.today = (() => {
   const ICONS = {
     today: "M-52,-40 H52 V52 H-52 Z M-52,-10 H52 M-26,-58 V-24 M26,-58 V-24",
     plus: "M0,-48 V48 M-48,0 H48",
+    chores: "M-52,-46 H52 V46 H-52 Z M-30,-16 H30 M-30,0 H30 M-30,16 H30",
     panel: "M-52,-44 H52 V44 H-52 Z M-16,-44 V44 M-44,-20 H-24 M-44,0 H-24",
     agents: "M-14,-28 A20,20 0 1 1 -14,-27.9 Z M-50,50 C-50,16 -32,6 -14,6 C4,6 22,16 22,50 M26,-46 A20,20 0 0 1 26,-8 M34,8 C50,14 56,28 56,50",
     clock: "M54,0 A54,54 0 1 1 -54,0 A54,54 0 1 1 54,0 Z M0,-30 V0 L22,16",
@@ -115,7 +116,7 @@ window.today = (() => {
     if (ROOM.includes(name) && name !== "helper") lastRoom = name;
     view = name;
     document.body.dataset.view = name;
-    for (const part of ["setup", "welcome", "help", "chat", "today", "about", "agents", "helper", "models", "reservations", "privacy", "settings"]) {
+    for (const part of ["setup", "welcome", "help", "chat", "today", "chores", "about", "agents", "helper", "models", "reservations", "privacy", "settings"]) {
       $(`view-${part}`).hidden = part !== name;
     }
     $("room-tabs").hidden = !ROOM.includes(name);
@@ -128,6 +129,7 @@ window.today = (() => {
     markSide();
     drawToday();
     if (name === "today") refresh();
+    if (name === "chores") choresPage.draw();
     if (name === "privacy") roomPage.drawPrivacy();
     if (name === "about") aboutPage.draw();
     if (name === "agents") discover.open();

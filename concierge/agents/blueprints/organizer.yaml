@@ -1,0 +1,74 @@
+# The file organizer: the first chore Noir builds for people. It watches a folder and
+# puts each new document into a folder by what the document is about (or by its
+# name), and every move can be undone. The questions are the discussion: how to tell
+# files apart, and which folders. What each file is about is decided by the built-in
+# model from the file's first pages, on this computer (concierge/organizer.py).
+#
+#   watches     true: the folder is watched for new files, not read for answers,
+#               so the setup doesn't need readable files in it and doesn't test-drive.
+
+id: organizer
+name: File organizer
+pitch: >-
+  It watches a folder and puts each new document into a folder by what the document
+  is about, and every move can be undone.
+when: >-
+  The user wants files sorted, organized, filed or tidied into folders by subject,
+  course, topic or what they are about, as they arrive or all at once.
+examples:
+  - organize my school files into folders by course as I download them
+  - sort the PDFs in my Downloads into folders by subject
+  - when I download a physics pdf put it in a physics folder
+  - file my documents by what they're about, the names don't say
+  - keep my downloads organized by topic
+  - 다운로드 폴더에 있는 파일들을 과목별로 정리해줘
+blocks: [new_file, on_request, folder_files, classify, move_files]
+switchable: true
+watches: true
+default_name: File organizer
+slots:
+  folder:
+    label: Watches
+    type: folder
+    ask: >-
+      Which folder should it watch? Downloads is where most things land; you can also
+      name another folder.
+    changeable: true
+  into:
+    label: Puts the folders in
+    type: text
+    ask: >-
+      Where should the sorted folders go? Inside that folder is simplest; or name a place,
+      like "Desktop, in a folder called College".
+    choices: [Inside that folder]
+    changeable: true
+  by:
+    label: Tells files apart by
+    type: choice
+    ask: >-
+      How should it tell what a file is? By what's inside, I read the first pages of
+      each document, on this computer, so a file called "lecture7.pdf" still goes to
+      the right course. By name is quicker, but only as good as the names.
+    choices: [What's inside each file, The file's name]
+    default: What's inside each file
+    changeable: true
+  groups:
+    label: Folders
+    type: text
+    ask: >-
+      Which folders should it sort into? Name them, like "Physics 122, Calculus,
+      History", or say "decide as you go" and I'll name folders by what I find,
+      reusing them as they fill up.
+    choices: [Decide as you go]
+    changeable: true
+  name:
+    label: Name
+    type: text
+    ask: null
+    changeable: true
+can_do: []  # written in code from the slots, see organizer_card
+cannot_do:
+  - Delete or change a file
+  - Move a kind of file you said no to
+  - Read anything outside that folder, or use the internet
+can_change_files: true

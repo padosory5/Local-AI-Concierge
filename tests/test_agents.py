@@ -202,6 +202,7 @@ def test_change_the_name_on_the_card(docs):
 
 def test_folder_found_by_name(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr("concierge.agents.builder.known_folder", lambda name, home=None: tmp_path / name)  # not Windows' real ones
     (tmp_path / "Desktop" / "Work" / "Contracts").mkdir(parents=True)
     (tmp_path / "Documents").mkdir()
     assert find_folders("contracts", None) == [tmp_path / "Desktop" / "Work" / "Contracts"]

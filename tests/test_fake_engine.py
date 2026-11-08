@@ -46,7 +46,7 @@ def test_full_agent_setup_flow():
 
     evts = list(engine.choose(card.id, "Create it"))
     assert Progress in types(evts) and Result in types(evts)
-    assert evts[-1].agents == ["Contracts helper", "Korean translator"]
+    assert evts[-1].agents == ["Contracts helper", "Korean translator", "School files"]
 
 
 def test_cancel_and_unknown_choice():
