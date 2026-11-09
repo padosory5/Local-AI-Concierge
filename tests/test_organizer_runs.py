@@ -10,10 +10,11 @@ from pathlib import Path
 from concierge import organizer as org
 from concierge.agents import store
 from concierge.agents.blueprint import load_blueprints
-from concierge.agents.builder import AgentBuilder
+from concierge.agents.builder import CREATE_IT, AgentBuilder
 from concierge.engine import WANTS_EVERYTHING, WANTS_ORGANIZE
 from concierge.events import AgentCard, NoirText, Question
-from concierge.organizer import CONTENT, NOT_SURE, ORGANIZER, SOMETHING_ELSE, SUBJECT, Organizer
+from concierge.organizer import (ANOTHER, CONTENT, NOT_SURE, ORGANIZER, SOMETHING_ELSE, SUBJECT, SUMMARIZER,
+                                 Organizer)
 
 
 class CourseModel:
@@ -31,22 +32,29 @@ class CourseModel:
     def capabilities(self, tag):
         return ["vision"] if "vl" in tag else ["completion"]
 
-    def chat_json(self, model, messages, schema, think=None, keep_alive=None):
+    def chat_json(self, model, messages, schema, think=None, keep_alive=None, options=None):
         content = messages[-1]["content"].lower()
         self.asked.append(content)
         self.told.append(messages[0]["content"])
         fields = schema["properties"]
         if "what" in fields:  # the vision model, describing a picture
             self.seen.append(messages[-1].get("images"))
+            self.options = options
             return {"what": "A whiteboard photo: PHYS 122 Lab A5 optics bench notes"}
+        if "summary" in fields:  # the summary writer's form
+            return {"summary": "A short summary of what this document says."}
         if "kind" in fields:
             if any(word in content for word in ("tuition", "statement", "résumé", "resume", "i-20", "certificate")):
                 return {"kind": SOMETHING_ELSE, "folder": "PHYS122"}  # a weak model still names a folder
-            if "lab" in content or "physics" in content:
-                return {"kind": SUBJECT, "folder": "PHYS122"}
+            if "math" in content or "linear" in content or "french" in content:
+                return {"kind": SUBJECT, "folder": ANOTHER}
+            if "lab" in content or "physics" in content or "kinematics" in content:
+                return {"kind": SUBJECT, "folder": "PHYS122"}  # "physics" is in PHYS 121 notes too: the model's mistake
             if "cse163" in content or "cse 163" in content or "data science" in content:
                 return {"kind": SUBJECT, "folder": "CSE163"}
             return {"kind": SOMETHING_ELSE, "folder": NOT_SURE}
+        if "linear" in content:
+            return {"topic": "Linear algebra", "sure": "yes"}
         return {"topic": "physics", "sure": "yes"}
 
 
@@ -166,8 +174,10 @@ def test_a_file_that_stayed_keeps_the_reason(tmp_path):
 
 
 def test_why_questions_are_recognised():
-    from concierge.engine import WANTS_STATUS, WANTS_WHY, _mentions
+    from concierge.engine import ABOUT_CHORES, WANTS_STATUS, WANTS_WHERE, WANTS_WHY, _mentions
 
+    assert WANTS_WHERE.search("where did they go?") and WANTS_WHERE.search("where did it end up")
+    assert ABOUT_CHORES.search("what do you do when something new lands?")
     for text in ("why didn't you move the receipt?", "why is my tuition statement still in downloads?",
                  "why did you put my tuition pdf in physics", "Why did you not move the files in downloads"):
         assert WANTS_WHY.search(text), text
@@ -360,3 +370,300 @@ def test_the_window_shows_an_organizer_question_like_the_watch_does():
     assert bridge.today()["noticed"]["id"] == "kind:File organizer:.xlsx"
     bridge.answer("kind:File organizer:.xlsx", True)
     assert engine.answered == ("kind:File organizer:.xlsx", True) and overlay.refreshed
+
+
+def test_a_course_code_decides_before_the_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
+    downloads, college = tmp_path / "Downloads", tmp_path / "College"
+    one = make(tmp_path)
+    asked = []
+    one.asked = asked.append
+    one.switch(agent(downloads, college), True)
+    write(downloads, "phys121_ch3_notes.txt", "PHYS 121 Chapter 3: Kinematics. Physics notes on motion.")
+    write(downloads, "lab4.txt", "PHYS 122 Lab A4: magnetic fields")
+    one.look()
+    assert (college / "PHYS122" / "lab4.txt").is_file()
+    assert (downloads / "phys121_ch3_notes.txt").is_file()  # never filed under PHYS122 for saying "physics"
+    assert len(asked) == 1 and asked[0]["kind"] == "subject" and asked[0]["subject"] == "PHYS 121"
+    assert asked[0]["guess"] == "PHYS121" and asked[0]["id"] == "subject:File organizer:PHYS 121"
+    assert "phys121_ch3_notes.txt looks like a new course, PHYS 121" in asked[0]["text"]
+    assert one.answer(asked[0]["id"], False) == 0
+    assert one.last_skipped()[0]["why"] == org.SUBJECT_REFUSED.format(subject="PHYS 121")
+    write(downloads, "phys121_ch4_notes.txt", "PHYS 121 Chapter 4: Forces")
+    one.look()
+    assert (downloads / "phys121_ch4_notes.txt").is_file() and len(asked) == 1  # remembered, not asked again
+
+
+def test_a_new_course_gets_a_folder_named_by_the_user(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
+    downloads, college = tmp_path / "Downloads", tmp_path / "College"
+    one = make(tmp_path)
+    asked = []
+    one.asked = asked.append
+    saved = agent(downloads, college)
+    store.save(saved)
+    one.switch(saved, True)
+    write(downloads, "math207_hw2.txt", "MATH 207 Homework 2: linear algebra, eigenvalues.")
+    one.look()
+    assert asked[0]["subject"] == "MATH 207" and asked[0]["guess"] == "MATH207"
+    assert one.answer(asked[0]["id"], True, "math207") == 1
+    assert (college / "math207" / "math207_hw2.txt").is_file()
+    assert store.find_agent("File organizer").slots["groups"] == "PHYS122, CSE163, math207"
+    write(downloads, "math207_hw3.txt", "MATH 207 Homework 3: determinants")
+    one.look()
+    assert (college / "math207" / "math207_hw3.txt").is_file() and len(asked) == 1  # the code now names a folder
+    # Without a code, the subject the model names is asked about, and a restart keeps the answer.
+    write(downloads, "notes.txt", "Linear algebra: vector spaces and bases, lecture notes")
+    one.look()
+    assert asked[1]["subject"] == "Linear algebra" and asked[1]["guess"] == "Linear algebra"
+    assert one.answer(asked[1]["id"], True, "") == 1 and (college / "Linear algebra" / "notes.txt").is_file()
+    again = make(tmp_path)
+    again.refresh([store.find_agent("File organizer")])
+    assert again.subjects["File organizer"] == {"MATH 207": "math207", "Linear algebra": "Linear algebra"}
+
+
+def test_a_summary_writer_notes_each_document_and_goes_before_the_organizer(tmp_path):
+    downloads, college = tmp_path / "Downloads", tmp_path / "College"
+    one = make(tmp_path)
+    told = []
+    one.moved = told.append
+    writer = store.Agent(name="Summary writer", blueprint=SUMMARIZER,
+                         slots={"folder": str(downloads), "notes": "", "length": "Three short lines", "name": "Summary writer"})
+    one.switch(agent(downloads, college), True)
+    one.switch(writer, True)
+    write(downloads, "lab3.txt", "PHYS 122 Lab A03: pendulum")
+    one.look()
+    notes = (downloads / "Summaries.md").read_text(encoding="utf-8")
+    assert "## lab3.txt" in notes and "A short summary of what this document says." in notes
+    assert (college / "PHYS122" / "lab3.txt").is_file()  # summed up first, then moved
+    assert [t["folder"] for t in told] == ["Summaries.md", str(Path("College") / "PHYS122")]
+    assert told[0]["sort"] == "" and told[0]["to"] == str(downloads / "Summaries.md")
+    assert org.how(writer).startswith("Watches Downloads and writes a short summary")
+    jobs = [job["text"] for job in one.done_lately()]
+    assert "Summed up lab3.txt" in jobs
+    assert not (downloads / "Summaries.md.bak").exists()
+
+
+def test_a_typed_name_finds_the_question_it_answers():
+    from concierge.engine import _names_a_folder, _question_for_name
+
+    math = {"id": "subject:File organizer:MATH 207", "kind": "subject", "guess": "MATH207"}
+    hist = {"id": "subject:File organizer:HIST 111", "kind": "subject", "guess": "HIST111"}
+    kind = {"id": "kind:File organizer:.xlsx", "kind": "ext"}
+    assert _names_a_folder("math207", math) and _names_a_folder("Linear algebra", math)
+    assert not _names_a_folder("why didn't you move it?", math) and not _names_a_folder("hello", math)
+    assert not _names_a_folder("math207", kind)
+    assert _question_for_name("math207", [hist, kind, math]) is math
+    assert _question_for_name("History stuff", [hist, kind, math]) is math  # no echo: the newest course asked
+    assert _question_for_name("organize it", [hist, math]) is None
+
+
+def test_noirs_own_words_keep_every_fact_or_give_way_to_the_plain_line():
+    from concierge.agents.talk import facts_in, phrase, words_of
+
+    plain = "Okay: .xlsx files are sorted from now on. 1 just went in; Undo is in your chores."
+    assert facts_in(plain) == [".xlsx", "1", "Undo"]
+    assert "Handout.pdf" in facts_in("Lab A4 - Handout.pdf is in C:/x/College/PHYS122 (just now).")  # a name with spaces is passed as a fact
+    assert "C:/x/College/PHYS122" in facts_in("Lab A4 - Handout.pdf is in C:/x/College/PHYS122 (just now).")
+    assert "MATH 207" in facts_in("math207_hw2.pdf looks like a new course, MATH 207. Make a folder for it?")
+
+    class Model:
+        def __init__(self, reply):
+            self.reply = reply
+
+        def chat(self, model, messages, think=None, options=None, keep_alive=None):
+            yield self.reply
+
+    good = "Done: from now on .xlsx files get sorted too. 1 just went in, and Undo is in your chores."
+    assert phrase(Model(good), "noir", plain) == good
+    twisted = "The Excel files are now ordered with the new one at the front, and I've added undoing that change to my tasks."
+    assert phrase(Model(twisted), "noir", plain) == plain  # lost .xlsx, 1 and most of the line's words
+    assert phrase(Model("Which folder should it watch, then?"), "noir", "Which folder should it watch?", question=True) == "Which folder should it watch, then?"
+    assert phrase(Model("Downloads sounds right. Shall we start there"), "noir", "Which folder should it watch?", question=True) == "Which folder should it watch?"
+    assert phrase(Model("Let me configure the monitor for that directory."), "noir", "Which folder should it watch?") == "Which folder should it watch?"
+    long = "whiteboard2.png stayed in C:/x/Downloads: .png files are left alone, as you said. I only move what clearly reads as material for one of the folders; if it belongs in one, drag it there."
+    assert phrase(Model("anything"), "noir", long) == long  # a long report is a record: never reworded
+    assert phrase(object(), "noir", plain) == plain  # no model: the plain line
+    assert words_of("Sorted files into folders") == {"sort", "file", "fold"}
+
+
+def test_a_request_for_new_work_is_not_a_question_about_the_chore():
+    from concierge.engine import ABOUT_CHORES, ASKS_FOR_WORK, WANTS_ANSWER
+
+    asks = "when a pdf lands in my downloads, write me a short summary in a notes file"
+    assert ABOUT_CHORES.search(asks) and WANTS_ANSWER.search(asks) and ASKS_FOR_WORK.search(asks)
+    assert not ASKS_FOR_WORK.search("is the organizer still on?")
+    assert not ASKS_FOR_WORK.search("can you also sort pictures?")
+
+
+def test_a_watched_folder_request_is_routed_in_code():
+    from concierge.agents.router import route
+
+    class NeverAsked:
+        def chat_json(self, *a, **k):
+            raise AssertionError("the model was asked")
+
+    blueprints = load_blueprints()
+    summary = route(NeverAsked(), "noir", "when a pdf lands in my downloads, write me a short summary in a notes file",
+                    blueprints, [])
+    assert (summary.kind, summary.blueprint) == ("new_agent", "summarizer")
+    sorting = route(NeverAsked(), "noir", "every time a file arrives in Downloads, sort it into folders by course", blueprints, [])
+    assert (sorting.kind, sorting.blueprint) == ("new_agent", "organizer")
+
+
+def test_a_helper_for_files_of_no_clear_kind_is_asked_about_not_guessed():
+    from concierge.agents.router import kinds_named, route
+
+    class NeverAsked:
+        def chat_json(self, *a, **k):
+            raise AssertionError("the model was asked")
+
+    class PicksDocuments:
+        def chat_json(self, model, messages, schema, think=None, keep_alive=None):
+            return {"choice": "new agent: Ask my documents"}
+
+    blueprints = load_blueprints()
+    assert route(NeverAsked(), "noir", "can you create an agent that can handle my files", blueprints, []).kind == "ask_kind"
+    assert route(NeverAsked(), "noir", "I need something for my downloads", blueprints, []).kind == "ask_kind"
+    asks = route(PicksDocuments(), "noir", "I want to ask questions about my lecture notes", blueprints, [])
+    assert (asks.kind, asks.blueprint) == ("new_agent", "documents_qa")  # the model's pick, and the words agree
+    sorts = route(NeverAsked(), "noir", "make a helper that sorts my Downloads folder by file type", blueprints, [])
+    assert (sorts.kind, sorts.blueprint) == ("new_agent", "organizer")
+    # The model's pick for files must agree with the words, or the words win; no words, ask.
+    assert route(PicksDocuments(), "noir", "deal with the files in my downloads please", blueprints, []).kind == "ask_kind"
+    told = route(PicksDocuments(), "noir", "I need my downloads sorted into folders by course", blueprints, [])
+    assert (told.kind, told.blueprint) == ("new_agent", "organizer")
+    assert kinds_named("sum up and sort my files", blueprints) == ["organizer", "summarizer"]
+    assert route(PicksDocuments(), "noir", "what is the capital of France", blueprints, []).kind == "new_agent"  # not about files: the model's pick stands
+
+
+def test_an_answer_typed_out_of_order_is_taken_where_it_fits(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setattr("concierge.agents.builder.is_blocked", lambda folder: False)
+    downloads = tmp_path / "Downloads"
+    write(downloads, "a.txt", "x")
+    monkeypatch.setattr("concierge.agents.builder.find_folders", lambda name, place, limit=6: [downloads] if "download" in (name or "").lower() else [])
+
+    class Model:
+        def chat_json(self, model, messages, schema, think=None, keep_alive=None):
+            if "place" in schema["properties"]:  # the folder's name out of what was typed, as the real model does
+                said = messages[-1]["content"].lower()
+                return {"folder": "downloads" if "download" in said else "", "place": "not said"}
+            return {"choice": "chat"}
+
+    builder = AgentBuilder(Model(), "noir", False, load_blueprints())
+    events = list(builder.start(ORGANIZER, "can you create an agent that can handle my files"))
+    assert isinstance(events[-1], Question) and events[-1].id == "folder"
+    events = list(builder.answer("just keep them inside that folder"))  # the destination, answered early
+    assert builder.draft.slots["into"] == "" and isinstance(events[-1], Question) and events[-1].id == "folder"
+    events = list(builder.answer("by what's inside, the names don't say much"))  # another slot, early
+    assert builder.draft.slots["by"] == CONTENT and events[-1].id == "folder"
+    events = list(builder.answer("decide as you go"))  # the folders question, early
+    assert builder.draft.slots["groups"] == "Decide as you go" and events[-1].id == "folder"
+    events = list(builder.choose("card", CREATE_IT))  # a click on a card that isn't up yet
+    assert builder.draft is not None and events[-1].id == "folder"
+    events = list(builder.answer("my downloads"))
+    assert any(isinstance(e, AgentCard) for e in events) and builder.draft.slots["folder"] == str(downloads)
+    assert builder.draft.slots["name"] == "File organizer"
+
+
+def test_a_big_picture_is_shrunk_and_given_room_before_the_vision_model_sees_it(tmp_path):
+    import base64
+    import io
+
+    from PIL import Image
+
+    big = io.BytesIO()
+    Image.new("RGB", (3300, 2550), "white").save(big, "JPEG")
+    small = org.shrink(big.getvalue())
+    assert max(Image.open(io.BytesIO(small)).size) == org.SEE_PIXELS and len(small) < len(big.getvalue())
+    assert org.shrink(b"not a picture") == b"not a picture"
+    one = make(tmp_path)
+    assert one._see(big.getvalue()).startswith("A picture. What it shows:")
+    sent = base64.b64decode(one.ollama.seen[-1][0])
+    assert max(Image.open(io.BytesIO(sent)).size) == org.SEE_PIXELS
+    assert one.ollama.options == {"num_ctx": org.SEE_CONTEXT}
+
+
+def test_what_was_seen_and_why_files_stayed_survive_a_restart(tmp_path):
+    downloads, college = tmp_path / "Downloads", tmp_path / "College"
+    one = make(tmp_path)
+    one.switch(agent(downloads, college), True)
+    write(downloads, "UWTuitionStatement.txt", "Tuition statement")
+    one.look()
+    assert one.last_skipped()[0]["name"] == "UWTuitionStatement.txt"
+    write(downloads, "lab9.txt", "PHYS 122 lab 9")  # lands a moment before the restart
+    again = make(tmp_path)  # the app starts again
+    again.refresh([agent(downloads, college)])
+    assert again.last_skipped()[0]["why"] == org.NOT_MATERIAL  # the reason is still known
+    again.look()
+    assert (college / "PHYS122" / "lab9.txt").is_file()  # new, not old: what was seen before stayed seen
+    assert (downloads / "UWTuitionStatement.txt").is_file() and len(again.last_skipped()) == 1  # not judged again
+
+
+def test_a_file_named_is_looked_at_again_and_a_placed_file_teaches(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
+    downloads, college = tmp_path / "Downloads", tmp_path / "College"
+    one = make(tmp_path)
+    saved = agent(downloads, college)
+    store.save(saved)
+    one.switch(saved, True)
+    downloads.mkdir()
+    (downloads / "setup.exe").write_bytes(bytes(range(256)) * 8)
+    write(downloads, "notes.txt", "Tuition statement")
+    one.look()
+    assert len(one.last_skipped()) == 2
+    outcome = [step for step in one.run_once(saved, only=[downloads / "notes.txt"]) if isinstance(step, dict)][0]
+    assert outcome["looked"] == 1 and outcome["moved"] == 0 and len(one.last_skipped()) == 2  # judged again, same answer
+    move = one.place(saved, downloads / "setup.exe", "Tools")
+    assert move and (college / "Tools" / "setup.exe").is_file()
+    assert one.kinds["File organizer"][".exe"] == "yes"
+    assert "Tools" in store.find_agent("File organizer").slots["groups"]
+    assert [s["name"] for s in one.last_skipped()] == ["notes.txt"]
+    (downloads / "other.exe").write_bytes(bytes(range(256)) * 8)
+    assert one.place(saved, downloads / "missing.exe", "Tools") is None
+
+
+def test_the_words_for_placing_a_file():
+    from concierge.engine import WANTS_PLACE
+
+    assert WANTS_PLACE.match("put output.pdf in math").groups() == ("output.pdf", "math")
+    assert WANTS_PLACE.match("Move the scan to CHEM142 please.").groups() == ("the scan", "CHEM142")
+    assert WANTS_PLACE.match("can you move the scan to the CHEM142 folder").groups() == ("the scan", "CHEM142")
+    assert WANTS_PLACE.match("put it into a folder called Misc").groups() == ("it", "Misc")
+    assert not WANTS_PLACE.match("where did you put output.pdf")
+
+
+def test_each_job_tells_its_steps_and_the_circle_is_told_when_it_works(tmp_path):
+    downloads, college = tmp_path / "Downloads", tmp_path / "College"
+    one = make(tmp_path)
+    told, stayed, working = [], [], []
+    one.moved, one.stayed, one.working = told.append, stayed.append, working.append
+    one.switch(agent(downloads, college), True)
+    write(downloads, "lab4.txt", "PHYS 122 Lab A4: magnetic fields")
+    write(downloads, "UWTuitionStatement.txt", "Tuition statement, PHYS 122")
+    one.look()
+    assert working == [True, False, True, False]  # once per file: it blinks and runs its line, then rests
+    assert told[0]["steps"] == ["Noticed lab4.txt in Downloads", "Read its first lines",
+                                "Course code PHYS 122 names the PHYS122 folder", f"Put it in {Path('College') / 'PHYS122'}"]
+    assert stayed[0]["name"] == "UWTuitionStatement.txt" and stayed[0]["why"] == org.NOT_MATERIAL
+    assert stayed[0]["steps"][1:] == ["Read its first lines", "The model says it isn't course material",
+                                      f"Stayed in Downloads: {org.NOT_MATERIAL}"]
+    jobs = one.done_lately()
+    assert jobs[-1]["details"] == "from Downloads · Course code PHYS 122 names the PHYS122 folder"
+
+
+def test_the_window_hooks_the_circle_to_the_organizer():
+    from concierge.ui.window import ChatHub
+
+    class Organizer:
+        working = stayed = None
+
+    class Engine:
+        organizer = Organizer()
+
+    hub = ChatHub(Engine())
+    hub.on_working(print)
+    hub.on_stayed(print)
+    assert Engine.organizer.working is print and Engine.organizer.stayed is print
+    ChatHub(object()).on_working(print)  # the practice engine has no organizer: nothing to hook

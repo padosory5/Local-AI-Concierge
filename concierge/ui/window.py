@@ -53,6 +53,7 @@ EDGE_GAP = 16  # between the see-through window and the edge of the screen
 DRAWER_WIDTH = 380
 DRAWER_GAP = 16  # from the top of the work area, in logical pixels
 MOVE_NOTE_SECONDS = 12  # how long "Put practice5.py in College\CSE163 · Undo" stays by the circle
+STAY_NOTE_SECONDS = 8  # how long "output.pdf stayed in Downloads" and its reasons stay
 ASK_NOTE_SECONDS = 30  # how long "hw3.xlsx looks like CSE163 material. Sort .xlsx files like it?" stays
 DRAWER_HEIGHT_SHARE = 0.62  # of the work area: tall enough for a day's chores, not a tower
 DRAWER_MAX_HEIGHT, DRAWER_MIN_HEIGHT = 680, 200
@@ -173,6 +174,18 @@ class ChatHub:
         organizer = getattr(self._engine, "organizer", None)
         if organizer is not None:
             organizer.asked = callback
+
+    def on_working(self, callback) -> None:
+        """Told when an organizer starts and finishes reading a file, for the circle."""
+        organizer = getattr(self._engine, "organizer", None)
+        if organizer is not None:
+            organizer.working = callback
+
+    def on_stayed(self, callback) -> None:
+        """Told of each file an organizer read and left, with its steps, for the log by the circle."""
+        organizer = getattr(self._engine, "organizer", None)
+        if organizer is not None:
+            organizer.stayed = callback
 
     def latest(self, kind: str) -> dict:
         """The last event of a remembered kind (an AgentList, say), for lists drawn outside the chat."""
@@ -295,7 +308,7 @@ class WatchBridge(ChatBridge):
                               self._overlay.bookings.listing())
 
     def answer(self, which: str, yes: bool) -> None:
-        if which.startswith("kind:"):  # an organizer's question about a kind of file
+        if which.startswith(("kind:", "subject:")):  # an organizer's question: a kind of file, a new course
             self._hub.ask("organizer_answer", which, bool(yes), default=0)
             self._overlay.refresh_mini()
             return
@@ -815,6 +828,8 @@ class Overlay:
         self.hub.on_chores(self._chores_changed)
         self.hub.on_move(self._moved)
         self.hub.on_ask(self._asked)
+        self.hub.on_working(self._working)
+        self.hub.on_stayed(self._stayed)
         if self._settings_path:  # the practice run looks at no real downloads
             threading.Thread(target=self._watch_exports, name="exports", daemon=True).start()
 
@@ -883,9 +898,10 @@ class Overlay:
         with self._note_lock:
             if self._quitting:
                 return
-            answer = note.ask(question["text"], "Yes", "No", self._note_cancel, seconds=ASK_NOTE_SECONDS)
-        if answer in ("Yes", "No"):
-            self.hub.ask("organizer_answer", question["id"], answer == "Yes", default=0)
+            yes = f"Call it {question['guess']}" if question.get("kind") == "subject" and question.get("guess") else "Yes"
+            answer = note.ask(question["text"], yes, "No", self._note_cancel, seconds=ASK_NOTE_SECONDS)
+        if answer in (yes, "No"):
+            self.hub.ask("organizer_answer", question["id"], answer == yes, default=0)
             self._chores_changed()
 
     def _moved(self, move: dict) -> None:
@@ -905,11 +921,43 @@ class Overlay:
         with self._note_lock:  # a second move waits its turn, never two notes at once
             if self._quitting:
                 return
-            answer = note.ask(f"Put {move['name']} in {move['folder']}", "Undo", "OK", self._note_cancel,
-                              seconds=MOVE_NOTE_SECONDS)
+            lines = [f"Put {move['name']} in {move['folder']}", *move.get("steps", [])[1:]]
+            answer = note.tell(lines, "Undo" if move.get("sort") else None, "OK", self._note_cancel,
+                               seconds=MOVE_NOTE_SECONDS)
         if answer == "Undo" and move.get("sort"):
             self.hub.ask("undo_move", move["sort"], default=0)
             self._chores_changed()
+
+    def _working(self, on: bool) -> None:
+        """An organizer is reading and judging a file: the circle blinks once when it notices
+        it and runs its line while it works, then goes back to what it showed before."""
+        if self._quitting or not self._mini:
+            return
+        from .mini import WORKING
+
+        if on:
+            self._mini.blink()
+            self._mini.set_state(WORKING)
+        else:
+            self.refresh_mini()
+
+    def _stayed(self, report: dict) -> None:
+        """An organizer read a file and left it: the small log by the circle says why."""
+        if sys.platform != "win32" or self._quitting:
+            return
+        threading.Thread(target=self._show_stayed, args=(report,), name="stay-note", daemon=True).start()
+
+    def _show_stayed(self, report: dict) -> None:
+        from ..quick import note
+        from ..quick.glow import full_screen_in_use
+
+        if full_screen_in_use():
+            return
+        with self._note_lock:
+            if self._quitting:
+                return
+            lines = [f"{report['name']} stayed in {Path(report['where']).name}", *report.get("steps", [])[1:]]
+            note.tell(lines, None, "OK", self._note_cancel, seconds=STAY_NOTE_SECONDS)
 
     def _bookings_changed(self) -> None:
         if not self._quitting:

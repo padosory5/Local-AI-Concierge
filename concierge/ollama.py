@@ -236,15 +236,17 @@ class Ollama:
         schema: dict,
         think: bool | None = None,
         keep_alive: str | None = None,
+        options: dict | None = None,
     ) -> dict:
-        """One reply forced into a JSON schema.
+        """One reply forced into a JSON schema. options: Ollama's, such as a bigger
+        num_ctx for a picture.
 
         Ollama constrains the model's output to the schema, so an "enum" field
         can only ever hold one of the listed values. This is how code, not the
         model, decides what the possible answers are.
         """
         body = {"model": model, "messages": messages, "format": schema, "stream": False,
-                "options": {"temperature": 0}}
+                "options": {"temperature": 0, **(options or {})}}
         if think is not None:
             body["think"] = think
         if keep_alive is not None:

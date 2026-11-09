@@ -26,8 +26,12 @@ cases:
   - {text: "translate 'good morning' into Korean", kind: run_agent, agent: Korean translator}  # exactly its job
   # new agent
   - {text: "I want to ask questions about my lecture notes", kind: new_agent, blueprint: documents_qa}
+  - {text: "when a pdf lands in my downloads, write me a short summary in a notes file", kind: new_agent, blueprint: summarizer}
+  - {text: "every time a file arrives in Downloads, sort it into folders by course", kind: new_agent, blueprint: organizer}
   - {text: "can you search through my research papers folder?", kind: new_agent, blueprint: documents_qa}
-  - {text: "make me an agent that reads my recipes folder", kind: new_agent, blueprint: documents_qa}
+  - {text: "make me an agent that reads my recipes folder", kind: ask_kind}  # reads and does what? asked, not guessed
+  - {text: "can you create an agent that can handle my files", kind: ask_kind}
+  - {text: "I need something for my downloads", kind: ask_kind}
   - {text: "I have a bunch of manuals in Downloads, help me look things up in them", kind: new_agent, blueprint: documents_qa}
   - {text: "set up something that answers questions about my tax documents", kind: new_agent, blueprint: documents_qa}
   - {text: "can you read the PDFs in my Documents folder and answer questions?", kind: new_agent, blueprint: documents_qa}
@@ -42,7 +46,7 @@ cases:
   # idea for another kind of helper
   - {text: "can you make something that translates text when I highlight it?", kind: idea}
   - {text: "I want an agent that copies my screenshots automatically", kind: idea}
-  - {text: "make a helper that sorts my Downloads folder by file type", kind: idea}
+  - {text: "make a helper that sorts my Downloads folder by file type", kind: new_agent, blueprint: organizer}  # the organizer exists now
   - {text: "set up a reminder to stretch every hour", kind: idea}
   - {text: "could you build an agent that books flights for me?", kind: idea}
   - {text: "make Ctrl+Shift+D type today's date for me", kind: idea}

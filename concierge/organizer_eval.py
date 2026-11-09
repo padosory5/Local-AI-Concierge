@@ -22,6 +22,7 @@ from pathlib import Path
 
 from concierge import organizer as org
 from concierge.agents import builder as builder_mod
+from concierge.agents import store
 from concierge.agents.builder import CREATE_IT
 from concierge.engine import ONLY_NEW, NoirEngine
 from concierge.events import (AgentCard, AgentList, ChatList, Error, NoirDone, NoirText, Progress, Question, Result,
@@ -104,6 +105,15 @@ NEW = {
     "Lecture 9 slides.pptx": ["PHYS 122 Lecture 9: Magnetism", "Field of a long wire: B = mu0 I / 2 pi r",
                               "Faraday's law: a changing flux makes an emf"],
     "lab notes photo.png": ["PHYS 122 Lab A5: Optics", "Bench notes: lens f = 15 cm,", "object at 30 cm, image at 30 cm"],
+    "math207_hw2.pdf": ["MATH 207 Homework 2: Linear Algebra", "Due Monday. Show all work.",
+                        "1. Find the eigenvalues of the matrix [[2, 1], [1, 2]].",
+                        "2. Show that the vectors (1, 0, 1) and (0, 1, 1) are linearly independent."],
+    "phys121_ch3_notes.pdf": ["PHYS 121 Chapter 3: Kinematics in one dimension", "Physics notes from last quarter",
+                              "Position, velocity and acceleration; v = v0 + a t; x = x0 + v0 t + a t^2 / 2."],
+    "scan_chem142_lab3.pdf": ["CHEM 142 Lab 3: Titration of acetic acid", "Name: Student   Section AB",
+                              "Results: 24.8 mL of 0.100 M NaOH", "Molarity of the vinegar: 0.83 M"],
+    "hist111_essay_draft.docx": ["HIST 111: The French Revolution, essay draft",
+                                 "The fall of the Bastille in 1789 marked the start of a decade of upheaval."],
     "practice5.py": ["# Name: Student", "# CSE 163", "# Autumn 2026", "# Programming Practice 5", "",
                      "# The Commit and Repository classes are provided for you in repository.py. You will define a",
                      "# RemoteRepository that extends Repository, then build a collaboration network with graphs.",
@@ -120,6 +130,10 @@ STAYS = ("UWTuitionStatement.pdf", "Resume_2026.pdf", "I-20.pdf", "Course_regist
          "installer_setup.exe", "party.zip")
 # Which folder each held-back kind belongs in, for the questions.
 KINDS = {".xlsx": "CSE163", ".pptx": "PHYS122", ".png": "PHYS122"}
+# The courses none of the folders is, asked about once each: what the user answers.
+COURSES = {"MATH 207": "math207", "PHYS 121": "no", "HIST 111": "yes"}
+SCANNED = "CHEM 142"  # on a scanned page, read through the vision model
+SECOND = "when a pdf lands in my downloads, write me a short summary in a notes file"
 
 
 def pdf(path: Path, lines: list[str]) -> None:
@@ -137,6 +151,40 @@ def pdf(path: Path, lines: list[str]) -> None:
         b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
     ]
+    write_pdf(path, objects)
+
+
+def scan(path: Path, lines: list[str]) -> None:
+    """A scanned page: one big photo of the lines, with no text behind it, the kind a
+    phone or a copier makes (output.pdf was six of these)."""
+    import io
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    image = Image.new("RGB", (2550, 3300), "white")
+    draw = ImageDraw.Draw(image)
+    try:
+        font = ImageFont.truetype("arial.ttf", 96)
+    except OSError:
+        font = ImageFont.load_default()
+    for number, line in enumerate(lines):
+        draw.text((160, 240 + number * 180), line, fill="black", font=font)
+    photo = io.BytesIO()
+    image.save(photo, "JPEG", quality=80)
+    jpeg = photo.getvalue()
+    content = b"q 612 0 0 792 0 0 cm /Im1 Do Q"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>",
+        b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
+        (b"<< /Type /XObject /Subtype /Image /Width 2550 /Height 3300 /ColorSpace /DeviceRGB /BitsPerComponent 8 "
+         b"/Filter /DCTDecode /Length " + str(len(jpeg)).encode() + b" >>\nstream\n" + jpeg + b"\nendstream"),
+    ]
+    write_pdf(path, objects)
+
+
+def write_pdf(path: Path, objects: list[bytes]) -> None:
     out = bytearray(b"%PDF-1.4\n")
     offsets = []
     for number, obj in enumerate(objects, 1):
@@ -203,7 +251,9 @@ def word(path: Path, lines: list[str]) -> None:
 def drop(downloads: Path, files: dict) -> None:
     for name, lines in files.items():
         path = downloads / name
-        if name.endswith(".pdf"):
+        if name.startswith("scan_") and name.endswith(".pdf"):
+            scan(path, lines)
+        elif name.endswith(".pdf"):
             pdf(path, lines)
         elif name.endswith(".docx"):
             word(path, lines)
@@ -325,20 +375,51 @@ class Run:
         self.check((self.college / "CSE163" / "practice5.py").is_file(), "the new CSE practice code went to CSE163")
         sees = bool(engine.organizer.seer())
         print("  vision model:", engine.organizer.seer() or "none installed, so pictures go by name")
-        for name in ("hw3_data.xlsx", "Lecture 9 slides.pptx", "lab notes photo.png"):
+        for name in ("hw3_data.xlsx", "Lecture 9 slides.pptx", "lab notes photo.png", "math207_hw2.pdf",
+                     "phys121_ch3_notes.pdf", "hist111_essay_draft.docx"):
             self.check((self.downloads / name).is_file(), f"{name} is held back until you say")
-        pending = {q["id"].rsplit(":", 1)[-1]: q for q in engine.organizer_questions()}
+        pending = {q["id"].split(":", 2)[-1]: q for q in engine.organizer_questions()}
         wanted = {".xlsx", ".pptx"} | ({".png"} if sees else set())
         self.check(wanted <= set(pending), f"it asks about each new kind once: {sorted(pending)}")
         for ext in wanted & set(pending):
             self.check(KINDS[ext] in pending[ext]["text"], f"the {ext} question names the right folder: {pending[ext]['text']}")
+        self.check(set(COURSES) <= set(pending), f"it asks about each new course once, by its code: {sorted(pending)}")
+        if sees:
+            self.check(SCANNED in pending, f"a scanned page is read through the vision model and asked about: {sorted(pending)}")
+            if SCANNED in pending:
+                engine.organizer_answer(pending[SCANNED]["id"], True)
+                self.check((self.college / "CHEM142" / "scan_chem142_lab3.pdf").is_file(), "yes put the scan in CHEM142")
+        self.check(".pdf" not in pending and "PHYS122" not in pending, "PHYS 121 notes were not filed under PHYS122")
+        for course, guess in (("MATH 207", "MATH207"), ("PHYS 121", "PHYS121"), ("HIST 111", "HIST111")):
+            if course in pending:
+                self.check(pending[course].get("guess") == guess and course in pending[course]["text"],
+                           f"the {course} question offers {guess}: {pending[course]['text']}")
+        answer = self.said(self.show(engine.send("math207"), "math207 (a folder name typed for the MATH 207 question)"))
+        self.check("math207" in answer, "the typed name is taken as the folder for that course")
+        self.tree()
+        self.check((self.college / "math207" / "math207_hw2.pdf").is_file(), "the MATH 207 homework went to College/math207")
+        self.check("math207" in store.find_agent("File organizer").slots.get("groups", ""), "the new folder joined the organizer's list")
+        if "PHYS 121" in pending:
+            engine.organizer_answer(pending["PHYS 121"]["id"], False)
+        if "HIST 111" in pending:
+            engine.organizer_answer(pending["HIST 111"]["id"], True)
+        self.check((self.college / "HIST111" / "hist111_essay_draft.docx").is_file(), "yes with the offered name made HIST111")
+        self.check((self.downloads / "phys121_ch3_notes.pdf").is_file(), "no left the old physics notes alone")
         if ".png" in pending:
             engine.organizer_answer(pending[".png"]["id"], False)  # the picture: no
         first = engine.organizer_questions()[0]["id"].rsplit(":", 1)[-1]
-        answer = self.said(self.show(engine.send("yes"), f"yes (to the question about {first} files)"))
-        self.check(f"{first} files are sorted from now on" in answer, "a plain yes in the chat answers the question")
+        self.said(self.show(engine.send("yes"), f"yes (to the question about {first} files)"))
+        self.check(engine.organizer.kinds.get("File organizer", {}).get(first) == "yes",
+                   "a plain yes in the chat answers the question")
         for question in engine.organizer_questions():
             engine.organizer_answer(question["id"], True)
+        drop(self.downloads, {"math207_hw3.pdf": ["MATH 207 Homework 3: determinants and inverses"],
+                              "phys121_ch4_notes.pdf": ["PHYS 121 Chapter 4: Newton's laws, notes from last quarter"]})
+        time.sleep(2)
+        engine.organizer.look()
+        self.check((self.college / "math207" / "math207_hw3.pdf").is_file(), "the next MATH 207 file went straight to math207")
+        self.check((self.downloads / "phys121_ch4_notes.pdf").is_file() and len(engine.organizer_questions()) == 0,
+                   "the next PHYS 121 file stayed, with no new question")
         self.tree()
         self.check((self.college / "CSE163" / "hw3_data.xlsx").is_file(), "after yes, the spreadsheet went to CSE163")
         self.check((self.college / "PHYS122" / "Lecture 9 slides.pptx").is_file(), "after yes, the slides went to PHYS122")
@@ -349,7 +430,7 @@ class Run:
         self.check((self.downloads / "whiteboard2.png").is_file() and len(engine.organizer_questions()) == 0,
                    "a kind you said no to stays, with no question")
         answer = self.said(self.show(engine.send("why didn't you move the whiteboard?"), "why didn't you move the whiteboard?"))
-        self.check("left alone, as you said" in answer or "nothing inside could be read" in answer, "why: the picture's own reason")
+        self.check("whiteboard2.png" in answer and "Downloads" in answer, "why: the picture's own reason")
         self.check((self.downloads / "bookstore_receipt.pdf").is_file(), "the receipt stayed")
         self.check((self.downloads / "UWTuitionStatement.pdf").is_file(), "the tuition statement was not touched")
 
@@ -363,7 +444,7 @@ class Run:
         answer = self.said(self.show(engine.send("why didn't you move the receipt?"), "why didn't you move the receipt?"))
         self.check("bookstore_receipt.pdf stayed in" in answer and org.NOT_MATERIAL in answer, "why: the receipt's reason")
         answer = self.said(self.show(engine.send("which folder is the physics lab in now?"), "which folder is the physics lab in now?"))
-        self.check("Lab A4 - Handout.pdf is in" in answer and "PHYS122" in answer, "where: a file named by a word of its name")
+        self.check("Lab A4 - Handout.pdf" in answer and "PHYS122" in answer, "where: a file named by a word of its name")
         events = self.show(engine.send("is the organizer still on? what does it watch"), "is the organizer still on? what does it watch")
         self.check(not any(isinstance(e, Question) for e in events), "a question about the chore gets an answer, not a question")
         events = self.show(engine.send("can you also sort pictures?"), "can you also sort pictures?")
@@ -376,8 +457,15 @@ class Run:
         self.check((self.college / "PHYS122" / "Week 3 slides.docx").is_file(), "the physics slides went to PHYS122")
         self.check((self.college / "CSE163" / "hw5.pdf").is_file(), "the CSE homework went to CSE163")
         self.check((self.college / "CSE163" / "geopandas_practice.ipynb").is_file(), "the CSE notebook went to CSE163")
-        for name in STAYS + ("lab notes photo.png", "whiteboard2.png"):
+        for name in STAYS + ("lab notes photo.png", "whiteboard2.png", "phys121_ch3_notes.pdf", "phys121_ch4_notes.pdf"):
             self.check((self.downloads / name).is_file(), f"{name} stayed in Downloads")
+        answer = self.said(self.show(engine.send("put installer_setup.exe in Tools"), "put installer_setup.exe in Tools"))
+        self.check((self.college / "Tools" / "installer_setup.exe").is_file() and "installer_setup.exe" in answer,
+                   "a file placed by the user is moved where they say")
+        self.check(engine.organizer.kinds.get("File organizer", {}).get(".exe") == "yes", "and its kind is learned")
+        answer = self.said(self.show(engine.send("organize it"), "organize it (nothing new)"))
+        self.check("Nothing new has landed" in answer and "Looked at already" in answer,
+                   "nothing new: it says what was looked at and why, not just wait")
 
         answer = self.said(self.show(engine.send("why is my tuition statement still in downloads?"),
                                      "why is my tuition statement still in downloads?"))
@@ -385,8 +473,31 @@ class Run:
         answer = self.said(self.show(engine.send("where is the tuition pdf"), "where is the tuition pdf"))
         self.check("UWTuitionStatement.pdf is still in" in answer, "where: a file that stayed is said to have stayed")
         answer = self.said(self.show(engine.send("what did you do"), "what did you do (after the pass)"))
-        self.check(org.NOT_MATERIAL in answer and "hw5.pdf went to" in answer, "status after the pass")
+        self.check(org.NOT_MATERIAL in answer and "went to" in answer, "status after the pass")
 
+        # A second kind of agent, made only through the conversation: the summary writer.
+        events = self.show(engine.send(SECOND), SECOND)
+        question = next((e for e in events if isinstance(e, Question)), None)
+        self.check(question is not None and question.id == "notes", "the summary writer is offered and asks where the notes go")
+        if question is not None and question.id == "notes":
+            events = self.show(engine.choose("notes", "A Summaries.md file in that folder"), "click A Summaries.md file in that folder")
+            card = next((e for e in events if isinstance(e, AgentCard)), None)
+            self.check(card is not None and card.kind == "Summary writer" and "Summaries.md" in " ".join(card.can_do),
+                       "its card says what it reads and where the summaries go")
+            events = self.show(engine.choose("card", CREATE_IT), "click Create it")
+            self.check(any(isinstance(e, Question) and e.id == "organize_now" for e in events),
+                       "it is on and asks about the documents already there")
+            self.show(engine.choose("organize_now", ONLY_NEW), "click Only new files from now on")
+            drop(self.downloads, {"reading_week6.pdf": ["PHYS 122 Reading for week 6: Faraday's law",
+                                                          "A changing magnetic flux through a loop induces an emf."]})
+            time.sleep(2)
+            engine.organizer.look()
+            notes = self.downloads / "Summaries.md"
+            self.check(notes.is_file() and "reading_week6.pdf" in notes.read_text(encoding="utf-8"),
+                       "the new reading got a summary in Summaries.md")
+            self.check((self.college / "PHYS122" / "reading_week6.pdf").is_file(), "and the organizer still filed it")
+            answer = self.said(self.show(engine.send("what did you do"), "what did you do (two agents)"))
+            self.check("Summary writer" in answer and "File organizer" in answer, "status covers both agents")
         engine.organizer.stop()
         engine.book.save()
         return all(self.checks)

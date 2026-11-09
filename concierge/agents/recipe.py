@@ -62,11 +62,20 @@ def describe(agent) -> dict:
                           ["How it answers", "In the chat"], ["Runs on", "This computer"]],
                 "sample": SAMPLE_QUESTION}
     if agent.blueprint == "organizer":
-        return {"does": "Puts each new document in the folder it watches into a folder by what the document is about.",
+        return {"does": "Puts each new file in the folder it watches into a folder by what the file is about, and "
+                        "asks you once about a kind of file or a course it hasn't seen before.",
                 "facts": [["Watches", Path(slots.get("folder", "")).name or "a folder"],
                           ["Tells files apart by", slots.get("by", "")], ["Folders", slots.get("groups", "")],
+                          ["Puts the folders in", slots.get("into") or "the watched folder"],
                           ["Runs on", "This computer"]],
-                "sample": "organize now"}
+                "sample": "organize it"}
+    if agent.blueprint == "summarizer":
+        notes = slots.get("notes") or str(Path(slots.get("folder", "")) / "Summaries.md")
+        return {"does": "Writes a few lines about each new document in the folder it watches into a notes file.",
+                "facts": [["Watches", Path(slots.get("folder", "")).name or "a folder"],
+                          ["Keeps the summaries in", notes], ["How much it writes", slots.get("length", "Three short lines")],
+                          ["Runs on", "This computer"]],
+                "sample": "sum up what landed"}
     when = slots.get("when", WHILE_ON)
     facts = [["When it works", when]]
     if when == WHILE_ON:

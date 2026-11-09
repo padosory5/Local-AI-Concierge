@@ -2,7 +2,9 @@
 
 One short line with Yes and No. It floats over every program and never takes
 the keyboard, so whatever the user was doing stays where it was. Left alone, it
-goes away by itself.
+goes away by itself. The same window tells what an agent just did (`tell`): the
+first line is what happened, the small lines under it are what it read and
+decided, and the one button is Undo, or OK when there is nothing to undo.
 """
 
 from __future__ import annotations
@@ -15,7 +17,10 @@ import threading
 from .bubble import GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST
 from .glow import real_pixels, work_screen
 
-COLORS = {"bg": "#0a090c", "line": "#3a3340", "text": "#fbfafc", "yes": "#c4b4cc", "yes_text": "#000000", "no": "#c4b4cc"}
+COLORS = {"bg": "#0a090c", "line": "#3a3340", "text": "#fbfafc", "yes": "#c4b4cc", "yes_text": "#000000", "no": "#c4b4cc",
+          "small": "#a8a0ad"}
+LOG_SECONDS = 10  # how long what an agent did stays by the circle
+WRAP_PIXELS = 380  # the small lines wrap at this width
 CIRCLE_ROOM = 84  # kept free at the right, where minimized Noir sits
 BOTTOM_GAP = 16
 SHOW_SECONDS = 30
@@ -32,8 +37,15 @@ else:  # the note is Windows only for now; elsewhere the module imports and noth
 def ask(text: str, yes: str, no: str, cancel: threading.Event, seconds: float = SHOW_SECONDS) -> str | None:
     """Show the question and wait. Returns the button clicked, or None if it
     was left alone. All of Tk stays on the calling thread, which owns it."""
+    return tell([text], yes, no, cancel, seconds)
+
+
+def tell(lines: list[str], yes: str | None, no: str, cancel: threading.Event, seconds: float = LOG_SECONDS) -> str | None:
+    """Show what happened (the first line) and the small lines of what was read and
+    decided under it, with `yes` (Undo) and `no` (OK) as buttons, or only `no` when
+    `yes` is None. Returns the button clicked, or None if it was left alone."""
     try:
-        return _show(text, yes, no, cancel, seconds)
+        return _show(lines[0], yes, no, cancel, seconds, list(lines[1:]))
     finally:
         # Every Tk object must be freed on the thread that made it, or Tcl
         # stops the whole app. Some are tied in circles only the garbage
@@ -42,7 +54,8 @@ def ask(text: str, yes: str, no: str, cancel: threading.Event, seconds: float = 
         gc.enable()
 
 
-def _show(text: str, yes: str, no: str, cancel: threading.Event, seconds: float) -> str | None:
+def _show(text: str, yes: str | None, no: str, cancel: threading.Event, seconds: float,
+          lines: list[str] = ()) -> str | None:
     import tkinter as tk
     import tkinter.font as tkfont
 
@@ -72,12 +85,23 @@ def _show(text: str, yes: str, no: str, cancel: threading.Event, seconds: float)
     frame = tk.Frame(win, bg=COLORS["bg"], highlightthickness=max(1, round(scale)), highlightbackground=COLORS["line"],
                      padx=round(16 * scale), pady=round(9 * scale))
     frame.pack(fill="both", expand=True)
-    tk.Label(frame, text=text, bg=COLORS["bg"], fg=COLORS["text"], font=font(15)).pack(side="left", padx=(0, round(16 * scale)))
+    if lines:
+        # What happened, then the small lines of what was read and decided, then the buttons.
+        words = tk.Frame(frame, bg=COLORS["bg"])
+        words.pack(side="left", padx=(0, round(16 * scale)))
+        tk.Label(words, text=text, bg=COLORS["bg"], fg=COLORS["text"], font=font(15), anchor="w",
+                 justify="left", wraplength=round(WRAP_PIXELS * scale)).pack(anchor="w")
+        for line in lines:
+            tk.Label(words, text=line, bg=COLORS["bg"], fg=COLORS["small"], font=font(12, "Segoe UI"), anchor="w",
+                     justify="left", wraplength=round(WRAP_PIXELS * scale)).pack(anchor="w", pady=(round(2 * scale), 0))
+    else:
+        tk.Label(frame, text=text, bg=COLORS["bg"], fg=COLORS["text"], font=font(15)).pack(side="left", padx=(0, round(16 * scale)))
     # Labels, not buttons: a button would take the keyboard when clicked.
-    first = tk.Label(frame, text=yes, bg=COLORS["yes"], fg=COLORS["yes_text"], cursor="hand2",
-                     padx=round(13 * scale), pady=round(4 * scale), font=font(14))
-    first.pack(side="left")
-    first.bind("<Button-1>", lambda _e: pick(yes))
+    if yes:
+        first = tk.Label(frame, text=yes, bg=COLORS["yes"], fg=COLORS["yes_text"], cursor="hand2",
+                         padx=round(13 * scale), pady=round(4 * scale), font=font(14))
+        first.pack(side="left")
+        first.bind("<Button-1>", lambda _e: pick(yes))
     second = tk.Label(frame, text=no, bg=COLORS["bg"], fg=COLORS["no"], cursor="hand2",
                       padx=round(12 * scale), pady=round(4 * scale), font=font(14))
     second.pack(side="left")

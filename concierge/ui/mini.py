@@ -29,6 +29,7 @@ RESTING, BRIGHT = 225, 255  # how solid it is, and when the mouse is on it
 FADE_STEP = 24
 FULL_SCREEN_CHECK_SECONDS = 2.0
 IDLE, WORKING, ASKING = "idle", "working", "asking"
+BLINK_SECONDS, BLINK_DIM = 0.8, 60  # noticing something: it dims for a moment and comes back
 LILAC, WHITE = (196, 180, 204), (251, 250, 252)
 
 # Soft edges, always on top, out of Alt+Tab, never takes the keyboard.
@@ -103,6 +104,7 @@ class Mini:
         self._on_click = on_click
         self._wanted = False
         self._state = IDLE
+        self._blink_until = 0.0
         self._closing = threading.Event()
         self._thread = threading.Thread(target=self._run, name="mini", daemon=True)
         self._thread.start()
@@ -115,6 +117,10 @@ class Mini:
 
     def set_state(self, state: str) -> None:
         self._state = state
+
+    def blink(self) -> None:
+        """One blink: it noticed something (a file landed for one of its agents)."""
+        self._blink_until = time.monotonic() + BLINK_SECONDS
 
     def close(self) -> None:
         self._closing.set()
@@ -151,6 +157,8 @@ class Mini:
                 target = 0
                 if self._wanted and not out_of_the_way:
                     target = BRIGHT if _mouse_near(place, size) else RESTING
+                    if now < self._blink_until - BLINK_SECONDS / 2:
+                        target = BLINK_DIM  # the first half of a blink: it dims, then comes back
                 alpha = min(target, alpha + FADE_STEP) if alpha < target else max(target, alpha - FADE_STEP)
                 if alpha > 0:
                     layer.draw(frames[self._state][int(now / FRAME_SECONDS) % FRAMES])

@@ -235,6 +235,56 @@ built**: Yes only says so, plainly, with no light. `python -m concierge.ui
 --fake` is a practice run where both questions come soon after minimizing, the
 jobs only wait, and no files are looked at or moved.
 
+## How an agent is made, and how Noir talks about it
+
+An agent is a blueprint (`agents/blueprints/*.yaml`: which building blocks from
+`capabilities.yaml` it is made of, and which slots it needs) filled in through a
+conversation, then run by the code those blocks map to. Code drives the conversation:
+it reads what the first message already says (`AgentBuilder._prefill`, `watched_from`,
+`destination_from`, `courses_in`), asks only for what is still empty, shows one card and
+creates the agent on Create it; the model fills forms forced by a schema (which folder,
+what the agent does) and never decides. Two kinds watch a folder (`organizer.WATCHED_KINDS`,
+run by `Organizer` on one thread, summaries before moves): the file organizer
+(`organizer.yaml`) and the summary writer (`summarizer.yaml`: a few lines about each new
+document into a notes file, `notes_path`, `NOTES_DEFAULT`, `SUMMARY_NOTE`; `save_file` is a
+ready block now, and `recipe.describe` knows both). A request for either is routed in code
+before the model (`router.WATCHES` with `SUMS_UP` or `SORTS`: "when a pdf lands in my
+downloads, write me a short summary in a notes file" once went to chat and a web search),
+and a request for new work is never taken for a question about a chore or for a web
+lookup (`engine.ASKS_FOR_WORK`).
+
+A helper for files whose kind the words don't say is asked about, never guessed
+(`router.KIND_WORDS`, `FILES`, `WANTS_HELPER`, `kinds_named`; route `ask_kind`,
+`NoirEngine._ask_kind`, `WHICH_KIND`, `KIND_SHORT`, `SOMETHING_ELSE_KIND`): "can you create
+an agent that can handle my files" once became Ask my documents, and now Noir asks what it
+should do with the files, with the kinds as buttons, an existing helper of those kinds to
+use instead, and Something else (the idea planner); a short answer typed instead of a click
+is joined to the request and routed again. One kind named by its words is that kind, in
+code, and a kind the model picked that the words contradict is overruled. During a setup
+an answer typed for a question not asked yet ("just keep them inside that folder" while
+the folder is still being chosen, "decide as you go" to the folder question) is filled in
+where it fits (`AgentBuilder._answer_any_slot`, `BY_CONTENT_WORDS`, `BY_NAME_WORDS`) and
+the open question is asked again, instead of the setup being dropped and the chat model
+answering about passwords; a click on a card not yet shown re-asks the open question. A
+short question with a pronoun soon after an organizer did something ("where did they go?")
+is about the files (`FOLLOWS_A_CHORE`, `CHORE_FRESH_SECONDS`, `chore_spoken_at`), never a
+web lookup. Other local-first apps (Open WebUI, AnythingLLM, Jan, LM Studio) set helpers up
+in forms and switch them on; their models only ever answer, never decide, which is why
+their conversations feel smooth. Here code decides and asks, and the model is only ever
+offered a choice it can refuse with "ask instead".
+
+Noir says what code decided in its own words (`agents/talk.py`, `phrase`): code writes the
+plain line (the offer, a slot's question, "it's on", "okay", a kind or course question) and
+the model rewords it at `TEMPERATURE`; the rewording must keep every fact word for word
+(names, paths, numbers, codes, file names, listed by the caller or found in the line by
+`facts_in`), keep `KEPT_SHARE` of the line's own words (`words_of`), stay short and plain
+(`JARGON`) and still ask what the line asked (`ASKING_WORDS`), or the plain line is used; a
+line longer than `MAX_PLAIN` is a record and is never reworded, because a 4B model turned
+"left alone, as you said" into "since it's not a .png". Without a model (the tests, the
+practice run) the plain line is used, so tests see fixed text. No question in a blueprint
+carries an example that could look like the user's own life: the user saw "Physics 122,
+Calculus, History" in one and took it for his data.
+
 ## Chores Noir builds: the file organizer
 
 A chore is anything that runs without being asked in the chat; the first one Noir
@@ -258,8 +308,13 @@ whether to go through the documents already there (`ORGANIZE_NOW`, `GO_THROUGH`,
 `ONLY_NEW`; `_organize_now` runs `Organizer.run_once` with Progress and a Result).
 
 Only what lands after it is switched on counts: everything in the folder at that
-moment, and at each start of the app, is written down as old (`Organizer._seen`), so
-"only new files from now on" means it. The first live run had no such line and filed
+moment is written down as old (`Organizer._seen`), so "only new files from now on" means
+it. What it has seen, and why each file it left stayed, is kept in `organizer_state.json`
+(`seen`, `SEEN_KEPT`, `skipped`), so a restart changes nothing: a file that landed a
+moment before one is still new, and "why didn't you move it" still has its answer; the
+first version wrote the folder down as old again at every start, and output.pdf, landed
+just before a restart, became old with no record, so "nothing new" was all the user heard.
+A file whose job broke is recorded with that reason (`look`), never lost in silence. The first live run had no such line and filed
 60 old downloads, CVs and immigration forms among them, into two folders. The line is
 drawn again whenever the watched folder changes (`switch`, `refresh`): an agent changed
 from watching College to Downloads once kept College's empty baseline and filed 28 old
@@ -272,17 +327,32 @@ XML in their zip (`OFFICE_PARTS`, `office_text`, no spreadsheet library), zips a
 by the names inside (`archive_listing`), markup without its tags (`without_tags`), a
 notebook by its cells, and the organizer reads a picture through the installed vision
 model (`Organizer.seer`: the catalog's vision helper, else any model Ollama says has
-vision; `SEE_NOTE`) and a scanned PDF through its first page's picture; a program or a
-video gives nothing and is judged by its name alone) that has sat still for
-`SETTLE_SECONDS` (a download
+vision; `SEE_NOTE`) and a scanned PDF through its first page's picture, the picture shrunk
+to `SEE_PIXELS` on its longer side and the model given `SEE_CONTEXT` of room (`shrink`: a
+scanned page of 3300 by 2550 was 8,000 tokens against a room of 4,096, the call failed
+without a word and output.pdf, six photographed pages of a MATH 207 midterm, counted as
+unreadable); a program or a video gives nothing and is judged by its name alone) that has
+sat still for `SETTLE_SECONDS` (a download
 still arriving is left alone, `.crdownload` and the like too) is read (`READ_CHARS`
 of its text, `files.read_pages`). With folders the user named, the built-in model
-fills one form forced by a schema: what kind of document it is ("about one of the
-folders' subjects" or "something else"; a tuition statement, a CV and an I-20 form once
-went into PHYS122 because they named the course, so only the first kind ever moves) and
-which of those folders, or "not sure", the folders listed by name only: a few file names
-already in each, tried as a hint, made the 4B model call hw2_pandas.py "something else",
-and bare names got five of five right. Deciding as
+fills one form forced by a schema: what kind of document it is ("course material" or
+"something else"; a tuition statement, a CV and an I-20 form once went into PHYS122
+because they named the course, so only the first kind ever moves) and which of those
+folders, "another course" or "not sure", the folders listed by name only: a few file
+names already in each, tried as a hint, made the 4B model call hw2_pandas.py "something
+else", and bare names got five of five right. A course code in the file decides before
+the model (`course_codes`, `folder_codes`, `COURSE_CODE`: letters in CAPS and a number, so
+"Kane 130" is not one): a code that names one of the folders is that folder; a code none
+of them is becomes a question ("phys121_ch3_notes.pdf looks like a new course, PHYS 121.
+Make a folder for it, called PHYS121?", `_ask_subject`), since the model saw "physics" in
+PHYS 121 notes and filed them under the only physics folder; material with no code that
+the model calls "another course" is named by the subject form (`_topic`) and asked about
+the same way. A yes makes the folder (the name the user typed, else the one offered), adds
+it to the organizer's folders (`_add_folder`, saved with the agent) and files what was
+held; a no leaves that course alone (`SUBJECT_WAITING`, `SUBJECT_REFUSED`); both are kept
+in `subjects` and the question waits across restarts. In the chat a short name typed while
+such a question waits is the folder's name (`_names_a_folder`, `_question_for_name`: the
+question whose course the name echoes, else the newest). Deciding as
 it goes, the model only says what the document is about, as a subject or course name
 ("Physics 122", never "Physics 122 Lab 3"), and whether it is sure; code matches those
 words to the folders made so far (`closest`, by shared telling words, `STOPWORDS`
@@ -295,12 +365,23 @@ named (the `into` slot: "inside my desktop calling it College" is read by
 filled in from the first message), the move is written to the same log as Downloads
 sorting (`tidy.record_moves`, so `undo_sort` and `can_undo` work unchanged, for
 `UNDO_DAYS`), and the job joins the organizer's own done list (`organizer_done.json`),
-which the chores list merges with the watch's. A file moved while watching is also told
-to the window (`Organizer.moved`, `ChatHub.on_move`, `Overlay._moved`): a small note by
-the circle, the same one as its questions (`quick/note.py`), says "Put practice5.py in
-College\CSE163" with Undo and OK for `MOVE_NOTE_SECONDS`, one note at a time, never
-during a game, a video or a slideshow, Windows for now; a pass asked for in the chat
-tells the chat instead. A file the model isn't sure about stays
+which the chores list merges with the watch's. The user sees the organizer at work on the circle
+and beside it. While a file is read and judged (`Organizer.working`, `ChatHub.on_working`,
+`Overlay._working`) the circle blinks once (`Mini.blink`, `BLINK_SECONDS`, `BLINK_DIM`: it
+dims for a moment and comes back) and runs its line, then goes back to what it showed.
+Each job keeps its steps as it goes (`_note`, `_steps`: "Noticed output.pdf in Downloads",
+"A scanned page: read it through qwen3-vl:8b", "It's about Math 207, a new folder", "Put it
+in 바탕 화면\Math 207"), and a file moved while watching is told to the window with them
+(`Organizer.moved`, `ChatHub.on_move`, `Overlay._moved`): the small log by the circle, the
+same window as its questions (`quick/note.py`, `tell`, `LOG_SECONDS`), shows what happened
+on its first line and what was read and decided in small lines under it, with Undo and OK
+for `MOVE_NOTE_SECONDS`; a file read and left is told the same way with why it stayed
+(`Organizer.stayed`, `ChatHub.on_stayed`, `Overlay._stayed`, `STAY_NOTE_SECONDS`), one note
+at a time, never during a game, a video or a slideshow, Windows for now. The decision step
+also goes into the job's line in the chores list. A pass asked for in the chat tells the
+chat instead. A summary writer's notes file is never a file to sort (`files`
+skips it: it once got filed under PHYS122 for the lab it summarised), and its note says
+where the summary went. A file the model isn't sure about stays
 and isn't asked about again; nothing leaves the computer, which is why the judging is
 always the built-in model's job (the card says so; pictures go through the vision helper
 when one is installed, else by name). Documents and code (`KINDS_AUTO`) move as soon as
@@ -332,11 +413,24 @@ as a short label such as "not material for any of the folders". "What did you do
 (`WANTS_STATUS`, `_say_status`): the moves and what stayed, grouped by reason.
 "Organize it", "I just downloaded a file", "move the files" (`WANTS_ORGANIZE`,
 `_organize_now` over what landed since it was switched on; "go through everything",
-`WANTS_EVERYTHING`, and the first pass the user is asked about go over all of it), and
-the result says why what stayed did. A question about the chore itself ("is it still
-on?", "can you also sort pictures?": `ABOUT_CHORES` with `WANTS_ANSWER`) goes to the
-chat model with a note of facts in front (`_chores_note`, `NoirChat.jobs`, its own
-model only, like `about`): what each organizer watches, where its folders are, the last
+`WANTS_EVERYTHING`, and the first pass the user is asked about go over all of it; a file
+the message names is looked at again whatever was decided before, `run_once(only=...)`),
+and the result says why what stayed did. When nothing is new, the answer says what was
+looked at already and why it stayed, and asks the questions still waiting right there in
+the chat with buttons (`_nothing_new`, `_pending_questions`, answered through
+`_handle_choice` by their `kind:` or `subject:` id), instead of "wait 20 seconds", which
+once was all the user heard about a file that had been judged. "Put output.pdf in math"
+(`WANTS_PLACE`, `_place`, `Organizer.place`) moves the file where the user says, makes the
+folder if need be, and teaches the organizer: that course's code and that kind of file go
+there from now on. A question about the chore itself ("is it still
+on?", "can you also sort pictures?", "why did nothing happen?": `ABOUT_CHORES` with
+`WANTS_ANSWER`) goes to the chat model with a note of facts in front (`_chores_note`,
+`_answer_about_chores`): with a plan or key model set up (Auto, or one picked in the
+menu) that model gets the record and the question, so the user talks through what went
+wrong with the better model, which is the orchestrator they expect; else its own model
+answers from the same record (`NoirChat.jobs`, like `about`). Routing, forms and the
+judging of files stay on the small model and in code, since through Claude Code even one
+question reads about 29k tokens. The note holds: what each organizer watches, where its folders are, the last
 moves and the files that stayed with their paths and reasons, and what kinds of file it
 moves. Such a question never goes to the web (`_lookup_kind`: "pictures" once sent it
 to an image search), the idea planner or the builder (the router once began a second
@@ -939,7 +1033,7 @@ python -m concierge.ui --fake --setup  # the first run's setup page, fetching no
 python -m concierge.ui --check  # load every part, open nothing (what a build is checked with)
 python packaging/build.py     # the installer (Windows) or disk image (Mac) for this system
 pytest                       # all tests; none need Ollama
-python -m concierge.agents.eval_router   # router accuracy with the real model (must stay 100%)
+python -m concierge.agents.eval_router   # router accuracy with the real model (45 of 47 on 9 Nov 2026: "manuals in Downloads" went to an existing agent, a browser-translation idea to the translator; neither touched by the code rules)
 python -m concierge.organizer_eval       # the file organizer end to end with the real model, on a made-up home (every check must pass)
 ```
 
@@ -972,7 +1066,7 @@ variables inside a function do not need listing.
 | `concierge/chores.py` | Both | `TIDY`, `AGENT`, `BOOKING`, `MAX_JOBS`, `REPEAT_WORDS`, `ACTION_WORDS`, `listing`, `days`, `day_label`, `ago` |
 | `concierge/quick/drawer.py` | UI | `EDGE_PIXELS`, `OPEN_PIXELS`, `Screen`, `screen_at`, `real_pixels`, `EdgePull` |
 | `concierge/places.py` | Both | `KNOWN`, `known_folder` |
-| `concierge/organizer.py` | Engine | `ORGANIZER`, `LOOK_SECONDS`, `SETTLE_SECONDS`, `READ_CHARS`, `MAX_FOLDER_NAME`, `DONE_KEPT`, `CONTENT`, `BY_NAME`, `DECIDE`, `DOCUMENTS`, `CODE`, `KINDS_AUTO`, `IMAGES`, `MAX_IMAGE_MB`, `SEE_NOTE`, `SEE_SCHEMA`, `KIND_WAITING`, `KIND_REFUSED`, `NOT_SURE`, `UNFINISHED`, `DECIDE_WORDS`, `SAME_PLACE`, `PLACES`, `CALLED`, `PATH`, `COURSE`, `STOPWORDS`, `TOPIC_NOTE`, `PICK_NOTE`, `SUBJECT`, `SOMETHING_ELSE`, `NO_TEXT`, `NOT_MATERIAL`, `NOT_SURE_WHICH`, `UNSURE_TOPIC`, `SKIPPED_KEPT`, `WATCHED`, `how`, `organizer_card`, `groups_from`, `courses_in`, `watched_from`, `destination_from`, `shown_folder`, `folder_name`, `words_of`, `closest`, `Organizer` (`verdict`, `skipped`, `last_skipped`, `moved`, `asked`, `kinds`, `asking`, `questions`, `answer`, `seer`); blueprint `agents/blueprints/organizer.yaml` |
+| `concierge/organizer.py` | Engine | `ORGANIZER`, `LOOK_SECONDS`, `SETTLE_SECONDS`, `READ_CHARS`, `MAX_FOLDER_NAME`, `DONE_KEPT`, `CONTENT`, `BY_NAME`, `DECIDE`, `DOCUMENTS`, `CODE`, `KINDS_AUTO`, `IMAGES`, `MAX_IMAGE_MB`, `SEE_NOTE`, `SEE_SCHEMA`, `KIND_WAITING`, `KIND_REFUSED`, `SUBJECT_WAITING`, `SUBJECT_REFUSED`, `ANOTHER`, `SUMMARIZER`, `WATCHED_KINDS`, `THREE_LINES`, `ONE_PARAGRAPH`, `NOTES_DEFAULT`, `SUMMARY_NOTE`, `SUMMARY_SCHEMA`, `NO_SUMMARY`, `COURSE_CODE`, `FOLDER_CODE`, `NOT_SURE`, `UNFINISHED`, `DECIDE_WORDS`, `SAME_PLACE`, `PLACES`, `CALLED`, `PATH`, `COURSE`, `STOPWORDS`, `TOPIC_NOTE`, `PICK_NOTE`, `SUBJECT`, `SOMETHING_ELSE`, `NO_TEXT`, `NOT_MATERIAL`, `NOT_SURE_WHICH`, `UNSURE_TOPIC`, `SKIPPED_KEPT`, `WATCHED`, `SEE_PIXELS`, `SEE_CONTEXT`, `SEEN_KEPT`, `how`, `organizer_card`, `summarizer_card`, `notes_path`, `shrink`, `course_codes`, `folder_codes`, `spoken_code`, `groups_from`, `courses_in`, `watched_from`, `destination_from`, `shown_folder`, `folder_name`, `words_of`, `closest`, `Organizer` (`verdict`, `skipped`, `last_skipped`, `moved`, `asked`, `working`, `stayed`, `kinds`, `subjects`, `asking`, `questions`, `answer`, `seer`, `place`); blueprint `agents/blueprints/organizer.yaml` |
 | `concierge/organizer_eval.py` | Engine | `REQUEST`, `OLD`, `NEW`, `STAYS`, `pdf`, `word`, `drop`, `Run`, `main`; command `python -m concierge.organizer_eval [--keep]` |
 | `concierge/activity.py` | Engine | `ANSWERED`, `EXPLAINED`, `TRANSLATED`, `POLISHED`, `SUMMED_UP`, `HELPED`, `SORTED`, `READ`, `KEPT_DAYS`, `WEEK_DAYS`, `record`, `this_week` |
 | `concierge/voice.py` | Engine | `BUDGETS`, `KIND_WORDS`, `SHORTER_SHARE`, `STYLE`, `SMALL_TALK_STYLE`, `POINTS`, `NO_POINTS`, `EXPLAIN_SHAPE`, `EXTRA`, `MATH_STYLE`, `SCIENCE_STYLE`, `DRAWING`, `DRAW_WORDS`, `OPENER`, `QUOTE`, `BOLD_BULLET`, `RULE_ECHO`, `ECHO_START`, `HEADING`, `RULE`, `TABLE_ROW`, `TABLE_LINE`, `SAFE_START`, `FIRST_SENTENCE`, `kind_of`, `guide`, `tidy` |
@@ -997,31 +1091,32 @@ variables inside a function do not need listing.
 | `concierge/research.py` | Engine | `SETTINGS`, `WEB_QUESTION`, `YES_LOOK`, `NO_LOOK`, `WEB`, `WEATHER`, `SEARCH`, `IMAGES`, `PRICE`, `MAX_RESULTS`, `MAX_IMAGES`, `SNIPPET_CHARS`, `EXTRACT_CHARS`, `FINDINGS_CHARS`, `TIMEOUT`, `USER_AGENT`, `GEOCODE`, `FORECAST`, `WHERE_AM_I`, `WIKIPEDIA`, `MAX_PAGES`, `PAGE_CHARS`, `PAGE_BYTES`, `PAGE_TIMEOUT`, `SKIP_PAGES`, `BRAVE_SEARCH`, `SEARCH_KEY`, `SEARCH_KEY_PAGE`, `TAGS_TO_DROP`, `TAG`, `BLOCK_END`, `YAHOO_SEARCH`, `YAHOO_CHART`, `COINGECKO_SEARCH`, `COINGECKO_PRICE`, `BROWSER_AGENT`, `CHANGING`, `TIMELESS`, `WEATHER_WORDS`, `IMAGE_WORDS`, `PRICE_WORDS`, `CRYPTO_WORDS`, `PRICE_FILLER`, `QUESTION`, `PLACE_AFTER`, `PLACE_BEFORE`, `PLACE_KO`, `SKY`, `SEARCH_ENGINES`, `Findings`, `wants_lookup`, `unsure`, `model_form`, `settings_path`, `allowed`, `allow`, `lookups`, `place_in`, `weather`, `price_subject`, `price`, `search_key`, `set_search_key`, `brave`, `search`, `page_text`, `read_page`, `images`, `wikipedia`, `look_up`, `note` |
 | `concierge/sources.py` | Engine | `TIERS_PATH`, `PRIMARY`, `REFERENCE`, `ORDINARY`, `FARM`, `TIER_WORDS`, `TIER_POINTS`, `SUBJECT_POINTS`, `MODEL_POINTS`, `FRESH_POINTS`, `MIN_SNIPPET_MATCH`, `CURRENT_WORDS`, `STOPWORDS`, `FARM_LOOKS`, `JUDGE_NOTE`, `JUDGE_SCHEMA`, `Choice`, `load_tiers`, `site_of`, `words_of`, `tier_of`, `relevance`, `pick`, `judge_with`, `said`; tiers in `sources.yaml` |
 | `concierge/researcher.py` | Engine | `RESEARCH`, `RESEARCH_WORDS`, `MAX_QUERIES`, `PAGES_PER_QUERY`, `MAX_PAGES`, `SUMMARY_LINES`, `SINGLE_ASK_WRITTEN`, `SEARCH_WAIT`, `ENOUGH_SEARCHES`, `PAGES_PER_SITE`, `SPARE_PAGES`, `MIN_PAGE_CHARS`, `PLAN_NOTE`, `PLAN_SCHEMA`, `STALE_YEAR`, `WORKER_NOTE`, `MERGE_NOTE`, `Page`, `Account`, `wants_research`, `fresh_queries`, `plan`, `gather`, `summarise`, `merge`, `plan_tokens_after`, `last_plan_answer`, `settle`, `account_lines`, `when_now`, `sources_of` |
-| `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `FOLLOW_UPS`, `ORGANIZE_NOW`, `GO_THROUGH`, `ONLY_NEW`, `WANTS_WHERE`, `WANTS_STATUS`, `WANTS_ORGANIZE`, `WANTS_EVERYTHING`, `WANTS_WHY`, `WHERE_WORDS`, `WANTS_ANSWER`, `ABOUT_CHORES`, `NO_WORDS`, `NoirEngine` (adds `follow_up`, `follow_up_words`, `after_answer`, `pictures`, and `pending_lookup`, `found` for the web; outside the contract: `ask_again` for Auto, `setup_state` and `setup_begin` for the first run, `chore_agents`, `organizer_done`, `undo_move`, `organizer_questions` and `organizer_answer` for the chores list) |
+| `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `FOLLOW_UPS`, `ORGANIZE_NOW`, `GO_THROUGH`, `ONLY_NEW`, `WANTS_WHERE`, `WANTS_STATUS`, `WANTS_ORGANIZE`, `WANTS_PLACE`, `WANTS_EVERYTHING`, `WANTS_WHY`, `WHERE_WORDS`, `WANTS_ANSWER`, `ABOUT_CHORES`, `ASKS_FOR_WORK`, `FOLLOWS_A_CHORE`, `CHORE_FRESH_SECONDS`, `NO_WORDS`, `WHICH_KIND`, `SOMETHING_ELSE_KIND`, `KIND_SHORT`, `NoirEngine` (adds `follow_up`, `follow_up_words`, `after_answer`, `pictures`, and `pending_lookup`, `found` for the web; outside the contract: `ask_again` for Auto, `setup_state` and `setup_begin` for the first run, `chore_agents`, `organizer_done`, `undo_move`, `organizer_questions` and `organizer_answer` for the chores list) |
 | `concierge/setup.py` | Engine | `OLLAMA`, `MODEL`, `NOIR`, `INSTALLERS`, `SILENT_INSTALL`, `DOWNLOAD_TIMEOUT`, `INSTALL_SECONDS`, `START_SECONDS`, `QUICK_START_SECONDS`, `CHUNK`, `MAC_OPEN`, `SetupError`, `Setup` |
 | `concierge/fake_engine.py` | Engine | `FakeEngine`, `PracticeOllama`, `PracticeKeys`, `PracticeAccounts`, `PracticeSetup`, `practice_models` |
 | `concierge/cli.py` | Engine | `DIM`, `PLAIN`, `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `cmd_history`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure, history]`; in the chat `/think` turns thinking on or off |
-| `concierge/agents/blueprint.py` | Engine | `BLUEPRINT_DIR`, `Slot`, `Blueprint`, `load_blueprints`; templates in `agents/blueprints/*.yaml` (`documents_qa`, `organizer`, and `custom`: the shared template for agents made from parts) |
+| `concierge/agents/blueprint.py` | Engine | `BLUEPRINT_DIR`, `Slot`, `Blueprint`, `load_blueprints`; templates in `agents/blueprints/*.yaml` (`documents_qa`, `organizer`, `summarizer`, and `custom`: the shared template for agents made from parts) |
+| `concierge/agents/talk.py` | Engine | `MAX_CHARS`, `MAX_PLAIN`, `TEMPERATURE`, `KEPT_SHARE`, `ASKING_WORDS`, `PHRASE_NOTE`, `QUESTION_NOTE`, `JARGON`, `UNQUOTED`, `FACT_IN_LINE`, `STOPWORDS`, `phrase`, `facts_in`, `words_of` |
 | `concierge/quick/agents.py` | Engine | `BUBBLE`, `CLIPBOARD`, `BOTH`, `UNTIL_UNHIGHLIGHT`, `FEW_SECONDS`, `CHECK_SECONDS`, `CHECK_FOR_SECONDS`, `QuickAgents` |
 | `concierge/quick/bubble.py` | Engine | `GAP`, `MAX_WIDTH`, `COLORS`, `GWL_EXSTYLE`, `WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW`, `WS_EX_TOPMOST`, `show_seconds`, `Bubble` |
 | `concierge/quick/selection.py` | Engine | `DRAG_PIXELS`, `DOUBLE_CLICK_SECONDS`, `MIN_CHARS`, `MAX_CHARS`, `NO_COPY_APPS`, `Rect`, `CF_UNICODETEXT`, `foreground_app`, `SelectionWatcher`, `read_selection`, `highlighted_text`, `save_clipboard`, `restore_clipboard`, `set_clipboard_text` |
 | `concierge/quick/glow.py` | Engine | `LILAC`, `GREEN`, `THICKNESS_SHARE`, `RIM_SHARE`, `BRIGHTEST`, `RUN_SECONDS`, `HOLD_SECONDS`, `FADE_SECONDS`, `FRAME_SECONDS`, `LINE_SHARE`, `LINE_BREATH_SECONDS`, `WS_POPUP`, `LIGHT_STYLE`, `light_at`, `pixel`, `reached`, `eased`, `full_screen_in_use`, `work_screen`, `real_pixels`, `Layer`, `pump`, `Glow` |
-| `concierge/quick/note.py` | Engine | `COLORS`, `CIRCLE_ROOM`, `BOTTOM_GAP`, `SHOW_SECONDS`, `CHECK_MS`, `ARRIVE_STEPS`, `ARRIVE_MS`, `ARRIVE_PIXELS`, `SOLID`, `ask` |
+| `concierge/quick/note.py` | Engine | `COLORS`, `CIRCLE_ROOM`, `BOTTOM_GAP`, `SHOW_SECONDS`, `LOG_SECONDS`, `WRAP_PIXELS`, `CHECK_MS`, `ARRIVE_STEPS`, `ARRIVE_MS`, `ARRIVE_PIXELS`, `SOLID`, `ask`, `tell` |
 | `concierge/quick/watching.py` | Engine | `LECTURE_WORDS`, `VIDEO_SITES`, `BROWSERS`, `PLAYERS`, `looks_like_lecture`, `lecture_on_screen` |
 | `concierge/quick/tidy.py` | Engine | `MIN_FILES`, `SETTLE_SECONDS`, `FIRST_LOOK_SECONDS`, `LOOK_SECONDS`, `SNOOZE_DAYS`, `IGNORED_DAYS`, `BREAK_SECONDS`, `TYPING_GAP_SECONDS`, `MIN_JOB_SECONDS`, `PRACTICE_FIRST_LOOK_SECONDS`, `PRACTICE_JOB_SECONDS`, `VIDEO_LOOK_SECONDS`, `PRACTICE_VIDEO_SECONDS`, `QUESTION_GAP_SECONDS`, `PRACTICE_QUESTION_GAP_SECONDS`, `UNDO_DAYS`, `LECTURE_NOTES_BUILT`, `CLOUD_ONLY`, `YES`, `NOT_NOW`, `SORT`, `VIDEO`, `VIDEO_QUESTION`, `NO_VIDEO_SUMMARY`, `PRACTICE_LECTURE`, `DONE_KEPT`, `SHELVES`, `OTHER_SHELF`, `UNFINISHED`, `SYSTEM_FILES`, `downloads_dir`, `log_path`, `shelf_for`, `loose_files`, `free_name`, `sort_plan`, `sort_folder`, `record_moves`, `sorts_on_record`, `last_sort`, `moved_to`, `can_undo`, `undo_sort`, `BreakSpotter`, `TidyWatch` |
 | `concierge/quick/spot.py` | Engine | `DOUBLE_TAP_SECONDS`, `TAP_SECONDS`, `MAX_SPOT_CHARS`, `MAX_HELPERS`, `SUM_UP_CHARS`, `SHORTEN_CHARS`, `WRITING`, `READING`, `ERROR`, `CODE`, `NOTHING`, `ERROR_WORDS`, `CODE_SIGNS`, `WRITE_FOR_ME`, `ACTIONS`, `home_language`, `kind_of`, `actions_for`, `job`, `caret_box`, `selection_editable`, `DoubleTap` |
 | `concierge/quick/translate.py` | Engine | `LANGUAGES`, `language_in`, `looks_like` |
-| `concierge/agents/builder.py` | Engine | `PLACES`, `CANCEL_WORDS`, `YES_WORDS`, `BLOCKED`, `SKIP_WHILE_SEARCHING`, `CARD`, `CHANGE`, `PICK_FOLDER`, `DUPLICATE`, `REPLACE`, `MAKE_ANOTHER`, `CREATE_IT`, `SAVE_CHANGES`, `RENAME`, `TARGET_LANGUAGE`, `LANGUAGE_CHOICES`, `custom_card`, `Draft`, `AgentBuilder` (`take_created`), `say`, `place_dirs`, `find_folders`, `agent_for_folder`, `is_blocked`, `describe_files` |
+| `concierge/agents/builder.py` | Engine | `PLACES`, `CANCEL_WORDS`, `YES_WORDS`, `BY_CONTENT_WORDS`, `BY_NAME_WORDS`, `BLOCKED`, `SKIP_WHILE_SEARCHING`, `CARD`, `CHANGE`, `PICK_FOLDER`, `DUPLICATE`, `REPLACE`, `MAKE_ANOTHER`, `CREATE_IT`, `SAVE_CHANGES`, `RENAME`, `TARGET_LANGUAGE`, `LANGUAGE_CHOICES`, `custom_card`, `Draft`, `AgentBuilder` (`take_created`), `say`, `place_dirs`, `find_folders`, `agent_for_folder`, `is_blocked`, `describe_files` |
 | `concierge/agents/planner.py` | Engine | `BLOCKS_PATH`, `OTHER`, `MAX_STEPS`, `IDEA`, `IDEA_CHANGE`, `KEY_COMBO`, `ASKED_FOR_KEY`, `settle_triggers`, `MAKE_IT`, `SAVE_IDEA`, `CHANGE_IDEA`, `DROP_IDEA`, `HELPER_ROLES`, `ROLE_WORDS`, `Block`, `PlanStep`, `Assessment`, `IdeaDraft`, `IdeaPlanner`, `load_blocks`, `assess`, `clean_detail`, `ideas_path`, `list_ideas`, `save_idea`, `describe_ideas`; building blocks in `agents/capabilities.yaml` |
 | `concierge/agents/recipe.py` | Engine | `CUSTOM`, `WHILE_ON`, `IN_CHAT`, `MAX_INSTRUCTION`, `HIGHLIGHT_WORDS`, `CHAT_WORDS`, `SHOW_WORDS`, `COPY_WORDS`, `STAY_WORDS`, `SHORT_WORDS`, `SAMPLE_TEXT`, `SAMPLE_QUESTION`, `MECHANICS`, `describe`, `run_instruction`, `target_language`, `settings_from_words`, `needs_language`, `with_language`, `write_recipe`, `rewrite_instruction`, `is_switchable`, `migrate` |
 | `concierge/agents/files.py` | Engine | `TEXT_TYPES`, `SUPPORTED`, `OFFICE_PARTS`, `ARCHIVES`, `MARKUP`, `TEXT_SAMPLE`, `OFFICE_CHARS`, `MAX_LISTED`, `text_of`, `without_tags`, `office_text`, `archive_listing`, `MAX_FILES`, `MAX_FILE_MB`, `PASSAGE_CHARS`, `PASSAGE_OVERLAP`, `Passage`, `ScanResult`, `scan`, `read_pages`, `split`, `passages_of`, `tokens`, `SearchIndex`, `folder_signature` |
-| `concierge/agents/router.py` | Engine | `IDEA_OPTION`, `WANTS_CHANGE`, `WANTS_NEW`, `Route`, `route`, `wants_change`, `refers_to`, `names_an_agent`; test cases in `agents/router_cases.yaml` |
+| `concierge/agents/router.py` | Engine | `IDEA_OPTION`, `WANTS_CHANGE`, `WANTS_NEW`, `WATCHES`, `SUMS_UP`, `SORTS`, `KIND_WORDS`, `FILES`, `WANTS_HELPER`, `kinds_named`, `Route`, `route`, `wants_change`, `refers_to`, `names_an_agent`; test cases in `agents/router_cases.yaml` |
 | `concierge/agents/community.py` | Engine | `REPOSITORY`, `INDEX_PATH`, `INDEX_URL`, `POST_URL`, `TIMEOUT`, `CACHE_SECONDS`, `MAX_NAME`, `MAX_ABOUT`, `MAX_BY`, `READY_MADE`, `COMMUNITY`, `CATEGORIES`, `OTHER_CATEGORY`, `STARTER_DETAILS`, `PostError`, `Recipe`, `clean`, `recipes`, `find`, `install`, `can_post`, `post_address`; shared agents in `agents/community.json` |
 | `concierge/agents/starters.py` | Engine | `STARTERS_PATH`, `WANTS_ADD`, `MAX_WORDS`, `Starter`, `load_starters`, `asks_for`, `install`; recipes in `agents/starters.yaml` |
 | `concierge/agents/runner.py` | Engine | `TOP_PASSAGES`, `MAX_CONTENTS`, `STOPWORDS`, `run`, `matching_words`, `clean_answer`, `refresh_index`, `best_sentence` |
 | `concierge/agents/store.py` | Engine | `Agent`, `agents_dir`, `slugify`, `list_agents`, `find_agent`, `name_taken`, `save`, `load_index`, `delete` |
 | `concierge/agents/eval_router.py` | Engine | `CASES`, `main`; command `python -m concierge.agents.eval_router` |
-| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `DRAWER_WIDTH`, `DRAWER_GAP`, `MOVE_NOTE_SECONDS`, `ASK_NOTE_SECONDS`, `DRAWER_MIN_HEIGHT`, `DRAWER_SLIDE_STEPS`, `DRAWER_SLIDE_SECONDS`, `DRAWER_FOG`, `DRAWER_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `EXPORTS`, `EXPORT_WAIT_HOURS`, `EXPORT_CHECK_SECONDS`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub` (adds `restart` after the first run's setup, `latest` for the last list of a kind, `on_chores`, `on_move`, `on_ask`), `ChatBridge` (a page calls its `startup`, `send`, `choose`, `ask_again`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `chores`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`, `set_web`, `set_search_key`, `open_link`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `setup_state`, `setup_begin`, `setup_finish`, `measure`, `set_spot`, `switch_agent`, `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`, `forget_history`, `open_export_page`, `look_around`, `find_downloads`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `paste_text`, `follow_up`, `after_answer`, `pictures`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `sign_in_account`, `install_account`, `check_accounts`, `use_account`, `usage`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_drawer`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay` (the drawer: `toggle_drawer`, `hide_drawer`, `pull_drawer`, `release_drawer`; `refresh_mini`), `pasted_file`, `full_size`, `centered`, `drawer_bounds`, `drawer_x`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug] [--setup] [--version] [--check]` |
-| `concierge/ui/mini.py` | UI | `MINI_SIZE`, `EDGE_GAP`, `DISC_SHARE`, `FRAMES`, `FRAME_SECONDS`, `RESTING`, `BRIGHT`, `FADE_STEP`, `FULL_SCREEN_CHECK_SECONDS`, `IDLE`, `WORKING`, `ASKING`, `LILAC`, `WHITE`, `is_click`, `premultiplied`, `draw_frames`, `Mini` |
+| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `DRAWER_WIDTH`, `DRAWER_GAP`, `MOVE_NOTE_SECONDS`, `STAY_NOTE_SECONDS`, `ASK_NOTE_SECONDS`, `DRAWER_MIN_HEIGHT`, `DRAWER_SLIDE_STEPS`, `DRAWER_SLIDE_SECONDS`, `DRAWER_FOG`, `DRAWER_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `EXPORTS`, `EXPORT_WAIT_HOURS`, `EXPORT_CHECK_SECONDS`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub` (adds `restart` after the first run's setup, `latest` for the last list of a kind, `on_chores`, `on_move`, `on_ask`, `on_working`, `on_stayed`), `ChatBridge` (a page calls its `startup`, `send`, `choose`, `ask_again`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `chores`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`, `set_web`, `set_search_key`, `open_link`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `setup_state`, `setup_begin`, `setup_finish`, `measure`, `set_spot`, `switch_agent`, `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`, `forget_history`, `open_export_page`, `look_around`, `find_downloads`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `paste_text`, `follow_up`, `after_answer`, `pictures`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `sign_in_account`, `install_account`, `check_accounts`, `use_account`, `usage`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_drawer`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay` (the drawer: `toggle_drawer`, `hide_drawer`, `pull_drawer`, `release_drawer`; `refresh_mini`), `pasted_file`, `full_size`, `centered`, `drawer_bounds`, `drawer_x`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug] [--setup] [--version] [--check]` |
+| `concierge/ui/mini.py` | UI | `MINI_SIZE`, `EDGE_GAP`, `DISC_SHARE`, `FRAMES`, `FRAME_SECONDS`, `RESTING`, `BRIGHT`, `FADE_STEP`, `FULL_SCREEN_CHECK_SECONDS`, `IDLE`, `WORKING`, `ASKING`, `BLINK_SECONDS`, `BLINK_DIM`, `LILAC`, `WHITE`, `is_click`, `premultiplied`, `draw_frames`, `Mini` (`blink`) |
 | `concierge/ui/tray.py` | UI | `ICON_SIZE`, `INK`, `DOTS`, `tray_picture`, `Tray` |
 | `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`, `today.show`, `today.closeMenus`, `today.redraw`, `today.spotTried`, `today.chatsArrived`, `today.ui`), `help.js` (global `helpPage`: Help me and Who are you), `about.js` (global `aboutPage`: About you and the first two minutes), `setup.js` (global `setupPage`: the first run's setup page), `chores.js` (global `choresPage`: the Chores page), `room.js` (global `roomPage`: What I see and Reservations), `discover.js` (global `discover`: the Agents page and parts it shares), `models.js` (global `modelPage`: the model menu and the Models page; `modelPage.loadUsage` and `modelPage.openUsage` for the usage meter), `spot.html`, `spot.css`, `spot.js` (the Spot, global `spot.open`), `glass.html`, `glass.css`, `glass.js` (the drawer, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `vendor/` (KaTeX and highlight.js, for maths and code offline), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`, `app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe` (called by today.js, discover.js and models.js); window event `engine-event` |

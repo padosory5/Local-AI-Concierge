@@ -35,6 +35,34 @@ WANTS_NEW = re.compile(
 )
 
 
+# A watched-folder agent asked for plainly: something should happen when files land in a
+# folder. Decided in code: asked, the model took "when a pdf lands in my downloads, write
+# me a short summary in a notes file" for chat and offered a web search.
+WATCHES = re.compile(r"\b(when(ever)?|every time|each time|as soon as|once)\b.{0,40}\b(lands?|arrives?|comes? in|appears?|"
+                     r"is (saved|downloaded|added)|download(s|ed)?)\b|\bnew (files?|documents?|pdfs?|downloads?)\b|"
+                     r"\bas (they|it|files) (land|arrive|come)\b", re.IGNORECASE)
+SUMS_UP = re.compile(r"\b(summar\w*|sum (it|them|each|every|everything|what|the \w+|new \w+) ?up|sum up|brief me|"
+                     r"a few lines about|notes? (file|on what))\b", re.IGNORECASE)
+SORTS = re.compile(r"\b(organi[sz]e|sort|file (them|it|each|every)|put (it|them|each|every \w+) (in|into)|into folders?|"
+                   r"tidy)\b", re.IGNORECASE)
+# The words that say which kind of helper for files the user means. One kind named: that
+# kind, decided in code. None, or more than one, and Noir asks which (route "ask_kind")
+# instead of letting the model guess: asked, it made "an agent that can handle my files"
+# into Ask my documents.
+KIND_WORDS = {
+    "organizer": re.compile(r"\b(organi[sz]\w*|sort\w*|tidy|file (them|it|each|every|new)|put (it|them|each|every \w+) "
+                            r"(in|into)|into folders?|by (course|subject|topic|class))\b|정리", re.IGNORECASE),
+    "summarizer": re.compile(r"\b(summar\w*|sum (it|them|each|every|everything|what|up)|brief me|a few lines about|"
+                             r"notes? (file|on what))\b|요약", re.IGNORECASE),
+    "documents_qa": re.compile(r"\b(ask|questions?|search|look (things |something |stuff )?up|find (things|what|where|out)|"
+                               r"what (does|do) (it|they) say|quote|answers?)\b|질문", re.IGNORECASE),
+}
+FILES = re.compile(r"\b(files?|folders?|documents?|pdfs?|downloads?|papers?|notes|slides|manuals?|stuff)\b|파일|폴더|문서",
+                   re.IGNORECASE)
+# A helper is wanted, in so many words or as "can you handle my files".
+WANTS_HELPER = re.compile(r"\b(agent|helper|assistant|automation|something (that|for|to)|can you (handle|deal with|manage|"
+                          r"take care of|look after))\b|에이전트|도우미", re.IGNORECASE)
+
 
 @dataclass(frozen=True)
 class Route:
@@ -59,6 +87,16 @@ def route(
         return Route("change_agent", agent=named.name, request=text)
     if named:
         return Route("run_agent", agent=named.name, request=_strip_agent_name(text, named.name))
+    if WATCHES.search(text) and SUMS_UP.search(text) and "summarizer" in blueprints:
+        return Route("new_agent", blueprint="summarizer", request=text)
+    if WATCHES.search(text) and SORTS.search(text) and "organizer" in blueprints:
+        return Route("new_agent", blueprint="organizer", request=text)
+    kinds = kinds_named(text, blueprints)
+    about_files = bool(FILES.search(text))
+    if about_files and (WANTS_NEW.search(text) or WANTS_HELPER.search(text)) and not names_an_agent(text, agents):
+        if len(kinds) == 1:
+            return Route("new_agent", blueprint=kinds[0], request=text)
+        return Route("ask_kind", request=text)  # a helper for files, but which kind isn't said
 
     # One choice, not separate kind/blueprint/agent fields: a small model
     # would sometimes say "new agent" and then pick no blueprint.
@@ -85,7 +123,18 @@ def route(
     chosen = options.get(answer.get("choice"), Route("chat"))
     if chosen.kind == "run_agent" and _wrong_language(text, chosen.agent, agents):
         return Route("chat")  # "into Japanese" is never a job for the Korean translator
+    if chosen.kind == "new_agent" and chosen.blueprint in KIND_WORDS:
+        # The model picked a kind for files: the words must agree, or say one kind.
+        if len(kinds) == 1 and kinds[0] != chosen.blueprint:
+            return Route("new_agent", blueprint=kinds[0], request=text)
+        if not kinds and about_files:
+            return Route("ask_kind", request=text)
     return chosen
+
+
+def kinds_named(text: str, blueprints: dict[str, Blueprint]) -> list[str]:
+    """The kinds of helper for files the message names by its words, in blueprint order."""
+    return [kind for kind in blueprints if kind in KIND_WORDS and KIND_WORDS[kind].search(text)]
 
 
 def _wrong_language(text: str, name: str, agents: list[Agent]) -> bool:

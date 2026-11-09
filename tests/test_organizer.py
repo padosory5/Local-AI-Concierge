@@ -13,7 +13,8 @@ from concierge.agents import store
 from concierge.agents.blueprint import load_blueprints
 from concierge.agents.builder import CREATE_IT, AgentBuilder
 from concierge.events import AgentCard, NoirText, Question
-from concierge.organizer import BY_NAME, CONTENT, DECIDE, NOT_SURE, ORGANIZER, SOMETHING_ELSE, SUBJECT, Organizer
+from concierge.organizer import (ANOTHER, BY_NAME, CONTENT, DECIDE, NOT_SURE, ORGANIZER, SOMETHING_ELSE, SUBJECT,
+                                 Organizer)
 from concierge.places import known_folder
 
 
@@ -133,7 +134,7 @@ def test_named_folders_are_the_only_choices(tmp_path):
     write(downloads, "b.txt", "the integral of x")  # calculus isn't one of the folders
     one.look()
     schema, _ = one.ollama.asked[0]
-    assert schema["properties"]["folder"]["enum"] == ["Physics 122", "History", NOT_SURE]
+    assert schema["properties"]["folder"]["enum"] == ["Physics 122", "History", ANOTHER, NOT_SURE]
     assert (downloads / "Physics 122" / "a.txt").is_file() and (downloads / "b.txt").is_file()
 
 
@@ -215,7 +216,7 @@ def test_the_words_people_use():
     assert org.closest("job applications", ["Physics 122"]) is None
     assert org.how(agent(Path("C:/x/Downloads"), into="C:/x/Desktop/College")) == (
         "Watches Downloads and moves each new file into folders it names as it goes in C:/x/Desktop/College, "
-        "by what's inside each one. A kind of file it hasn't sorted before, it asks about once.")
+        "by what's inside each one. A kind of file or a course it hasn't seen before, it asks about once.")
     reads, can_do, cannot = org.organizer_card({"folder": "C:/x/Downloads", "by": BY_NAME, "groups": "A, B"}, ["x"])
     assert reads == ["New files in Downloads, their names only"]
     assert "Put each one in the right folder of: A, B" in can_do and "Keep the folders inside Downloads" in can_do

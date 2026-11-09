@@ -30,25 +30,20 @@ slots:
   folder:
     label: Watches
     type: folder
-    ask: >-
-      Which folder should it watch? Downloads is where most things land; you can also
-      name another folder.
+    ask: Which folder should it watch? Downloads is where most things land.
     changeable: true
   into:
     label: Puts the folders in
     type: text
-    ask: >-
-      Where should the sorted folders go? Inside that folder is simplest; or name a place,
-      like "Desktop, in a folder called College".
+    ask: Where should the sorted folders go? Inside that folder is simplest, or name a place.
     choices: [Inside that folder]
     changeable: true
   by:
     label: Tells files apart by
     type: choice
     ask: >-
-      How should it tell what a file is? By what's inside, I read the first pages of
-      each document, on this computer, so a file called "lecture7.pdf" still goes to
-      the right course. By name is quicker, but only as good as the names.
+      How should it tell what a file is? By what's inside, I read each file's first pages
+      on this computer; by name is quicker, but only as good as the names.
     choices: [What's inside each file, The file's name]
     default: What's inside each file
     changeable: true
@@ -56,9 +51,8 @@ slots:
     label: Folders
     type: text
     ask: >-
-      Which folders should it sort into? Name them, like "Physics 122, Calculus,
-      History", or say "decide as you go" and I'll name folders by what I find,
-      reusing them as they fill up.
+      What should the folders be called? Name them, or say decide as you go and I'll
+      name folders by what I find.
     choices: [Decide as you go]
     changeable: true
   name:

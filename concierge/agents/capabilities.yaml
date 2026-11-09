@@ -149,7 +149,7 @@ blocks:
     kind: output
     name: Save the result as a file
     ai: none
-    status: planned
+    status: ready
 
   web:
     kind: action

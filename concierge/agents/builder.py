@@ -23,13 +23,14 @@ from ..ollama import Ollama, OllamaError
 from . import runner, store
 from .blueprint import Blueprint
 from .files import scan
-from ..organizer import (BY_NAME, CONTENT, ORGANIZER, courses_in, destination_from, groups_from, organizer_card,
-                         watched_from)
+from ..organizer import (BY_NAME, CONTENT, ORGANIZER, SUMMARIZER, courses_in, destination_from, groups_from,
+                         organizer_card, summarizer_card, watched_from)
 from ..places import known_folder
 from ..quick.agents import BOTH, CLIPBOARD
 from ..quick.translate import LANGUAGES, language_in
 from .recipe import (CUSTOM, IN_CHAT, MECHANICS, WHILE_ON, needs_language, rewrite_instruction, run_instruction,
                      settings_from_words, target_language, with_language, write_recipe)
+from .talk import phrase
 
 PLACES = ["Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos"]
 CANCEL_WORDS = ("cancel", "never mind", "nevermind", "forget it", "no thanks", "stop", "취소", "그만")
@@ -48,6 +49,9 @@ TARGET_LANGUAGE = "target_language"  # asked when a translator does not say whic
 LANGUAGE_CHOICES = ["Korean", "English", "Japanese", "Chinese", "Spanish"]
 # "rename it to Lease helper", "call it My translator"
 RENAME = re.compile(r"\b(?:rename\b.*?\b(?:to|as)|call it)\s+[\"']?(.+?)[\"']?\s*[.!]?$", re.IGNORECASE)
+# How an organizer tells files apart, in the user's words.
+BY_CONTENT_WORDS = re.compile(r"inside|contents?|what (it|they|the files?)('s| is| are| was)? about|what's in", re.IGNORECASE)
+BY_NAME_WORDS = re.compile(r"\bby (their |the |file )?names?\b|filenames?", re.IGNORECASE)
 
 
 @dataclass
@@ -93,12 +97,12 @@ class AgentBuilder:
     def start(self, blueprint_id: str, request: str) -> Iterator[Event]:
         bp = self.blueprints[blueprint_id]
         self.draft = Draft(bp, request=request)
-        yield from say(f"I can make you an agent for that: {bp.name}. {bp.pitch.strip()}")
+        yield from self._say(f"I can make you an agent for that: {bp.name}. {bp.pitch.strip()}", [bp.name])
         self._prefill(request)
         if self.draft.slots:
             found = "; ".join(f"{bp.slot(k).label.lower()}: {v}" for k, v in self.draft.slots.items() if bp.slot(k))
             yield Thinking(f"From your message: {found}.")
-        if bp.id == ORGANIZER and (watched := watched_from(request)) and watched.is_dir():
+        if bp.extra.get("watches") and (watched := watched_from(request)) and watched.is_dir():
             # "from Downloads": the folder to watch, said plainly. Asked as a free question, the
             # model once took "a folder on my desktop called College", the destination, for it.
             yield from self._use_folder(watched)
@@ -111,7 +115,7 @@ class AgentBuilder:
         """The user already showed which folder, with the + button."""
         bp = self.blueprints[blueprint_id]
         self.draft = Draft(bp, request=request)
-        yield from say(f"I can make you an agent for that: {bp.name}. {bp.pitch.strip()}")
+        yield from self._say(f"I can make you an agent for that: {bp.name}. {bp.pitch.strip()}", [bp.name])
         yield from self._use_folder(folder)
 
     def compose(self, request: str, blocks: list[str]) -> Iterator[Event]:
@@ -203,7 +207,9 @@ class AgentBuilder:
         lowered = text.strip().lower()
         if any(lowered == w or lowered.startswith(w + " ") for w in CANCEL_WORDS):
             yield from self._cancel()
-        elif draft.waiting == "folder":
+        elif draft.waiting in ("folder", PICK_FOLDER) and self._answer_any_slot(text):
+            yield from self._next()  # answered another question first; the folder is asked again
+        elif draft.waiting in ("folder", PICK_FOLDER):
             yield from self._take_folder(text)
         elif draft.waiting == "name":
             yield from self._take_name(text)
@@ -225,6 +231,8 @@ class AgentBuilder:
             # "and make it Japanese" typed at the card: change it there.
             draft.slots.update(changes)
             yield from self._show_card()
+        elif self._answer_any_slot(text):
+            yield from self._next()
         else:
             # Waiting for a button but the user typed something else: they
             # moved on, so drop the setup and let the engine handle it.
@@ -234,7 +242,9 @@ class AgentBuilder:
 
     def choose(self, id: str, choice: str) -> Iterator[Event]:
         draft = self.draft
-        if id == CARD and choice in (CREATE_IT, SAVE_CHANGES):
+        if id == CARD and draft.waiting != CARD:
+            yield from self._next()  # the card isn't up yet: the open question is asked again
+        elif id == CARD and choice in (CREATE_IT, SAVE_CHANGES):
             yield from self._create()
         elif id == CARD and choice == "Change something":
             labels = [s.label for s in draft.blueprint.slots if s.changeable]
@@ -334,8 +344,10 @@ class AgentBuilder:
             return
         if draft.blueprint.extra.get("watches") and draft.slots.get("into") and Path(draft.slots["into"]) == folder:
             draft.waiting = "folder"
-            yield from say("That's where the sorted folders go, not where new files land.")
-            yield Question("folder", "Which folder should it watch for new files? Downloads is where most things land.")
+            yield from self._say(f"{folder.name} is where the sorted folders go, not where new files land.",
+                                 [folder.name])
+            yield self._question("folder", "Which folder should it watch for new files? Downloads is where most "
+                                 "things land.")
             return
         yield Progress(f"Looking in {folder}...")
         files = scan(folder).files
@@ -370,6 +382,35 @@ class AgentBuilder:
             return
         yield from self._next()
 
+    def _answer_any_slot(self, text: str) -> bool:
+        """An answer typed for a question not asked yet ("just keep them inside that folder"
+        while the folder is still being chosen, "decide as you go" to the folder question):
+        filled in where it fits, so the setup goes on instead of being dropped. One slot at
+        most, and only when the words say which."""
+        draft = self.draft
+        lowered = text.lower()
+        open_slots = [s for s in draft.blueprint.slots if s.key not in draft.slots and s.key not in ("folder", "name")]
+        by_phrase = [s for s in open_slots if any(c.lower() in lowered for c in (s.choices or []))]
+        if len(by_phrase) == 1:
+            slot = by_phrase[0]
+            choice = next(c for c in slot.choices if c.lower() in lowered)
+            draft.slots[slot.key] = self._plain(slot.key, choice) if slot.type == "text" else choice
+            return True
+        for slot in open_slots:
+            if slot.key == "groups" and groups_from(text) == "Decide as you go":
+                draft.slots["groups"] = groups_from(text)
+                return True
+            if slot.key == "into" and destination_from(text) is not None and re.search(r"\b(in|into|on|inside)\b", lowered):
+                draft.slots["into"] = destination_from(text)
+                return True
+            if slot.key == "by" and BY_CONTENT_WORDS.search(text):
+                draft.slots["by"] = CONTENT
+                return True
+            if slot.key == "by" and BY_NAME_WORDS.search(text):
+                draft.slots["by"] = BY_NAME
+                return True
+        return False
+
     def _take_name(self, text: str) -> Iterator[Event]:
         name = text.strip().strip("\"'")[:40]
         if not name:
@@ -400,7 +441,7 @@ class AgentBuilder:
         for slot in draft.blueprint.slots:
             if slot.key not in draft.slots and slot.ask:
                 draft.waiting = slot.key
-                yield Question(slot.key, slot.ask, slot.choices)
+                yield self._question(slot.key, slot.ask, slot.choices)
                 return
             if slot.key not in draft.slots and slot.default:
                 draft.slots[slot.key] = slot.default
@@ -511,6 +552,8 @@ class AgentBuilder:
             reads, can_do, cannot_do = custom_card(draft.slots, draft.blueprint.cannot_do)
         elif draft.blueprint.id == ORGANIZER:
             reads, can_do, cannot_do = organizer_card(draft.slots, draft.blueprint.cannot_do)
+        elif draft.blueprint.id == SUMMARIZER:
+            reads, can_do, cannot_do = summarizer_card(draft.slots, draft.blueprint.cannot_do)
         else:
             reads = ([f"{draft.slots['folder']} ({draft.file_summary})"] if "folder" in draft.slots
                      else [draft.blueprint.reads])
@@ -524,7 +567,7 @@ class AgentBuilder:
             can_do=can_do,
             cannot_do=cannot_do,
             runs_on=(f"{_model_name()}, reading each file on this computer; pictures through a vision model when one is installed"
-                     if draft.blueprint.id == ORGANIZER else f"{_model_name()} (the built-in model, no extra memory)"),
+                     if draft.blueprint.extra.get("watches") else f"{_model_name()} (the built-in model, no extra memory)"),
             actions=[SAVE_CHANGES if draft.editing else CREATE_IT, "Change something", "Cancel"],
         )
 
@@ -538,9 +581,9 @@ class AgentBuilder:
             elif slot.key == "groups" and draft.blueprint.id == ORGANIZER and courses_in(request):
                 draft.slots["groups"] = courses_in(request)
             elif slot.key == "by" and draft.blueprint.id == ORGANIZER:
-                if re.search(r"inside|contents?|what (it|they|the files?)('s| is| are| was)? about|what's in", request, re.IGNORECASE):
+                if BY_CONTENT_WORDS.search(request):
                     draft.slots["by"] = CONTENT
-                elif re.search(r"\bby (their |the |file )?names?\b|filenames?", request, re.IGNORECASE):
+                elif BY_NAME_WORDS.search(request):
                     draft.slots["by"] = BY_NAME
             elif slot.type == "language" and (language := language_in(request, target_only=True)):
                 draft.slots[slot.key] = language
@@ -602,6 +645,13 @@ class AgentBuilder:
         if key == "into":
             where = destination_from(text)
             return "" if where is None or text.strip().lower() == "inside that folder" else where
+        if key == "notes":
+            # The notes file: the plain choice means the default beside the watched files; a
+            # path or a file name is kept as given (a name alone lands in the watched folder).
+            words = text.strip().strip("\"'")
+            if not words or re.search(r"\b(that|the watched|same) folder\b|^a summaries", words, re.IGNORECASE):
+                return ""
+            return words
         return text.strip()
 
     def _slot_type(self, key: str | None) -> str | None:
@@ -630,11 +680,11 @@ class AgentBuilder:
         if draft.blueprint.id == CUSTOM:
             yield from self._create_custom(agent, draft)
             return
-        if draft.blueprint.id == ORGANIZER:
+        if draft.blueprint.extra.get("watches"):
             store.save(agent)
             self.created = agent
             self.draft = None
-            yield from say(f"{agent.name} is ready.")
+            yield from self._say(f"{agent.name} is ready.", [agent.name])
             yield AgentList([a.name for a in store.list_agents()])
             return
         try:
@@ -691,6 +741,16 @@ class AgentBuilder:
             yield from say(f'{agent.name} is ready. To use it, start your message with its name, like '
                            f'"{agent.name}: {draft.example or "..."}".')
         yield AgentList([a.name for a in store.list_agents()])
+
+    def _say(self, plain: str, facts: list[str] = ()) -> Iterator[Event]:
+        """Noir's own words for a line code decided to say (talk.phrase); the plain line
+        itself if the rewording loses a fact."""
+        yield from say(phrase(self.ollama, self.model, plain, list(facts)))
+
+    def _question(self, id: str, ask: str, choices: list[str] | None = None, facts: list[str] = ()) -> Question:
+        """A question in Noir's own words: the blueprint's line says what to ask, not how;
+        it is kept as written when the rewording drops a fact or stops asking."""
+        return Question(id, phrase(self.ollama, self.model, ask, list(facts), question=True), choices)
 
     def _cancel(self) -> Iterator[Event]:
         editing, name = self.draft.editing, self.draft.replaces
