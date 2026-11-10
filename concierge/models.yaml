@@ -103,3 +103,22 @@ helpers:
     measured: false
     languages: [en, ko, ja, zh]
     notes: Speech to text. Runs on the processor too, a little slower than real time.
+
+# Local models that may talk an agent's setup through with the user (agents/conductor.py):
+# the conductor reads the conversation and fills a form each turn, and code checks it.
+# Only models that passed `python -m concierge.conductor_eval <tag>` belong here, best
+# first. Size doesn't qualify one: on the same setup qwen3.5:9b switched the agent on with
+# no yes, and qwen3.6:35b-a3b wanted to move bank statements. One is used only when it is
+# installed and fits beside Noir's own model (catalog.helper_room); otherwise the plain
+# questions are asked. Same fields as above.
+
+conductors:
+  - tag: gemma4:12b
+    name: Gemma 4 12B
+    download_gb: 8.0
+    memory_gb: 9.7  # RTX 5080; Ollama claimed 1.45
+    measured: true
+    languages: [en, ko]
+    notes: >-
+      Passed conductor_eval on 10 Nov 2026, 50 of 50 three runs in a row; one of its
+      seven setups is in Korean, the rest in English.

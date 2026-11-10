@@ -26,6 +26,35 @@ blocks: [new_file, on_request, folder_files, classify, move_files]
 switchable: true
 watches: true
 default_name: File organizer
+# How it works, for the model that talks the setup through (agents/conductor.py): it
+# may tell the user these and must promise nothing else, so each line has to stay true to
+# concierge/organizer.py. A blueprint with facts is one that can be talked through.
+facts:
+  - >-
+    It only touches files that land in the watched folder after it is switched on. The
+    files already there stay where they are; right after it is created, the person is
+    asked with two buttons whether to go through those too, and nothing moves unless
+    they say yes.
+  - >-
+    It reads the first pages of each new file on this computer, with the small built-in
+    model. Nothing leaves the computer.
+  - >-
+    With folders the person names, it only moves what clearly reads as material for
+    one of them: course notes, homework, labs, slides, code for a class. A bill, a bank
+    statement, a form, a receipt, a CV or anything it is unsure about stays where it
+    is, even when it mentions a course or a school.
+  - >-
+    With "Decide as you go" it names a folder for each file by what the file is about
+    and reuses those folders, so every kind of document gets filed, bank statements
+    and CVs too; only a file it can't make out stays.
+  - >-
+    Material for a course none of the folders is, and a kind of file it has not sorted
+    before (a spreadsheet, a picture), it asks about once and then remembers the
+    answer.
+  - >-
+    It never deletes or changes a file. Every move shows in the chores list, with Undo
+    for a week.
+  - It works while the Noir app is open, minimized or not.
 slots:
   folder:
     label: Watches

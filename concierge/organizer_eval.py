@@ -345,6 +345,9 @@ class Run:
         drop(self.downloads, OLD)
 
         engine = NoirEngine()
+        # This eval is about what the organizer does, so the setup is the plain questions,
+        # the same on every computer; the setup talked through has its own (conductor_eval).
+        engine.conducts = False
         self.show(engine.startup(), "startup")
         engine.organizer._settle_seconds = 1  # a download settles in seconds here, not 20
 

@@ -85,7 +85,7 @@ engine = NoirEngine()    # real Noir: chat, creating agents, running them
 
 The real engine produces the same events as the fake one. Its `Question` ids
 are `folder`, `name`, `pick_folder`, `change`, `duplicate`, `language`,
-`show`, `idea_change`, `delete_agent`, `pick_agent_to_delete`, `target_language` and `fix_agent`, the agent card's id is `card` and
+`show`, `idea_change`, `delete_agent`, `pick_agent_to_delete`, `target_language`, `fix_agent` and `conduct` (a question in a setup that is talked through, about no setting in particular), the agent card's id is `card` and
 the idea card's is `idea`; the UI should not depend on ids beyond passing
 them back. To try the
 real agent flow, ask Noir to make an agent for `examples/sample_docs`
@@ -284,6 +284,85 @@ line longer than `MAX_PLAIN` is a record and is never reworded, because a 4B mod
 practice run) the plain line is used, so tests see fixed text. No question in a blueprint
 carries an example that could look like the user's own life: the user saw "Physics 122,
 Calculus, History" in one and took it for his data.
+
+## Setups talked through: the conductor
+
+In the plain setup above nobody is in the conversation: code asks the blueprint's questions
+in order and the 4B model rewords one line at a time without seeing the chat. In the user's
+own setup on 9 Nov "Inside that folder is simplest" came back as "inside the Sorted Folders
+folder", a folder that doesn't exist, and passed every check. So a blueprint that says how
+it works (`facts` in its yaml: the organizer and the summary writer; each line must stay
+true to the code) is talked through instead, when there is a model fit to do it
+(`agents/conductor.py`). Each turn that model, the conductor, reads how to talk and how to
+conduct (`VOICE`, `HOW_TO_CONDUCT`), the blueprint's facts, each setting with its question
+and how to fill it, the draft as code has checked it (`AgentBuilder._known`: places by
+name, never a whole path), what code can see (`_facts`: the places, how many files of
+which endings are in the folder and never their names, the agents already made) and the
+setup's own conversation (`Draft.turns`), and fills one form forced by a schema
+(`schema_for`): a value for every setting, where things stand (`STILL_ASKING`,
+`NOTHING_MISSING`, `CALLED_OFF`, `MOVED_ON`), which setting its question is about, and
+last its words. A folder is a place from a list plus a name (`field_for`, `PLACE_NAMES`,
+`INSIDE`), so a model can't misspell a place or make up a path. Nothing in that note is an
+example of a folder's name: given "like College", one model offered it to the user as if
+it were theirs and a smaller one filled it in as the answer.
+
+The model talks and proposes; code decides (`AgentBuilder._conduct`, `_take_form`). Every
+value is checked: the folder to watch must exist (`_form_folder`, looked for everywhere
+when the place the model gave is wrong), a new folder needs a place (`_form_place`), a name
+is only taken if the user gave the agent one (`NAMES_IT`: "can you call the folder School"
+once named the agent School), an empty value never erases a known one. What code
+refuses (`Refused`) goes back to the model once with the reason and what to do about it
+(for a folder that isn't there: say so and ask, and use the name nowhere else; hinted
+instead that it might be where the sorted folders go, the model made a mistyped "my Scool
+folder" into a new destination nobody had asked for); refused twice, code says its own
+plain line, what was known stays as it was, and that value is passed over from then on unless
+the user names it again (`Draft.ignored`: without that, a 9B model answered three
+different messages with "I can't find a folder called College"). "Nothing missing" with
+something missing is asked again, and the card is shown by code as soon as nothing needed
+is missing (`needed`: a setting with a question and no usual value), whatever the model
+says of where things stand: let hold the card back to ask once more, it asked about a
+setting that has a usual value. Only a turn in which code refused something waits with
+the card: asked for a folder that isn't there, the model said so, asked which folder to
+watch, and guessed Downloads for the draft, and a card for Downloads showed under its
+question. Nothing the model says makes an agent: only the card's
+button, or a whole message that is a plain yes while the card is up (`CARD_YES`; "ok but
+put them in Documents" is a change), and not even that when Noir has just asked something,
+since the yes then answers the question. In the first probe (10 Nov: the model given the conversation
+but no guard) three of four local models switched the agent on with no yes or said they
+would move a bank statement, which is why. A click on a question's button sets that
+setting in code and is said to the model like anything typed; Change something on the card
+asks in words. An opening offer that says nothing ("I can certainly help you with that.")
+is taken off in code (`OPENING_OFFER`: told not to, the model still wrote it), and so is a
+closing offer or "Shall we begin?" (`tidy_say`, with `noir.CLOSING_FILLER` and
+`CLOSING_NUDGE`); once the card is up the model is
+told so (`CARD_IS_UP`), or every answer ends by pointing at its button. A conductor that fails (`ConductorError`: Ollama stopped, the plan signed out,
+a form that can't be read) leaves the plain questions, from wherever the draft is. The
+lines code writes after a talked-through setup ("File organizer is ready.", "It's on ...")
+are said as written, not reworded (`AgentBuilder.conducted`).
+
+Who conducts is the engine's choice at each start (`NoirEngine._conductor`): a plan or key
+model the user picked, or the one Auto sends hard questions to (`talker_form`: the note,
+the conversation and the schema as one message, since the plans' apps drop system
+messages, and the JSON read out of the reply by `read_form`); else the first model on the
+`conductors` list in `models.yaml` that is installed and fits beside Noir's own on the
+graphics card (`_local_conductor`, `local_form`; loaded for the setup, freed when it ends,
+`Conductor.done`); else nobody, and the plain questions are asked. A local model picked
+in the menu doesn't conduct unless it is on that list. Only a model that passes `python -m
+concierge.conductor_eval <tag>` goes on it: seven scripted setups through the real engine
+on a made-up home (the user's own with its typos, an answer out of order, a worry about
+old files and a question about bank statements; one message that says everything, then
+two changes at the card; never mind; a question about something else; a folder that isn't
+there; the summary writer; one in Korean), checking what code ended up with and what was
+never done, and printing every word to be read, since no check can judge the words (several
+of the fixes above came from reading a run that had passed every check). On 10 Nov 2026
+Gemma 4 12B passed 50 of 50 in each of its last three runs, about 45 seconds a run; Qwen
+3.5 9B failed three to seven checks in each of four runs and the 4B three to five (they put the
+destination in the folder to watch, dropped a change said at the card, and answered
+Korean in English), so size alone puts nobody on the list. The plan path
+(`talker_form`) is covered by tests with a pretend model only: no real setup has been run
+through a plan yet, where each turn costs what any answer does (about 29k tokens through
+Claude Code). `organizer_eval` switches the conductor off (`NoirEngine.conducts`), since it
+is about what the organizer does and must run the same on every computer.
 
 ## Chores Noir builds: the file organizer
 
@@ -1035,6 +1114,7 @@ python packaging/build.py     # the installer (Windows) or disk image (Mac) for 
 pytest                       # all tests; none need Ollama
 python -m concierge.agents.eval_router   # router accuracy with the real model (45 of 47 on 9 Nov 2026: "manuals in Downloads" went to an existing agent, a browser-translation idea to the translator; neither touched by the code rules)
 python -m concierge.organizer_eval       # the file organizer end to end with the real model, on a made-up home (every check must pass)
+python -m concierge.conductor_eval       # setups talked through, with the conductor this computer would use, on a made-up home (every check must pass; name a tag to try another model)
 ```
 
 ## Conventions
@@ -1062,12 +1142,13 @@ variables inside a function do not need listing.
 | `concierge/__init__.py` | Both | `__version__` |
 | `packaging/` | Both | `noir.py` (what the packaged app runs), `noir.spec`, `make_icons.py` (`ICO_SIZES`, `ICNS_SIZES`, `make`), `noir.iss`, `build.py` (`DIST`, `INNO`, `main`, `built_program`, `check`, `windows_installer`, `mac_image`, `run`); workflow `.github/workflows/release.yml` |
 | `concierge/hardware.py` | Engine | `GB`, `MIN_USABLE_VRAM_GB`, `GPU`, `HardwareReport`, `detect`, `parse_nvidia_smi`, `describe` |
-| `concierge/catalog.py` | Engine | `CATALOG_PATH`, `GPU_SHARE`, `APPLE_SHARE`, `CPU_SHARE`, `CPU_MAX_GB`, `GPU_HEADROOM_GB`, `RAM_HEADROOM_GB`, `DISK_HEADROOM_GB`, `CPU_HELPER_SHARE`, `ModelEntry`, `HelperModel`, `Recommendation`, `load_catalog`, `load_helpers`, `helper_room`, `pick_helper`, `find_model`, `memory_budget`, `recommend`; models in `models.yaml` (`models`, `helpers`) |
+| `concierge/catalog.py` | Engine | `CATALOG_PATH`, `GPU_SHARE`, `APPLE_SHARE`, `CPU_SHARE`, `CPU_MAX_GB`, `GPU_HEADROOM_GB`, `RAM_HEADROOM_GB`, `DISK_HEADROOM_GB`, `CPU_HELPER_SHARE`, `ModelEntry`, `HelperModel`, `Recommendation`, `load_catalog`, `load_helpers`, `load_conductors`, `helper_room`, `pick_helper`, `find_model`, `memory_budget`, `recommend`; models in `models.yaml` (`models`, `helpers`, `conductors`) |
 | `concierge/chores.py` | Both | `TIDY`, `AGENT`, `BOOKING`, `MAX_JOBS`, `REPEAT_WORDS`, `ACTION_WORDS`, `listing`, `days`, `day_label`, `ago` |
 | `concierge/quick/drawer.py` | UI | `EDGE_PIXELS`, `OPEN_PIXELS`, `Screen`, `screen_at`, `real_pixels`, `EdgePull` |
 | `concierge/places.py` | Both | `KNOWN`, `known_folder` |
 | `concierge/organizer.py` | Engine | `ORGANIZER`, `LOOK_SECONDS`, `SETTLE_SECONDS`, `READ_CHARS`, `MAX_FOLDER_NAME`, `DONE_KEPT`, `CONTENT`, `BY_NAME`, `DECIDE`, `DOCUMENTS`, `CODE`, `KINDS_AUTO`, `IMAGES`, `MAX_IMAGE_MB`, `SEE_NOTE`, `SEE_SCHEMA`, `KIND_WAITING`, `KIND_REFUSED`, `SUBJECT_WAITING`, `SUBJECT_REFUSED`, `ANOTHER`, `SUMMARIZER`, `WATCHED_KINDS`, `THREE_LINES`, `ONE_PARAGRAPH`, `NOTES_DEFAULT`, `SUMMARY_NOTE`, `SUMMARY_SCHEMA`, `NO_SUMMARY`, `COURSE_CODE`, `FOLDER_CODE`, `NOT_SURE`, `UNFINISHED`, `DECIDE_WORDS`, `SAME_PLACE`, `PLACES`, `CALLED`, `PATH`, `COURSE`, `STOPWORDS`, `TOPIC_NOTE`, `PICK_NOTE`, `SUBJECT`, `SOMETHING_ELSE`, `NO_TEXT`, `NOT_MATERIAL`, `NOT_SURE_WHICH`, `UNSURE_TOPIC`, `SKIPPED_KEPT`, `WATCHED`, `SEE_PIXELS`, `SEE_CONTEXT`, `SEEN_KEPT`, `how`, `organizer_card`, `summarizer_card`, `notes_path`, `shrink`, `course_codes`, `folder_codes`, `spoken_code`, `groups_from`, `courses_in`, `watched_from`, `destination_from`, `shown_folder`, `folder_name`, `words_of`, `closest`, `Organizer` (`verdict`, `skipped`, `last_skipped`, `moved`, `asked`, `working`, `stayed`, `kinds`, `subjects`, `asking`, `questions`, `answer`, `seer`, `place`); blueprint `agents/blueprints/organizer.yaml` |
 | `concierge/organizer_eval.py` | Engine | `REQUEST`, `OLD`, `NEW`, `STAYS`, `pdf`, `word`, `drop`, `Run`, `main`; command `python -m concierge.organizer_eval [--keep]` |
+| `concierge/conductor_eval.py` | Engine | `SAYS_DONE`, `ABOUT_LATER`, `claims_done`, `SAYS_STAYS`, `CANT_FIND`, `HANGUL`, `Trial`, `main`; command `python -m concierge.conductor_eval [tag ...] [--keep]` |
 | `concierge/activity.py` | Engine | `ANSWERED`, `EXPLAINED`, `TRANSLATED`, `POLISHED`, `SUMMED_UP`, `HELPED`, `SORTED`, `READ`, `KEPT_DAYS`, `WEEK_DAYS`, `record`, `this_week` |
 | `concierge/voice.py` | Engine | `BUDGETS`, `KIND_WORDS`, `SHORTER_SHARE`, `STYLE`, `SMALL_TALK_STYLE`, `POINTS`, `NO_POINTS`, `EXPLAIN_SHAPE`, `EXTRA`, `MATH_STYLE`, `SCIENCE_STYLE`, `DRAWING`, `DRAW_WORDS`, `OPENER`, `QUOTE`, `BOLD_BULLET`, `RULE_ECHO`, `ECHO_START`, `HEADING`, `RULE`, `TABLE_ROW`, `TABLE_LINE`, `SAFE_START`, `FIRST_SENTENCE`, `kind_of`, `guide`, `tidy` |
 | `concierge/pictures.py` | Engine | `API`, `USER_AGENT`, `TIMEOUT`, `MAX_PICTURES`, `MAX_LOOKUPS`, `PICTURE_PIXELS`, `NO_PICTURES`, `BOLD`, `PART`, `BETWEEN`, `PLACE_WORDS`, `names_in`, `same_place`, `place`, `worth_asking`, `for_answer` |
@@ -1091,11 +1172,12 @@ variables inside a function do not need listing.
 | `concierge/research.py` | Engine | `SETTINGS`, `WEB_QUESTION`, `YES_LOOK`, `NO_LOOK`, `WEB`, `WEATHER`, `SEARCH`, `IMAGES`, `PRICE`, `MAX_RESULTS`, `MAX_IMAGES`, `SNIPPET_CHARS`, `EXTRACT_CHARS`, `FINDINGS_CHARS`, `TIMEOUT`, `USER_AGENT`, `GEOCODE`, `FORECAST`, `WHERE_AM_I`, `WIKIPEDIA`, `MAX_PAGES`, `PAGE_CHARS`, `PAGE_BYTES`, `PAGE_TIMEOUT`, `SKIP_PAGES`, `BRAVE_SEARCH`, `SEARCH_KEY`, `SEARCH_KEY_PAGE`, `TAGS_TO_DROP`, `TAG`, `BLOCK_END`, `YAHOO_SEARCH`, `YAHOO_CHART`, `COINGECKO_SEARCH`, `COINGECKO_PRICE`, `BROWSER_AGENT`, `CHANGING`, `TIMELESS`, `WEATHER_WORDS`, `IMAGE_WORDS`, `PRICE_WORDS`, `CRYPTO_WORDS`, `PRICE_FILLER`, `QUESTION`, `PLACE_AFTER`, `PLACE_BEFORE`, `PLACE_KO`, `SKY`, `SEARCH_ENGINES`, `Findings`, `wants_lookup`, `unsure`, `model_form`, `settings_path`, `allowed`, `allow`, `lookups`, `place_in`, `weather`, `price_subject`, `price`, `search_key`, `set_search_key`, `brave`, `search`, `page_text`, `read_page`, `images`, `wikipedia`, `look_up`, `note` |
 | `concierge/sources.py` | Engine | `TIERS_PATH`, `PRIMARY`, `REFERENCE`, `ORDINARY`, `FARM`, `TIER_WORDS`, `TIER_POINTS`, `SUBJECT_POINTS`, `MODEL_POINTS`, `FRESH_POINTS`, `MIN_SNIPPET_MATCH`, `CURRENT_WORDS`, `STOPWORDS`, `FARM_LOOKS`, `JUDGE_NOTE`, `JUDGE_SCHEMA`, `Choice`, `load_tiers`, `site_of`, `words_of`, `tier_of`, `relevance`, `pick`, `judge_with`, `said`; tiers in `sources.yaml` |
 | `concierge/researcher.py` | Engine | `RESEARCH`, `RESEARCH_WORDS`, `MAX_QUERIES`, `PAGES_PER_QUERY`, `MAX_PAGES`, `SUMMARY_LINES`, `SINGLE_ASK_WRITTEN`, `SEARCH_WAIT`, `ENOUGH_SEARCHES`, `PAGES_PER_SITE`, `SPARE_PAGES`, `MIN_PAGE_CHARS`, `PLAN_NOTE`, `PLAN_SCHEMA`, `STALE_YEAR`, `WORKER_NOTE`, `MERGE_NOTE`, `Page`, `Account`, `wants_research`, `fresh_queries`, `plan`, `gather`, `summarise`, `merge`, `plan_tokens_after`, `last_plan_answer`, `settle`, `account_lines`, `when_now`, `sources_of` |
-| `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `FOLLOW_UPS`, `ORGANIZE_NOW`, `GO_THROUGH`, `ONLY_NEW`, `WANTS_WHERE`, `WANTS_STATUS`, `WANTS_ORGANIZE`, `WANTS_PLACE`, `WANTS_EVERYTHING`, `WANTS_WHY`, `WHERE_WORDS`, `WANTS_ANSWER`, `ABOUT_CHORES`, `ASKS_FOR_WORK`, `FOLLOWS_A_CHORE`, `CHORE_FRESH_SECONDS`, `NO_WORDS`, `WHICH_KIND`, `SOMETHING_ELSE_KIND`, `KIND_SHORT`, `NoirEngine` (adds `follow_up`, `follow_up_words`, `after_answer`, `pictures`, and `pending_lookup`, `found` for the web; outside the contract: `ask_again` for Auto, `setup_state` and `setup_begin` for the first run, `chore_agents`, `organizer_done`, `undo_move`, `organizer_questions` and `organizer_answer` for the chores list) |
+| `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `FOLLOW_UPS`, `ORGANIZE_NOW`, `GO_THROUGH`, `ONLY_NEW`, `WANTS_WHERE`, `WANTS_STATUS`, `WANTS_ORGANIZE`, `WANTS_PLACE`, `WANTS_EVERYTHING`, `WANTS_WHY`, `WHERE_WORDS`, `WANTS_ANSWER`, `ABOUT_CHORES`, `ASKS_FOR_WORK`, `FOLLOWS_A_CHORE`, `CHORE_FRESH_SECONDS`, `NO_WORDS`, `WHICH_KIND`, `SOMETHING_ELSE_KIND`, `KIND_SHORT`, `NoirEngine` (adds `follow_up`, `follow_up_words`, `after_answer`, `pictures`, and `pending_lookup`, `found` for the web; outside the contract: `ask_again` for Auto, `setup_state` and `setup_begin` for the first run, `chore_agents`, `organizer_done`, `undo_move`, `organizer_questions` and `organizer_answer` for the chores list; `conducts`: whether a setup may be talked through) |
 | `concierge/setup.py` | Engine | `OLLAMA`, `MODEL`, `NOIR`, `INSTALLERS`, `SILENT_INSTALL`, `DOWNLOAD_TIMEOUT`, `INSTALL_SECONDS`, `START_SECONDS`, `QUICK_START_SECONDS`, `CHUNK`, `MAC_OPEN`, `SetupError`, `Setup` |
 | `concierge/fake_engine.py` | Engine | `FakeEngine`, `PracticeOllama`, `PracticeKeys`, `PracticeAccounts`, `PracticeSetup`, `practice_models` |
 | `concierge/cli.py` | Engine | `DIM`, `PLAIN`, `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `cmd_history`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure, history]`; in the chat `/think` turns thinking on or off |
 | `concierge/agents/blueprint.py` | Engine | `BLUEPRINT_DIR`, `Slot`, `Blueprint`, `load_blueprints`; templates in `agents/blueprints/*.yaml` (`documents_qa`, `organizer`, `summarizer`, and `custom`: the shared template for agents made from parts) |
+| `concierge/agents/conductor.py` | Engine | `STILL_ASKING`, `NOTHING_MISSING`, `CALLED_OFF`, `MOVED_ON`, `CONDUCT`, `PLACE_NAMES`, `INSIDE`, `PLACE_SLOTS`, `CONDUCT_CONTEXT`, `CONDUCT_TEMPERATURE`, `CONDUCT_KEEP_ALIVE`, `MAX_TURNS`, `MAX_SAY`, `VOICE`, `HOW_TO_CONDUCT`, `FORM_NOTE`, `MORE_STATUS`, `CARD_COMES`, `CARD_IS_UP`, `OPENING_OFFER`, `CLOSING_NUDGE`, `JSON_ONLY`, `Form`, `ConductorError`, `Turn`, `Conductor` (`turn`, `waking`, `done`), `tidy_say`, `field_for`, `schema_for`, `needed`, `note_for`, `local_form`, `talker_form`, `read_form` |
 | `concierge/agents/talk.py` | Engine | `MAX_CHARS`, `MAX_PLAIN`, `TEMPERATURE`, `KEPT_SHARE`, `ASKING_WORDS`, `PHRASE_NOTE`, `QUESTION_NOTE`, `JARGON`, `UNQUOTED`, `FACT_IN_LINE`, `STOPWORDS`, `phrase`, `facts_in`, `words_of` |
 | `concierge/quick/agents.py` | Engine | `BUBBLE`, `CLIPBOARD`, `BOTH`, `UNTIL_UNHIGHLIGHT`, `FEW_SECONDS`, `CHECK_SECONDS`, `CHECK_FOR_SECONDS`, `QuickAgents` |
 | `concierge/quick/bubble.py` | Engine | `GAP`, `MAX_WIDTH`, `COLORS`, `GWL_EXSTYLE`, `WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW`, `WS_EX_TOPMOST`, `show_seconds`, `Bubble` |
@@ -1106,7 +1188,7 @@ variables inside a function do not need listing.
 | `concierge/quick/tidy.py` | Engine | `MIN_FILES`, `SETTLE_SECONDS`, `FIRST_LOOK_SECONDS`, `LOOK_SECONDS`, `SNOOZE_DAYS`, `IGNORED_DAYS`, `BREAK_SECONDS`, `TYPING_GAP_SECONDS`, `MIN_JOB_SECONDS`, `PRACTICE_FIRST_LOOK_SECONDS`, `PRACTICE_JOB_SECONDS`, `VIDEO_LOOK_SECONDS`, `PRACTICE_VIDEO_SECONDS`, `QUESTION_GAP_SECONDS`, `PRACTICE_QUESTION_GAP_SECONDS`, `UNDO_DAYS`, `LECTURE_NOTES_BUILT`, `CLOUD_ONLY`, `YES`, `NOT_NOW`, `SORT`, `VIDEO`, `VIDEO_QUESTION`, `NO_VIDEO_SUMMARY`, `PRACTICE_LECTURE`, `DONE_KEPT`, `SHELVES`, `OTHER_SHELF`, `UNFINISHED`, `SYSTEM_FILES`, `downloads_dir`, `log_path`, `shelf_for`, `loose_files`, `free_name`, `sort_plan`, `sort_folder`, `record_moves`, `sorts_on_record`, `last_sort`, `moved_to`, `can_undo`, `undo_sort`, `BreakSpotter`, `TidyWatch` |
 | `concierge/quick/spot.py` | Engine | `DOUBLE_TAP_SECONDS`, `TAP_SECONDS`, `MAX_SPOT_CHARS`, `MAX_HELPERS`, `SUM_UP_CHARS`, `SHORTEN_CHARS`, `WRITING`, `READING`, `ERROR`, `CODE`, `NOTHING`, `ERROR_WORDS`, `CODE_SIGNS`, `WRITE_FOR_ME`, `ACTIONS`, `home_language`, `kind_of`, `actions_for`, `job`, `caret_box`, `selection_editable`, `DoubleTap` |
 | `concierge/quick/translate.py` | Engine | `LANGUAGES`, `language_in`, `looks_like` |
-| `concierge/agents/builder.py` | Engine | `PLACES`, `CANCEL_WORDS`, `YES_WORDS`, `BY_CONTENT_WORDS`, `BY_NAME_WORDS`, `BLOCKED`, `SKIP_WHILE_SEARCHING`, `CARD`, `CHANGE`, `PICK_FOLDER`, `DUPLICATE`, `REPLACE`, `MAKE_ANOTHER`, `CREATE_IT`, `SAVE_CHANGES`, `RENAME`, `TARGET_LANGUAGE`, `LANGUAGE_CHOICES`, `custom_card`, `Draft`, `AgentBuilder` (`take_created`), `say`, `place_dirs`, `find_folders`, `agent_for_folder`, `is_blocked`, `describe_files` |
+| `concierge/agents/builder.py` | Engine | `PLACES`, `CANCEL_WORDS`, `YES_WORDS`, `BY_CONTENT_WORDS`, `BY_NAME_WORDS`, `BLOCKED`, `SKIP_WHILE_SEARCHING`, `CARD`, `CHANGE`, `PICK_FOLDER`, `DUPLICATE`, `REPLACE`, `MAKE_ANOTHER`, `CREATE_IT`, `SAVE_CHANGES`, `RENAME`, `TARGET_LANGUAGE`, `LANGUAGE_CHOICES`, `CARD_YES`, `NAMES_IT`, `NOT_KNOWN`, `A_PATH`, `MAX_COUNTED`, `SYSTEM_FOLDER`, `custom_card`, `Refused`, `Draft`, `AgentBuilder` (`take_created`; `conductor` and `conducted` for a setup talked through), `say`, `place_dirs`, `find_folders`, `agent_for_folder`, `is_blocked`, `describe_files`, `short_place`, `files_in` |
 | `concierge/agents/planner.py` | Engine | `BLOCKS_PATH`, `OTHER`, `MAX_STEPS`, `IDEA`, `IDEA_CHANGE`, `KEY_COMBO`, `ASKED_FOR_KEY`, `settle_triggers`, `MAKE_IT`, `SAVE_IDEA`, `CHANGE_IDEA`, `DROP_IDEA`, `HELPER_ROLES`, `ROLE_WORDS`, `Block`, `PlanStep`, `Assessment`, `IdeaDraft`, `IdeaPlanner`, `load_blocks`, `assess`, `clean_detail`, `ideas_path`, `list_ideas`, `save_idea`, `describe_ideas`; building blocks in `agents/capabilities.yaml` |
 | `concierge/agents/recipe.py` | Engine | `CUSTOM`, `WHILE_ON`, `IN_CHAT`, `MAX_INSTRUCTION`, `HIGHLIGHT_WORDS`, `CHAT_WORDS`, `SHOW_WORDS`, `COPY_WORDS`, `STAY_WORDS`, `SHORT_WORDS`, `SAMPLE_TEXT`, `SAMPLE_QUESTION`, `MECHANICS`, `describe`, `run_instruction`, `target_language`, `settings_from_words`, `needs_language`, `with_language`, `write_recipe`, `rewrite_instruction`, `is_switchable`, `migrate` |
 | `concierge/agents/files.py` | Engine | `TEXT_TYPES`, `SUPPORTED`, `OFFICE_PARTS`, `ARCHIVES`, `MARKUP`, `TEXT_SAMPLE`, `OFFICE_CHARS`, `MAX_LISTED`, `text_of`, `without_tags`, `office_text`, `archive_listing`, `MAX_FILES`, `MAX_FILE_MB`, `PASSAGE_CHARS`, `PASSAGE_OVERLAP`, `Passage`, `ScanResult`, `scan`, `read_pages`, `split`, `passages_of`, `tokens`, `SearchIndex`, `folder_signature` |

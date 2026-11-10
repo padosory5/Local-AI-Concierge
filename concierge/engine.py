@@ -22,12 +22,13 @@ from .accounts import APPS
 from .agents import community, runner, store
 from .agents.blueprint import load_blueprints
 from .agents.builder import AgentBuilder, say, YES_WORDS
+from .agents.conductor import Conductor, local_form, talker_form
 from .agents.planner import IDEA, IDEA_CHANGE, MAKE_IT, IdeaPlanner, describe_ideas
 from .agents.router import WANTS_NEW as WANTS_NEW_AGENT, wants_change, SORTS, SUMS_UP, WATCHES, FILES
 from .agents.router import names_an_agent, refers_to, route, wants_change, KIND_WORDS, kinds_named
 from .agents.starters import Starter, asks_for, install
 from .attachments import NOTHING_SAID, Attached, read_attachments
-from .catalog import find_model, recommend
+from .catalog import ModelEntry, find_model, helper_room, load_conductors, recommend
 from .conversations import ChatBook
 from .events import (AgentList, NoirDone, NoirText, Error, Event, IdeaCard, Progress, Question, Result, SystemInfo,
                      Thinking)
@@ -203,6 +204,9 @@ class NoirEngine:
         self.menu = ModelMenu(self.ollama, self._hardware)
         self.menu.changed = self._use_chosen_model
         self.setup = Setup(self.ollama)  # the first run's one button (setup.py)
+        # Whether a setup may be talked through by a model (agents/conductor.py). Off, the
+        # builder asks its plain questions: what an eval of something else wants to hold still.
+        self.conducts = True
 
     # ----------------------------------------------------------- contract
 
@@ -235,6 +239,7 @@ class NoirEngine:
             yield Error(str(exc))
             return
         self.builder = AgentBuilder(self.ollama, noir.NOIR_MODEL, self.chat.think, self.blueprints)
+        self.builder.conductor = self._conductor
         self.planner = IdeaPlanner(self.ollama, noir.NOIR_MODEL, self.chat.think, self._hardware,
                                    self.blueprints)
         # Switch-on agents read highlights through Windows; on a Mac there are none yet.
@@ -1160,6 +1165,42 @@ class NoirEngine:
             return self.organizer.is_on(agent.name)
         return bool(self.quick and self.quick.is_on(agent.name))
 
+    def _conductor(self) -> Conductor | None:
+        """Who talks an agent's setup through (agents/conductor.py). A plan or key model the
+        user picked, or the one Auto sends hard questions to: it is the better model, and a
+        setup is the rare conversation where that matters most. Else a model on this
+        computer that passed conductor_eval, is installed and fits beside Noir's own. Else
+        nobody, and the builder asks its plain questions. A local model picked in the menu
+        doesn't conduct unless it is on that list: a bigger one decided worse than a smaller."""
+        if not self.conducts or self.chat is None:
+            return None
+        chosen = self.menu.chosen()
+        talker = self.auto_cloud or self.chat.talker
+        if chosen and not chosen.get("here") and talker is not self.ollama:
+            return Conductor(talker_form(talker), self.talker_name, here=False)
+        model = self._local_conductor()
+        if model is None:
+            return None
+        tag = model.tag
+        return Conductor(local_form(self.ollama, tag), model.name, here=True,
+                         loaded=lambda: any(m["name"] in (tag, f"{tag}:latest") for m in self.ollama.loaded()),
+                         release=lambda: self.ollama.unload(tag))
+
+    def _local_conductor(self) -> ModelEntry | None:
+        """The first model on the conductors list (models.yaml) that is installed and fits
+        in the graphics memory Noir's own model leaves free. Never on the processor: a turn
+        would take most of a minute there."""
+        list_models = getattr(self.ollama, "list_models", None)
+        try:
+            installed = set(list_models()) if list_models else set()
+        except OllamaError:
+            return None
+        listed = [model for model in load_conductors() if model.tag in installed or f"{model.tag}:latest" in installed]
+        if not listed:
+            return None
+        room, on_cpu = helper_room(*self._hardware())
+        return next((model for model in listed if not on_cpu and model.memory_gb <= room), None)
+
     def _building(self, events: Iterator[Event]) -> Iterator[Event]:
         """The builder's events, then what happens once an agent is made: a watched-folder
         agent is switched on at once and offered a first pass over its folder."""
@@ -1167,6 +1208,9 @@ class NoirEngine:
         created = self.builder.take_created() if self.builder else None
         if created is None or created.blueprint not in WATCHED_KINDS:
             return
+        # A setup that was talked through keeps code's lines as written: the small model
+        # rewording them is the voice that said things that weren't so.
+        reword = phrase if not self.builder.conducted else (lambda ollama, model, plain, facts=(), question=False: plain)
         self.organizer.refresh(store.list_agents())
         self.organizer.switch(created, True)
         yield self._agent_list()
@@ -1186,10 +1230,10 @@ class NoirEngine:
         if count:
             self.organizing = created.name
             there = f"There {'is' if count == 1 else 'are'} {count} file{'' if count == 1 else 's'} there already."
-            yield Question(ORGANIZE_NOW, phrase(self.ollama, noir.NOIR_MODEL, f"{on} {there} {now}",
+            yield Question(ORGANIZE_NOW, reword(self.ollama, noir.NOIR_MODEL, f"{on} {there} {now}",
                                                 [*facts, str(count)], question=True), [GO_THROUGH, ONLY_NEW])
         else:
-            yield from self._say(on, facts)
+            yield from say(reword(self.ollama, noir.NOIR_MODEL, on, facts))
 
     def _places(self, organizers: list[store.Agent]) -> str:
         """Where each organizer keeps its folders, as whole paths."""

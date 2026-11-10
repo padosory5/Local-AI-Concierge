@@ -4,15 +4,21 @@ card, and on "Create it" save it and give it a test drive.
 Code drives every step. The model only pulls a folder name out of what the
 user typed, and writes the test-drive question. Languages are recognised in
 code (quick/translate.py).
+
+A blueprint that says how it works (`facts`) can be talked through instead, when
+the engine has a model fit to do it (conductor.py): that model takes each turn and
+fills a form, and code here checks every value, keeps the draft and shows the card
+(`_conduct`, `_take_form`). The card is still the only thing that makes an agent.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import re
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -21,9 +27,11 @@ from ..noir import load_state
 from ..events import AgentCard, AgentList, NoirDone, NoirText, Event, Progress, Question, Result, Thinking
 from ..ollama import Ollama, OllamaError
 from . import runner, store
-from .blueprint import Blueprint
+from .blueprint import Blueprint, Slot
+from .conductor import (CALLED_OFF, CONDUCT, INSIDE, MOVED_ON, NOTHING_MISSING, PLACE_NAMES, PLACE_SLOTS, STILL_ASKING,
+                        Conductor, ConductorError, needed)
 from .files import scan
-from ..organizer import (BY_NAME, CONTENT, ORGANIZER, SUMMARIZER, courses_in, destination_from, groups_from,
+from ..organizer import (BY_NAME, CONTENT, ORGANIZER, SUMMARIZER, courses_in, destination_from, folder_name, groups_from,
                          organizer_card, summarizer_card, watched_from)
 from ..places import known_folder
 from ..quick.agents import BOTH, CLIPBOARD
@@ -52,6 +60,27 @@ RENAME = re.compile(r"\b(?:rename\b.*?\b(?:to|as)|call it)\s+[\"']?(.+?)[\"']?\s
 # How an organizer tells files apart, in the user's words.
 BY_CONTENT_WORDS = re.compile(r"inside|contents?|what (it|they|the files?)('s| is| are| was)? about|what's in", re.IGNORECASE)
 BY_NAME_WORDS = re.compile(r"\bby (their |the |file )?names?\b|filenames?", re.IGNORECASE)
+# A whole message that is a yes to the card on screen, in a setup that is talked through.
+# Only the whole message counts: "ok but put them in Documents" is a change, not a yes.
+CARD_YES = (*YES_WORDS, "create it", "yes please", "sounds good", "ok sounds good", "okay sounds good", "looks good",
+            "looks right", "perfect", "that's right", "thats right")
+# The user giving the agent itself a name: "call it Homework sorter", "an agent called X".
+NAMES_IT = re.compile(r"\b(call|name) (it|this|the (agent|helper|organi[sz]er|assistant))\b|"
+                      r"\b(agent|helper|assistant|organi[sz]er|writer) (called|named)\b|\brename (it|the (agent|helper))\b",
+                      re.IGNORECASE)
+NOT_KNOWN = "not known yet"
+A_PATH = re.compile(r"^([A-Za-z]:[\\/]|~|/)")
+MAX_COUNTED = 5000  # files looked at when telling the conductor what a folder holds
+SYSTEM_FOLDER = "That's a system folder, so for safety a helper can't use it."
+
+
+@dataclass(frozen=True)
+class Refused:
+    """A value in the conductor's form that code didn't take."""
+    key: str  # the setting
+    value: str  # what the form gave, to know it again
+    told: str  # for the model: why not, and what would be right
+    said: str  # for the user, in plain words, if the model doesn't put it right
 
 
 @dataclass
@@ -70,6 +99,12 @@ class Draft:
     editing: bool = False  # changing an existing agent rather than making one
     example: str = ""  # a piece of text to test an agent made from parts on
     duplicate_asked: bool = False
+    # A setup that is talked through (conductor.py): the model taking the turns, the
+    # setup's own conversation, and the settings the card last showed.
+    conductor: Conductor | None = None
+    turns: list = field(default_factory=list)
+    card_slots: dict | None = None
+    ignored: set = field(default_factory=set)  # (setting, value) refused twice: passed over from then on
 
 
 class AgentBuilder:
@@ -82,6 +117,10 @@ class AgentBuilder:
         # Set when the user moved on to something else mid-setup: the engine
         # handles this text normally after the setup has been dropped.
         self.handoff: str | None = None
+        # Set by the engine: who talks a setup through right now, or None for the plain
+        # questions. Asked at each start, so a change in the model menu applies at once.
+        self.conductor: Callable[[], Conductor | None] | None = None
+        self.conducted = False  # whether the agent made last was talked through
 
     def take_created(self) -> store.Agent | None:
         """The agent made by the last Create it, once; None otherwise."""
@@ -97,6 +136,10 @@ class AgentBuilder:
     def start(self, blueprint_id: str, request: str) -> Iterator[Event]:
         bp = self.blueprints[blueprint_id]
         self.draft = Draft(bp, request=request)
+        conductor = self.conductor() if self.conductor and bp.extra.get("facts") else None
+        if conductor is not None:
+            yield from self._start_conducted(conductor, request)
+            return
         yield from self._say(f"I can make you an agent for that: {bp.name}. {bp.pitch.strip()}", [bp.name])
         self._prefill(request)
         if self.draft.slots:
@@ -207,6 +250,15 @@ class AgentBuilder:
         lowered = text.strip().lower()
         if any(lowered == w or lowered.startswith(w + " ") for w in CANCEL_WORDS):
             yield from self._cancel()
+        elif draft.conductor is not None:
+            whole = lowered.strip("!. ")
+            if draft.waiting == CARD and whole in CARD_YES:
+                yield from self._create()
+            elif draft.waiting == CARD and whole in ("no", "nope", "아니"):
+                yield from self._cancel()
+            else:
+                draft.turns.append({"role": "user", "content": text})
+                yield from self._next()
         elif draft.waiting in ("folder", PICK_FOLDER) and self._answer_any_slot(text):
             yield from self._next()  # answered another question first; the folder is asked again
         elif draft.waiting in ("folder", PICK_FOLDER):
@@ -242,10 +294,19 @@ class AgentBuilder:
 
     def choose(self, id: str, choice: str) -> Iterator[Event]:
         draft = self.draft
-        if id == CARD and draft.waiting != CARD:
+        if draft.conductor is not None and id != CARD:
+            draft.turns.append({"role": "user", "content": choice})  # a click is said, like anything typed
+        # Talked through, the card can be up and current while Noir has just asked something.
+        card_up = draft.conductor is not None and draft.card_slots == draft.slots
+        if id == CARD and draft.waiting != CARD and not card_up:
             yield from self._next()  # the card isn't up yet: the open question is asked again
         elif id == CARD and choice in (CREATE_IT, SAVE_CHANGES):
             yield from self._create()
+        elif id == CARD and choice == "Change something" and draft.conductor is not None:
+            # Talked through, a change is said in words, not picked from a list of settings.
+            draft.waiting = CONDUCT
+            draft.turns.append({"role": "assistant", "content": "What should I change?"})
+            yield Question(CONDUCT, "What should I change?")
         elif id == CARD and choice == "Change something":
             labels = [s.label for s in draft.blueprint.slots if s.changeable]
             draft.waiting = CHANGE
@@ -274,6 +335,8 @@ class AgentBuilder:
             yield from say("That question has already been answered.")
         elif id == DUPLICATE and choice.startswith("Use "):
             name = draft.duplicate_of
+            if draft.conductor is not None:
+                draft.conductor.done()
             self.draft = None
             if draft.blueprint.id == ORGANIZER:
                 yield from say(f'Okay, keep using {name}. Say "organize it" and it goes through what has landed since '
@@ -284,6 +347,8 @@ class AgentBuilder:
                 yield from say(f'Okay, keep using {name}. Ask it anything, like "{name}: what does it say about...".')
         elif id == DUPLICATE and choice.startswith("Change "):
             existing = store.find_agent(draft.duplicate_of)
+            if draft.conductor is not None:
+                draft.conductor.done()  # changing an agent they have is the plain way, for now
             if existing:
                 yield from self.edit(existing, draft.request)
         elif id == DUPLICATE and choice == REPLACE:
@@ -438,6 +503,9 @@ class AgentBuilder:
                            "What would you like to do?",
                            [f"Use {existing.name}", f"Change {existing.name}", MAKE_ANOTHER])
             return
+        if draft.conductor is not None:
+            yield from self._conduct()
+            return
         for slot in draft.blueprint.slots:
             if slot.key not in draft.slots and slot.ask:
                 draft.waiting = slot.key
@@ -448,6 +516,286 @@ class AgentBuilder:
         if draft.blueprint.default_name and (draft.name_is_auto or "name" not in draft.slots):
             draft.slots["name"] = self._unique_name(_fill(draft.blueprint.default_name, draft.slots))
         yield from self._show_card()
+
+    # ------------------------------------------------ a setup talked through
+
+    def _start_conducted(self, conductor: Conductor, request: str) -> Iterator[Event]:
+        """The first turn of a setup a model talks through. What code can read for sure in
+        the request is filled in first (course codes, "from Downloads", "by name"); where
+        the folders go is left to the conversation, since any place word in the request
+        used to be taken for it."""
+        draft = self.draft
+        draft.conductor = conductor
+        draft.turns.append({"role": "user", "content": request})
+        sees = "" if conductor.here else " It sees what you type and your folders' names, never what's in your files."
+        yield Thinking(f"Setting up a helper is a conversation, so {conductor.name} talks it through with you.{sees}")
+        if conductor.waking():
+            yield Thinking(f"Loading {conductor.name} first, which takes a few seconds.")
+        self._prefill(request, skip=("into",))
+        if draft.blueprint.extra.get("watches") and (watched := watched_from(request)) and watched.is_dir():
+            self._set_folder(watched)
+        yield from self._next()
+
+    def _conduct(self) -> Iterator[Event]:
+        """One turn of a setup that is talked through: the conductor fills its form, code
+        checks each value and keeps the draft, and what the model says is shown, with the
+        card once nothing needed is missing. A value code refuses goes back to the model
+        once, with the reason and what would be right; refused twice, code says its own
+        plain line and the value is not listened to again unless the user brings it up.
+        Whatever the model says about where things stand, nothing is made here."""
+        draft = self.draft
+        conductor, bp = draft.conductor, draft.blueprint
+        if not draft.turns or draft.turns[-1]["role"] != "user":
+            # Nothing new was said (a click on a card that isn't up yet): the open question again.
+            last = next((turn["content"] for turn in reversed(draft.turns) if turn["role"] == "assistant"), "")
+            yield Question(draft.waiting or CONDUCT, last or "What should it do?")
+            return
+        first = sum(turn["role"] == "user" for turn in draft.turns) == 1
+        before = dict(draft.slots)
+        refused: list[Refused] = []
+        nudges: list[str] = []
+        stumbled = False  # code refused something in this turn, even if the model then put it right
+        try:
+            for _ in range(2):
+                turn = conductor.turn(bp, self._known(), self._facts(), draft.turns,
+                                      [refusal.told for refusal in refused] + nudges, first,
+                                      card_up=draft.card_slots is not None)
+                refused = self._take_form(turn.values)
+                stumbled = stumbled or bool(refused)
+                missing = self._missing()
+                labels = ", ".join(slot.label for slot in missing)
+                nudges = []
+                if missing and turn.status == NOTHING_MISSING:
+                    nudges.append(f"Still not known: {labels}. Don't say it is ready; ask for the first of them.")
+                elif missing and turn.status == STILL_ASKING and "?" not in turn.say:
+                    nudges.append(f"You asked nothing, and this is still not known: {labels}. Say what you said, "
+                                  "then ask for the first of them.")
+                if not refused and not nudges:
+                    break
+        except ConductorError as exc:
+            # It keeps talking whatever happens to the model: the plain questions take over.
+            yield Thinking(f"{conductor.name} couldn't carry on ({exc}), so I'll ask the plain questions instead.")
+            conductor.done()
+            draft.conductor = None
+            yield from self._next()
+            return
+        # Refused twice: said once, below, and after that the same value is passed over, or
+        # every later answer would be "I can't find a folder called College" again.
+        draft.ignored |= {(refusal.key, refusal.value) for refusal in refused}
+        if turn.status == CALLED_OFF:
+            conductor.done()
+            self.draft = None
+            yield from say(turn.say or "Okay, I won't create it.")
+            return
+        if turn.status == MOVED_ON:
+            # Their message was about something else: the engine handles it as any message.
+            conductor.done()
+            self.draft = None
+            self.handoff = draft.turns[-1]["content"]
+            yield from say("I'll leave the agent setup for now.")
+            return
+        learned = [f"{slot.label.lower()}: {self._shown(slot)}" for slot in bp.slots
+                   if slot.key in draft.slots and before.get(slot.key) != draft.slots[slot.key]]
+        if learned:
+            yield Thinking("Understood so far: " + "; ".join(learned) + ".")
+        missing = self._missing()
+        words, asks = turn.say, turn.asks
+        if refused or (missing and (nudges or not words)):
+            # Refused twice, or still no question: code's own plain words, so nothing wrong is said.
+            words = " ".join([refusal.said for refusal in refused] + ([missing[0].ask.strip()] if missing else []))
+            asks = missing[0].key if missing else asks
+        if not missing and not stumbled:
+            # Nothing needed is missing, so the card comes, whatever the model thinks of where
+            # things stand: let hold it back to ask once more, it asked about a setting that
+            # has a usual value. Its question still shows, above the card, to answer or not.
+            # Only a turn in which code refused something waits: asked for "my Scool folder",
+            # it said it couldn't find one, asked which folder to watch, and showed a card for
+            # Downloads under that, which it had only guessed.
+            self._settle_defaults()
+            words = words or f"Here is {draft.slots['name']}. Create it if it looks right."
+            draft.turns.append({"role": "assistant", "content": words})
+            yield from say(words)
+            if draft.card_slots != draft.slots:
+                draft.card_slots = dict(draft.slots)
+                yield from self._show_card()
+            # A plain yes typed now is a yes to the card on screen, unless Noir has just asked
+            # something: then the yes answers that, and the button is what creates.
+            draft.waiting = CONDUCT if "?" in words else CARD
+            return
+        words = words or "Could you say that another way?"
+        draft.turns.append({"role": "assistant", "content": words})
+        slot = bp.slot(asks) or (missing[0] if missing else None)
+        if "?" not in words:
+            draft.waiting = CONDUCT
+            yield from say(words)  # an answer to their question, with nothing asked back
+            return
+        draft.waiting = slot.key if slot else CONDUCT
+        yield Question(draft.waiting, words, slot.choices if slot else None)
+
+    def _missing(self) -> list[Slot]:
+        """The settings the agent can't be made without that aren't known yet."""
+        return [slot for slot in self.draft.blueprint.slots if needed(slot) and slot.key not in self.draft.slots]
+
+    def _settle_defaults(self) -> None:
+        """Nothing needed is missing: the rest take their usual values, and it gets its name."""
+        draft = self.draft
+        for slot in draft.blueprint.slots:
+            if slot.key not in draft.slots and slot.default:
+                draft.slots[slot.key] = slot.default
+        if draft.blueprint.default_name and (draft.name_is_auto or "name" not in draft.slots):
+            draft.slots["name"] = self._unique_name(_fill(draft.blueprint.default_name, draft.slots))
+
+    def _take_form(self, values: dict) -> list[Refused]:
+        """What the conductor's form says, checked and put into the draft. Returns what
+        code refused, each with a line for the model and a line for the user. An empty
+        value never erases one that is known, and a value refused in an earlier turn is
+        passed over unless the user's last message names it again."""
+        draft, refused = self.draft, []
+        last = next((turn["content"] for turn in reversed(draft.turns) if turn["role"] == "user"), "").lower()
+        for slot in draft.blueprint.slots:
+            raw = values.get(slot.key)
+            given = json.dumps(raw, sort_keys=True, ensure_ascii=False)
+            if (slot.key, given) in draft.ignored and not any(word in last for word in _words_in(raw)):
+                continue
+            if slot.type == "folder":
+                problem = self._form_folder(slot, raw)
+            elif slot.key in PLACE_SLOTS:
+                problem = self._form_place(slot, raw)
+            elif slot.type == "choice":
+                if raw in (slot.choices or []):
+                    draft.slots[slot.key] = raw
+                continue
+            else:
+                problem = self._form_text(slot, raw)
+            if problem:
+                refused.append(Refused(slot.key, given, *problem))
+        return refused
+
+    def _form_folder(self, slot: Slot, raw) -> tuple[str, str] | None:
+        """A folder that must exist (the one to watch), from the form's place and name.
+        None when it is taken or nothing was given; else why not, for the model and for
+        the user. A setting that was known stays as it was."""
+        draft = self.draft
+        place, name = _place_and_name(raw)
+        if name.lower() in (known.lower() for known in PLACE_NAMES):
+            place, name = name.capitalize(), ""  # "downloads" written as a name is the place
+        if not place and not name:
+            return None
+        # A place alone is where Windows says it is; a name is looked for, in that place if one was said.
+        found = find_folders(name, place or None) if name else place_dirs(place)[:1]
+        if name and place and not found:
+            # The place is often the model's guess ("Scool" was looked for in Documents, which
+            # nobody said): look everywhere before refusing, and refuse without naming it.
+            place, found = "", find_folders(name, None)
+        kept = f", so that stays as it was ({slot.label}: {self._shown(slot)})" if slot.key in draft.slots else ""
+        if not found:
+            # The model is told only that, and to ask. Told as well that a folder which doesn't
+            # exist might be where the sorted folders should go, it made a mistyped folder
+            # ("my Scool folder") into a new place for them, which nobody had asked for.
+            return (f'There is no folder called "{name or place}" on this computer, and `{slot.key}` must be a folder '
+                    "that exists. Tell them you can't find it and ask which folder they mean; don't put that name "
+                    "in any other setting.",
+                    f'I can\'t find a folder called "{name or place}"{kept}.')
+        if len(found) > 1:
+            which = ", ".join(short_place(path) for path in found[:4])
+            return (f'There is more than one folder called "{name}": {which}. Ask which one they mean.',
+                    f'I found more than one folder called "{name}": {which}. Which one do you mean?')
+        if str(found[0]) == draft.slots.get(slot.key):
+            return None
+        problem = self._set_folder(found[0])
+        return (problem, problem) if problem else None
+
+    def _set_folder(self, folder: Path) -> str:
+        """Take the folder to watch, or say why not. The same folder as where the sorted
+        folders go only means they go inside it."""
+        draft = self.draft
+        if is_blocked(folder):
+            return SYSTEM_FOLDER
+        if draft.slots.get("into") and Path(draft.slots["into"]) == folder:
+            draft.slots["into"] = ""
+        draft.slots["folder"] = str(folder)
+        return ""
+
+    def _form_place(self, slot: Slot, raw) -> tuple[str, str] | None:
+        """Where new folders go, from the form's place and name: inside the watched folder
+        (kept as ""), a place this computer has, a new folder there, or a path they typed."""
+        draft = self.draft
+        place, name = _place_and_name(raw)
+        if not place and not name:
+            return None
+        watched = draft.slots.get("folder")
+        if A_PATH.match(name):
+            value = str(Path(name).expanduser())
+        elif place == INSIDE:
+            value = str(Path(watched) / folder_name(name)) if name and watched else ""
+        elif place in PLACE_NAMES:
+            base = known_folder(place)
+            value = str(base / folder_name(name)) if folder_name(name) else str(base)
+        else:
+            places = ", ".join(PLACE_NAMES)
+            return (f'A new folder needs a place: ask where the "{name}" folder should be made ({places}, or inside '
+                    "the folder it watches).",
+                    f'Where should the "{name}" folder go: {places}, or inside the folder it watches?')
+        if value and is_blocked(Path(value)):
+            return SYSTEM_FOLDER, SYSTEM_FOLDER
+        if value and watched and Path(value) == Path(watched):
+            value = ""
+        draft.slots[slot.key] = value
+        return None
+
+    def _form_text(self, slot: Slot, raw) -> tuple[str, str] | None:
+        """A setting in words, read the way a typed answer to its question is (`_plain`)."""
+        draft = self.draft
+        text = raw.strip() if isinstance(raw, str) else ""
+        if not text:
+            return None
+        if slot.key == "name":
+            name = text.strip("\"'")[:40]
+            told = " ".join(turn["content"] for turn in draft.turns if turn["role"] == "user").lower()
+            if name == draft.slots.get("name") or name.lower() not in told or not NAMES_IT.search(told):
+                # Only a name they gave it themselves: a model likes to make one up, and
+                # "can you call the folder School" once named the agent School.
+                return None
+            if store.name_taken(name) and name.lower() != (draft.replaces or "").lower():
+                return (f"They already have a helper called {name}, so this one needs another name: ask for one.",
+                        f"You already have a helper called {name}, so this one needs another name.")
+            draft.slots["name"], draft.name_is_auto = name, False
+            return None
+        value = self._plain(slot.key, text)
+        if slot.key == "groups" and (codes := courses_in(value)) and codes.count(",") == value.count(","):
+            value = codes  # "phys 122, cse 163" are course codes: PHYS122, CSE163, as when typed in the request
+        draft.slots[slot.key] = value
+        return None
+
+    def _shown(self, slot: Slot) -> str:
+        """A setting as the conductor reads it: places by name, never the whole path."""
+        draft = self.draft
+        if slot.key not in draft.slots:
+            return f"{NOT_KNOWN} (usually: {slot.default})" if slot.default else NOT_KNOWN
+        value = draft.slots[slot.key]
+        if value == "":
+            return slot.choices[0] if slot.choices else INSIDE
+        if slot.type == "folder" or slot.key in PLACE_SLOTS:
+            return short_place(Path(value))
+        return str(value)
+
+    def _known(self) -> list[tuple[str, str]]:
+        return [(slot.label, self._shown(slot)) for slot in self.draft.blueprint.slots]
+
+    def _facts(self) -> list[str]:
+        """What code can see that the conductor may use instead of asking: the places this
+        computer has, how many files of which kinds are in the folder (never their names:
+        the conductor may be a model off this computer), and the agents already made."""
+        draft = self.draft
+        facts = [f"The places it has by name: {', '.join(PLACE_NAMES)}."]
+        folders = [known_folder("Downloads")] if draft.blueprint.extra.get("watches") else []
+        if draft.slots.get("folder"):
+            folders.append(Path(draft.slots["folder"]))
+        facts += [files_in(folder) for folder in dict.fromkeys(folders) if folder.is_dir()]
+        have = [f"{agent.name} ({self.blueprints[agent.blueprint].name if agent.blueprint in self.blueprints else agent.blueprint})"
+                for agent in store.list_agents()]
+        facts.append("Helpers they already have: " + (", ".join(have) if have else "none") + ".")
+        return facts
 
     def _same_agent(self) -> store.Agent | None:
         """For a switch-on agent: one of the same kind and language already made."""
@@ -571,10 +919,12 @@ class AgentBuilder:
             actions=[SAVE_CHANGES if draft.editing else CREATE_IT, "Change something", "Cancel"],
         )
 
-    def _prefill(self, request: str) -> None:
+    def _prefill(self, request: str, skip: tuple[str, ...] = ()) -> None:
         """Fill in what the first message already says, so it is not asked again."""
         draft = self.draft
         for slot in draft.blueprint.slots:
+            if slot.key in skip:
+                continue
             if slot.key == "into" and draft.blueprint.id == ORGANIZER:
                 if (into := destination_from(request)) is not None:
                     draft.slots["into"] = into
@@ -683,8 +1033,15 @@ class AgentBuilder:
         if draft.blueprint.extra.get("watches"):
             store.save(agent)
             self.created = agent
+            self.conducted = draft.conductor is not None
             self.draft = None
-            yield from self._say(f"{agent.name} is ready.", [agent.name])
+            if self.conducted:
+                # Said as written: reworded by the small model, "is ready" once became
+                # "waiting for you to start sorting things", which it doesn't do.
+                draft.conductor.done()
+                yield from say(f"{agent.name} is ready.")
+            else:
+                yield from self._say(f"{agent.name} is ready.", [agent.name])
             yield AgentList([a.name for a in store.list_agents()])
             return
         try:
@@ -754,6 +1111,8 @@ class AgentBuilder:
 
     def _cancel(self) -> Iterator[Event]:
         editing, name = self.draft.editing, self.draft.replaces
+        if self.draft.conductor is not None:
+            self.draft.conductor.done()
         self.draft = None
         yield from say(f"Okay, I left {name} as it was." if editing else "Okay, I won't create it.")
 
@@ -835,6 +1194,52 @@ def custom_card(slots: dict, cannot_do: list[str]) -> tuple[list[str], list[str]
         can_do = [f"Does: {slots.get('instruction', '')}", "Answers in the chat"]
         cannot_do = list(cannot_do)
     return reads, can_do, cannot_do
+
+
+def _place_and_name(raw) -> tuple[str, str]:
+    """The place and the name in a form's folder field, whatever the model put there."""
+    if not isinstance(raw, dict):
+        return "", ""
+    place, name = raw.get("place"), raw.get("name")
+    return (place if isinstance(place, str) else ""), (name.strip().strip("\"'") if isinstance(name, str) else "")
+
+
+def _words_in(raw) -> list[str]:
+    """The words of a form's value that a message could name: a folder's name, or the text."""
+    text = raw.get("name") if isinstance(raw, dict) else raw
+    return re.findall(r"[^\W_]{3,}", text.lower()) if isinstance(text, str) else []
+
+
+def short_place(path: Path) -> str:
+    """A folder the way people say it: "Downloads", "Desktop\\College". The conductor reads
+    and says places like this, so a whole path with the user's name in it never goes to a
+    model off this computer; a folder outside those places is shown as it is."""
+    for place in PLACE_NAMES:
+        base = known_folder(place)
+        if path == base:
+            return place
+        if base in path.parents:
+            return str(Path(place) / path.relative_to(base))
+    return str(path)
+
+
+def files_in(folder: Path) -> str:
+    """One line on what a folder holds right now: how many files, and of which endings."""
+    kinds: Counter = Counter()
+    try:
+        with os.scandir(folder) as entries:
+            for number, entry in enumerate(entries):
+                if number >= MAX_COUNTED:
+                    break
+                if entry.is_file() and not entry.name.startswith(".") and entry.name.lower() != "desktop.ini":
+                    kinds[Path(entry.name).suffix.lower() or "no ending"] += 1
+    except OSError:
+        return f"{short_place(folder)} couldn't be looked into."
+    total = sum(kinds.values())
+    if not total:
+        return f"{short_place(folder)} has no files in it right now."
+    most = ", ".join(f"{count} {kind}" for kind, count in kinds.most_common(6))
+    return f"{short_place(folder)} has {total} file{'' if total == 1 else 's'} in it right now ({most})."
 
 
 def _fill(template: str, slots: dict) -> str:

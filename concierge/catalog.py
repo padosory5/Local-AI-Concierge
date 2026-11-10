@@ -72,6 +72,13 @@ def load_helpers(path: Path = CATALOG_PATH) -> list[HelperModel]:
     return [HelperModel(**entry) for entry in data.get("helpers", [])]
 
 
+def load_conductors(path: Path = CATALOG_PATH) -> list[ModelEntry]:
+    """The local models that may talk an agent's setup through, best first: only ones that
+    passed `python -m concierge.conductor_eval`."""
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return [ModelEntry(**entry) for entry in data.get("conductors", [])]
+
+
 def helper_room(report: HardwareReport, noir_gb: float) -> tuple[float, bool]:
     """(GB a helper model may use next to Noir, whether it runs on the processor).
 

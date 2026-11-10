@@ -22,6 +22,20 @@ blocks: [new_file, folder_files, summarize, save_file]
 switchable: true
 watches: true
 default_name: Summary writer
+# How it works, for the model that talks the setup through (agents/conductor.py). Each
+# line has to stay true to concierge/organizer.py.
+facts:
+  - >-
+    It only sums up documents that land in the watched folder after it is switched on.
+    Right after it is created, the person is asked with two buttons whether to sum up
+    the ones already there too.
+  - >-
+    It reads the first pages of each new document on this computer, with the small
+    built-in model, and writes a few lines about it into one notes file. Nothing leaves
+    the computer.
+  - It never moves, changes or deletes the documents it reads.
+  - Each summary shows in the chores list.
+  - It works while the Noir app is open, minimized or not.
 slots:
   folder:
     label: Watches
