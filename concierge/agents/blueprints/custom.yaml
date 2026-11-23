@@ -1,12 +1,14 @@
-# The one template every agent Noir makes from parts shares. It is not a
-# kind of agent: the idea planner decides which parts an idea needs, Noir
-# writes the instruction (what to do with the text), and these slots hold the
-# result so every such agent is shown, changed and run the same way
-# (agents/recipe.py, quick/agents.py). A translator, a word explainer and a
-# grammar fixer are all this template with a different instruction.
+# The one template every card is saved under. It is not a kind of agent: an agent is a
+# card (when it works, what it looks at, the rule, what it does then), worked out in a
+# conversation, and everything a card can be made of is in agents/parts.py, with what
+# each part is shown and run as.
 #
-#   generic   true: never offered by the router as a kind of agent; only
-#             used when an idea's parts are all among `blocks`.
+# What is here is only what the plain way needs, on a computer where no model can hold
+# that conversation (agents/builder.py): the settings of a card that works on text, to
+# show and change one by one, and the building blocks (capabilities.yaml) a card can be
+# made of, so the idea planner knows an idea made only of these can be made.
+#
+#   generic   true: never offered by the router as a kind of agent.
 
 id: custom
 name: Made from parts
@@ -14,8 +16,8 @@ generic: true
 pitch: ""
 when: ""
 examples: []
-blocks: [on_request, while_on, selected_text, translate, rewrite, summarize, extract, classify,
-         show_popup, copy_clipboard]
+blocks: [on_request, while_on, selected_text, new_file, folder_files, translate, rewrite, summarize, extract, classify,
+         move_files, show_popup, copy_clipboard, save_file]
 slots:
   instruction:
     label: What it does
@@ -48,8 +50,3 @@ slots:
     type: text
     ask: null
     changeable: true
-can_do: []  # written in code from the slots, see AgentBuilder._show_card
-cannot_do:
-  - Change your files or the text you highlight
-  - Send anything over the internet
-can_change_files: false

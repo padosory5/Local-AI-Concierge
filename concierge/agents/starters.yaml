@@ -4,20 +4,30 @@
 # agent made from parts (blueprints/custom.yaml) that the user can change by
 # talking, like any other.
 #
-#   words   what a message may call it, in lower case
+#   words      what a message may call it, in lower case
+#   about      what the Agents page says of it, in one line
+#   category   where the Agents page lists it (one of community.CATEGORIES)
+#   skip_language   only for one that works while switched on, and only when wanted:
+#                   text that is already in this language is left out (agents/parts.py)
 
 starters:
   - name: Highlight Explainer
     words: [highlight explainer, explainer]
     instruction: Explain this text in simple, everyday words, in two or three short sentences.
     when: While it's switched on
+    about: Explains what you highlight, in simple words.
+    category: Study
 
   - name: Grammar Fixer
     words: [grammar fixer, grammar checker]
     instruction: Rewrite the text with correct grammar and spelling, so it sounds natural. Keep its meaning and tone.
     when: When you ask in the chat
+    about: Fixes the grammar and spelling of your text.
+    category: Writing
 
   - name: Quick Summarizer
     words: [quick summarizer, summarizer]
     instruction: Summarize the text in three short bullet points.
     when: When you ask in the chat
+    about: Sums up any text in three short points.
+    category: Everyday

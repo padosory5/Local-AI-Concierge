@@ -3,7 +3,12 @@
 The mouse watcher and the bubble only exist while at least one agent is on,
 so nothing listens to the mouse while every agent is off. Highlights are
 handled one at a time on a worker thread; when the user highlights again
-before a translation is done, the older result is dropped.
+before a result is ready, the older result is dropped.
+
+What an agent does with a highlight is its rule, and nothing here reads a rule
+to find out what kind of agent it is. The one thing a card can say about which
+highlights it works on is a setting (`skip_language`, agents/parts.py): text
+that is already in that language is passed over.
 """
 
 from __future__ import annotations
@@ -16,13 +21,17 @@ from collections.abc import Callable
 from ..agents.store import Agent
 from ..noir import KEEP_ALIVE
 from ..ollama import Ollama, OllamaError
-from .translate import looks_like
 
 BUBBLE, CLIPBOARD, BOTH = "A bubble above the text", "Copy it to the clipboard", "Both"
 UNTIL_UNHIGHLIGHT, FEW_SECONDS = "Until you unhighlight the text", "A few seconds"
 # While a bubble waits for its highlight to go away: how often to look, and
 # for how long at most.
 CHECK_SECONDS, CHECK_FOR_SECONDS = 0.4, 600
+# What came of the last highlight an agent was given, kept for when the user says it
+# isn't working (engine._diagnose): its result was shown or copied, the text was passed
+# over because the card leaves that language out, or the model couldn't be reached.
+# (Or it gave nothing back, and so nothing was shown.)
+ANSWERED, LEFT_OUT, NO_MODEL, NOTHING_BACK = "answered", "left out", "no model", "nothing back"
 
 
 class QuickAgents:
@@ -36,6 +45,9 @@ class QuickAgents:
         self.model = model
         self.think = think
         self.active: dict[str, Agent] = {}
+        # By agent name: ANSWERED, LEFT_OUT, NO_MODEL or NOTHING_BACK. No entry: no highlight
+        # has reached it since it was switched on.
+        self.last: dict[str, str] = {}
         self._make_watcher = make_watcher or _real_watcher
         self._make_bubble = make_bubble or _real_bubble
         self._set_clipboard = set_clipboard or _real_set_clipboard
@@ -53,6 +65,7 @@ class QuickAgents:
         return name in self.active
 
     def switch(self, agent: Agent, on: bool) -> None:
+        self.last.pop(agent.name, None)  # what came of a highlight before this switch says nothing of now
         if on:
             self.active[agent.name] = agent
             self._start()
@@ -65,6 +78,7 @@ class QuickAgents:
 
     def stop(self) -> None:
         self.active.clear()
+        self.last.clear()
         self._stop()
 
     def refresh(self, agents: list[Agent]) -> None:
@@ -72,9 +86,12 @@ class QuickAgents:
         by_name = {a.name: a for a in agents}
         for name in list(self.active):
             if name in by_name:
+                if by_name[name].slots != self.active[name].slots:
+                    self.last.pop(name, None)  # what came of a highlight under other settings says nothing of these
                 self.active[name] = by_name[name]
             else:
                 self.active.pop(name)
+                self.last.pop(name, None)
         if not self.active:
             self._stop()
 
@@ -101,7 +118,7 @@ class QuickAgents:
         try:
             self.ollama.refresh(self.model, KEEP_ALIVE)
         except Exception:
-            pass  # the first translation will load it instead
+            pass  # the first highlight will load it instead
 
     # ------------------------------------------------------------- running
 
@@ -125,25 +142,33 @@ class QuickAgents:
 
     def handle(self, agent: Agent, serial: int, text: str, rect) -> None:
         """Apply the agent's instruction to a highlight and show the result."""
-        from ..agents.recipe import run_instruction, target_language  # agents imports quick
+        from ..agents.parts import leaves_out  # agents imports quick
+        from ..agents.recipe import run_instruction
 
         instruction = agent.slots.get("instruction", "")
         show = agent.slots.get("show", BUBBLE)
-        language = target_language(instruction)
-        if language and looks_like(text, language):
-            return  # a translator, and the text is already in that language
+        if leaves_out(agent.slots, text):
+            self.last[agent.name] = LEFT_OUT
+            return  # its card says text that is already in that language is left alone
         bubble = self._bubble
         if bubble and show in (BUBBLE, BOTH):
-            bubble.show("Translating..." if language else "Working on it...", rect, agent.name, seconds=30)
+            bubble.show("Working on it...", rect, agent.name, seconds=30)
+        reached = True
         try:
             result = run_instruction(self.ollama, self.model, instruction, text, self.think)
         except OllamaError:
-            result = "I couldn't do that: Ollama isn't running."
-        if serial != self._serial or not result:
+            reached, result = False, "I couldn't do that: Ollama isn't running."
+        if serial != self._serial:
             return  # the user has highlighted something newer since
-        from .. import activity
+        self.last[agent.name] = NO_MODEL if not reached else ANSWERED if result else NOTHING_BACK
+        if not result:
+            return
+        if reached:
+            from .. import activity
 
-        activity.record(activity.TRANSLATED if language else activity.EXPLAINED)
+            # What the job was is the rule's to say, and no code reads a rule for that: it
+            # counts as a job done by one of the user's agents.
+            activity.record(activity.HELPED)
         if show in (CLIPBOARD, BOTH):
             self._set_clipboard(result)
         if bubble and show in (BUBBLE, BOTH):

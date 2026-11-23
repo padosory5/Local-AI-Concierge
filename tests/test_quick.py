@@ -4,10 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from concierge import activity
 from concierge.agents import store
 from concierge.agents.recipe import CUSTOM, WHILE_ON
+from concierge.ollama import OllamaError
 from concierge.quick import agents as quick_agents
-from concierge.quick.agents import BOTH, BUBBLE, CLIPBOARD, FEW_SECONDS, UNTIL_UNHIGHLIGHT, QuickAgents
+from concierge.quick.agents import (ANSWERED, BOTH, BUBBLE, CLIPBOARD, FEW_SECONDS, LEFT_OUT, NO_MODEL, NOTHING_BACK,
+                                    UNTIL_UNHIGHLIGHT, QuickAgents)
 from concierge.quick.selection import SelectionWatcher
 from concierge.quick.translate import language_in, looks_like
 
@@ -107,8 +110,10 @@ def quick():
 
 
 def agent(show=BUBBLE, instruction="Translate the text into Korean.", name="Korean translator",
-          keep=UNTIL_UNHIGHLIGHT):
-    return store.Agent(name, CUSTOM, {"instruction": instruction, "when": WHILE_ON, "show": show, "keep": keep})
+          keep=UNTIL_UNHIGHLIGHT, skip="Korean"):
+    """A card that works on highlights, as it is saved. `skip`: the language it leaves out."""
+    return store.Agent(name, CUSTOM, {"instruction": instruction, "when": WHILE_ON, "show": show, "keep": keep,
+                                      "skip_language": skip})
 
 
 def test_nothing_listens_until_an_agent_is_switched_on():
@@ -125,12 +130,14 @@ def test_highlight_runs_the_agents_instruction():
     q.switch(agent(), True)
     q._serial = 1
     q.handle(agent(), 1, "Good morning", (0, 100, 50, 120))
-    assert made.bubbles[0].shown == ["Translating...", "[Korean] Good morning"]
+    assert made.bubbles[0].shown == ["Working on it...", "[Korean] Good morning"]
     assert made.clipboard == []
 
 
 def test_any_instruction_works_the_same_way():
-    explainer = agent(instruction="Explain this English word in simple Korean.", name="Word explainer")
+    # Whatever the rule says, the same words show while it works: no rule is read to find
+    # out what kind of helper this is.
+    explainer = agent(instruction="Explain this English word in simple Korean.", name="Word explainer", skip="")
     q, made = quick()
     q.switch(explainer, True)
     q._serial = 1
@@ -149,11 +156,74 @@ def test_clipboard_and_both():
     assert made.clipboard[-1] == "[Korean] Thank you" and made.bubbles[0].shown[-1] == "[Korean] Thank you"
 
 
-def test_text_already_in_the_target_language_is_left_alone():
+def test_text_already_in_the_language_a_card_leaves_out_is_left_alone():
     q, made = quick()
     q.switch(agent(), True)
     q.handle(agent(), q._serial, "안녕하세요 반가워요", (0, 0, 0, 0))
     assert made.bubbles[0].shown == [] and q.ollama.asked == []
+    # It is the card's setting that says so, for any card: one whose rule has nothing to do
+    # with languages leaves the same text out when it is set to.
+    counter = agent(instruction="Count the words.", name="Counter", skip="Korean")
+    q.handle(counter, q._serial, "안녕하세요 반가워요", (0, 0, 0, 0))
+    assert made.bubbles[0].shown == [] and q.ollama.asked == []
+    q.handle(counter, q._serial, "Good morning", (0, 0, 0, 0))
+    assert made.bubbles[0].shown == ["Working on it...", "[Count the wo] Good morning"]
+
+
+def test_what_the_rule_says_never_decides_which_text_is_left_out():
+    """Text already in Korean used to be passed over because the rule said "translate ...
+    into Korean". Now only the setting counts: with none set, every highlight is worked on."""
+    says_so = agent(skip="")
+    q, made = quick()
+    q.switch(says_so, True)
+    q.handle(says_so, q._serial, "안녕하세요 반가워요", (0, 0, 0, 0))
+    assert made.bubbles[0].shown == ["Working on it...", "[Korean] 안녕하세요 반가워요"]
+    older = store.Agent("Older", CUSTOM, {"instruction": "Translate the text into Korean."})  # no setting saved at all
+    q.handle(older, q._serial, "안녕하세요", (0, 0, 0, 0))
+    assert made.bubbles[0].shown[-1] == "[Korean] 안녕하세요"
+    q.handle(agent(skip="Spanish"), q._serial, "Buenos días a todos", (0, 0, 0, 0))  # no language code can tell: worked on
+    assert made.bubbles[0].shown[-1] == "[Korean] Buenos días a todos"
+
+
+def test_a_job_done_counts_as_one_of_the_users_agents_whatever_its_rule(monkeypatch):
+    counted = []
+    monkeypatch.setattr(activity, "record", lambda kind, count=1: counted.append(kind))
+    q, made = quick()
+    q.switch(agent(), True)
+    q.handle(agent(), q._serial, "Good morning", (0, 0, 0, 0))
+    q.handle(agent(instruction="Explain it.", name="Explainer", skip=""), q._serial, "serendipity", (0, 0, 0, 0))
+    q.handle(agent(), q._serial, "안녕하세요", (0, 0, 0, 0))  # left out: no job was done
+    assert counted == [activity.HELPED, activity.HELPED]
+
+
+def test_what_came_of_the_last_highlight_is_kept_for_when_it_seems_not_to_work():
+    q, made = quick()
+    korean = agent()
+    q.switch(korean, True)
+    assert "Korean translator" not in q.last  # nothing has reached it since it was switched on
+    q.handle(korean, q._serial, "Good morning", (0, 0, 0, 0))
+    assert q.last["Korean translator"] == ANSWERED
+    q.handle(korean, q._serial, "안녕하세요", (0, 0, 0, 0))
+    assert q.last["Korean translator"] == LEFT_OUT
+
+    def unreachable(*args, **kwargs):
+        raise OllamaError("no Ollama")
+
+    answers = q.ollama.chat
+    q.ollama.chat = unreachable
+    q.handle(korean, q._serial, "Good morning", (0, 0, 0, 0))
+    assert q.last["Korean translator"] == NO_MODEL and made.bubbles[0].shown[-1].startswith("I couldn't do that")
+    q.ollama.chat = lambda *args, **kwargs: iter(["  "])
+    q.handle(korean, q._serial, "Good morning", (0, 0, 0, 0))
+    assert q.last["Korean translator"] == NOTHING_BACK
+    q.ollama.chat = answers
+    q._serial += 1  # a newer highlight came while this one was worked on: its result is dropped, and nothing is noted
+    q.handle(korean, q._serial - 1, "Good morning", (0, 0, 0, 0))
+    assert q.last["Korean translator"] == NOTHING_BACK
+    # Switched off and on again, what came of an earlier highlight says nothing of now.
+    q.switch(korean, False)
+    q.switch(korean, True)
+    assert q.last == {}
 
 
 def test_an_older_highlight_is_dropped_when_a_newer_one_came():
@@ -161,7 +231,7 @@ def test_an_older_highlight_is_dropped_when_a_newer_one_came():
     q.switch(agent(), True)
     q._serial = 2  # the user highlighted again while this one was being worked on
     q.handle(agent(), 1, "Good morning", (0, 0, 0, 0))
-    assert made.bubbles[0].shown == ["Translating..."]
+    assert made.bubbles[0].shown == ["Working on it..."]
 
 
 def test_worker_thread_handles_highlights():

@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 import requests
 
-from concierge.agents import community, store
+from concierge.agents import community, parts, starters, store
 from concierge.agents.community import PostError, Recipe, clean, install, post_address, recipes
 from concierge.agents.recipe import CUSTOM, IN_CHAT, MAX_INSTRUCTION, MECHANICS, WHILE_ON
 from concierge.engine import NoirEngine
@@ -48,6 +48,9 @@ def test_every_agent_that_ships_with_the_app_is_good():
     for recipe in made:
         assert recipe.category in community.CATEGORIES
         assert not MECHANICS.search(recipe.instruction)  # the job only, never when or where
+    # What a recipe leaves out is said by the recipe, as data: nothing works it out from its rule.
+    leaving = {recipe.name: recipe.skip_language for recipe in made if recipe.skip_language}
+    assert leaving == {"Korean Translator": "Korean", "English Translator": "English"}
 
 
 def test_a_good_entry_is_kept():
@@ -61,6 +64,59 @@ def test_a_good_entry_is_kept():
 ])
 def test_an_entry_that_isnt_right_is_dropped(change):
     assert clean({**GOOD, **change}) is None
+
+
+def test_the_language_a_recipe_leaves_out_is_kept_and_one_the_app_cant_tell_is_refused():
+    highlight = {**GOOD, "when": WHILE_ON}
+    assert clean(highlight).skip_language == ""  # none said: none
+    assert clean({**highlight, "skip_language": ""}).skip_language == ""
+    for language in parts.WHENS[WHILE_ON].settings[0].choices:
+        assert clean({**highlight, "skip_language": language}).skip_language == language
+    # A value that is no language the app can tell a text is in: refused, like any setting it doesn't know.
+    for wrong in ("Klingon", "Spanish", "korean", "Korean, English", 7, ["Korean"], {"language": "Korean"}):
+        assert clean({**highlight, "skip_language": wrong}) is None, wrong
+    # It is a setting of a recipe that works on highlights only: asked in the chat, nothing is highlighted.
+    assert clean({**GOOD, "skip_language": "Korean"}).skip_language == ""
+    assert clean({**GOOD, "skip_language": "Klingon"}) is None
+
+
+def test_adding_carries_what_a_recipe_leaves_out():
+    install(clean({**GOOD, "name": "Leaver", "when": WHILE_ON, "skip_language": "Korean"}))
+    assert store.find_agent("Leaver").slots["skip_language"] == "Korean"
+    install(clean({**GOOD, "name": "Plain", "when": WHILE_ON}))
+    assert store.find_agent("Plain").slots["skip_language"] == ""  # written down: it leaves nothing out
+    install(clean({**GOOD, "name": "Asked", "skip_language": "Korean"}))
+    assert "skip_language" not in store.find_agent("Asked").slots
+    # The two that ship with the app come out as cards that say it, with nothing read from their rules.
+    for name, language in (("Korean Translator", "Korean"), ("English Translator", "English")):
+        saved = install(community.find(store.slugify(name), online=False))
+        assert saved.slots["skip_language"] == language
+        assert f"Leaves out text that is already in {language}" in parts.card(saved.slots, "")[2]
+
+
+def test_what_the_agents_page_says_of_a_ready_made_agent_is_data_beside_its_recipe():
+    assert not hasattr(community, "STARTER_DETAILS")
+    for starter in starters.load_starters():
+        assert starter.about and starter.category in community.CATEGORIES, starter.name
+        assert starter.skip_language in ("", *parts.WHENS[WHILE_ON].settings[0].choices)
+    ready = {recipe.name: recipe for recipe in recipes(online=False) if recipe.source == community.READY_MADE}
+    explainer = ready["Highlight Explainer"]
+    assert (explainer.about, explainer.category) == ("Explains what you highlight, in simple words.", "Study")
+    assert (ready["Grammar Fixer"].category, ready["Quick Summarizer"].category) == ("Writing", "Everyday")
+    assert all(recipe.about != recipe.instruction for recipe in ready.values())
+
+
+def test_a_ready_made_agent_without_those_lines_still_shows(monkeypatch):
+    bare = starters.Starter("Bare one", ("bare one",), "Say it in fewer words.", WHILE_ON)
+    leaves = starters.Starter("Leaver", ("leaver",), "Say it in fewer words.", WHILE_ON, "Shortens.", "Nowhere", "Korean")
+    monkeypatch.setattr(community, "load_starters", lambda: (bare, leaves))
+    first, second = community._starters()
+    assert (first.about, first.category, first.skip_language) == ("Say it in fewer words.", community.OTHER_CATEGORY, "")
+    assert (second.about, second.category, second.skip_language) == ("Shortens.", community.OTHER_CATEGORY, "Korean")
+    assert starters.install(leaves).slots["skip_language"] == "Korean"
+    assert starters.install(bare).slots["skip_language"] == ""
+    chat = starters.install(starters.Starter("Chat one", ("chat one",), "Say it in fewer words.", IN_CHAT))
+    assert "skip_language" not in chat.slots
 
 
 def test_something_that_isnt_an_entry_is_dropped():
@@ -140,6 +196,12 @@ def test_posting_fills_in_a_github_page():
     posted = json.loads(page["body"][0].split("```json")[1].split("```")[0])
     assert posted["instruction"] == "Write a poem." and posted["by"] == "Dana"
     assert clean(posted)  # what's posted can be read back
+    assert "skip_language" not in posted  # it leaves nothing out, so there is nothing to say
+    # One that leaves a language out says so in what is posted, and it reads back the same.
+    leaves = agent(when=WHILE_ON, skip_language="Korean")
+    page = parse_qs(urlsplit(post_address(leaves, "Writes poems.", "Writing")).query)
+    posted = json.loads(page["body"][0].split("```json")[1].split("```")[0])
+    assert posted["skip_language"] == "Korean" and clean(posted).skip_language == "Korean"
 
 
 def test_posting_shares_the_recipe_and_nothing_else():
@@ -153,6 +215,25 @@ def test_posting_shares_the_recipe_and_nothing_else():
 def test_an_agent_that_reads_folders_cant_be_posted():
     with pytest.raises(PostError, match="own files"):
         post_address(store.Agent("Files", "documents_qa", {"folder": "C:/Users/me"}), "Reads.", "Work")
+
+
+def test_an_agent_that_works_on_a_folder_cant_be_posted():
+    from concierge.agents import parts
+
+    watcher = store.Agent("Paper sorter", CUSTOM, {"when": parts.NEW_FILE, "then": parts.MOVE, "folder": "C:/Users/me/Downloads",
+                                                   "instruction": "Put letters in Letters.", "choices": "Letters"})
+    with pytest.raises(PostError, match="own files"):
+        post_address(watcher, "Sorts papers.", "Work")
+    # And nothing from outside is ever let near a folder: only the two WHENs that work on text are taken.
+    assert clean({**GOOD, "when": parts.NEW_FILE}) is None
+
+
+def test_a_rule_too_long_to_share_says_so():
+    # A rule worked out by talking can be twice as long as a shared one may be.
+    long = "Explain it. " * 40
+    assert community.MAX_INSTRUCTION < len(long.strip())
+    with pytest.raises(PostError, match="too long to share"):
+        post_address(agent(instruction=long), "Explains.", "Study")
 
 
 def test_a_post_needs_a_line_about_it():

@@ -1,16 +1,21 @@
-# A blueprint is a tested agent template. Noir never designs agents from
-# scratch: it picks a blueprint and fills in its slots with the user.
+# The one agent that is not saved as a card: it answers from a search of a folder's
+# documents (agents/runner.py), so it keeps the id it always had. With a model that can
+# talk an agent through it is made in that conversation like any other (the catalog's
+# "Answers from the documents in a folder", agents/parts.py). This file is what the plain
+# way needs, on a computer where no model can: the one question to ask, and what tells
+# the router and the idea planner that a request is for it.
 #
 #   id           Stable name, used in saved agents.
 #   name         What the user sees as the agent's kind.
 #   pitch        One sentence Noir says when it offers it.
-#   when         For the router: what kind of request this blueprint fits.
+#   when         For the router: what kind of request this fits.
 #   examples     Requests it fits, for the router and its tests.
-#   slots        What the interview fills in. `ask` is the question, or null
-#                when a default is used without asking. Only `changeable`
-#                slots appear under "Change something" on the card.
-#   can_do / cannot_do   Shown on the agent card exactly as written.
-#   can_change_files     false = read-only, no approval steps needed.
+#   blocks       The building blocks (capabilities.yaml) it is made of, so the idea
+#                planner can offer it when an idea needs only these.
+#   slots        What the plain questions fill in. `ask` is the question, or null when
+#                the value is worked out without asking. Only `changeable` slots appear
+#                under "Change something" on the card.
+# The card's own lines are written in code from the settings (parts.card).
 
 id: documents_qa
 name: Ask my documents
@@ -23,11 +28,9 @@ when: >-
 examples:
   - I want to ask questions about my contract PDFs
   - Can you search through my notes folder for me?
-  - make me something that reads my lecture slides and answers questions
+  - make me something that reads my manuals and answers questions
   - I keep forgetting what's in my lease, can you help me look things up in it
   - 내 문서 폴더에 있는 파일들에 대해 질문하고 싶어
-# The building blocks (capabilities.yaml) this agent is made of, so the idea
-# planner can offer it when an idea needs only these.
 blocks: [on_request, folder_files, ask_documents]
 slots:
   folder:
@@ -40,11 +43,3 @@ slots:
     type: text
     ask: null           # suggested from the folder's name
     changeable: true
-can_do:
-  - Find and quote passages from those files
-  - Answer questions about them, with the file each answer came from
-cannot_do:
-  - Change, move or delete files
-  - Read anything outside that folder
-  - Use the internet
-can_change_files: false

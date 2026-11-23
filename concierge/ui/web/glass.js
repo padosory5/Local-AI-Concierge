@@ -87,11 +87,18 @@ window.app = (() => {
     for (const option of options) {
       group.append(button("choice", option, () => {
         if (busy) return;
-        thread.querySelectorAll(".choice").forEach((b) => (b.disabled = true));
         talk(() => api.choose(id, option), option);
       }));
     }
     return group;
+  }
+
+  // Once anything else is said, here or in the full window, the buttons of earlier
+  // questions and cards stop working, as they do in the full window (app.js begin()).
+  // Left live, Create it on an earlier card made the newest one, which the engine knows
+  // as the card on screen.
+  function retireChoices() {
+    thread.querySelectorAll(".choice").forEach((b) => (b.disabled = true));
   }
 
   function beforeAnswer() {
@@ -144,7 +151,7 @@ window.app = (() => {
     },
 
     // The whole card, as in the full window: the drawer once showed only the name, so
-    // "File organizer" was all there was to judge it by.
+    // a name was all there was to judge a helper by before creating it.
     AgentCard(e) {
       beforeAnswer();
       const row = reply(el("div", "from", e.kind), el("div", "strong", e.name));
@@ -206,6 +213,7 @@ window.app = (() => {
   function mirror(change) {
     if (change.state === "start") {
       busy = true;
+      retireChoices();
       if (change.user) you(change.user);
       if (change.dots) showTyping();
       drawStatus();
@@ -217,6 +225,7 @@ window.app = (() => {
 
   async function talk(call, words) {
     busy = true;
+    retireChoices();
     setTalking(true);
     you(words);
     showTyping();

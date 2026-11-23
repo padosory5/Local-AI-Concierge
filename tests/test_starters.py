@@ -4,7 +4,7 @@ from concierge import noir
 from concierge.agents import store
 from concierge.agents.builder import AgentBuilder
 from concierge.agents.planner import IdeaPlanner
-from concierge.agents.recipe import CUSTOM, IN_CHAT, WHILE_ON, is_switchable
+from concierge.agents.parts import CUSTOM, IN_CHAT, WHILE_ON, is_switchable
 from concierge.agents.router import refers_to, wants_change
 from concierge.agents.starters import asks_for, load_starters
 from concierge.conversations import ChatBook
@@ -57,6 +57,8 @@ def last_list(events):
     ("Activate Highlight Explainer", "Highlight Explainer"),
     ("install Grammar Fixer", "Grammar Fixer"),
     ("add the summarizer", "Quick Summarizer"),
+    ("add a summarizer", "Quick Summarizer"),
+    ("can you turn on the explainer please", "Highlight Explainer"),
 ])
 def test_short_requests_name_a_starter(text, name):
     assert asks_for(text).name == name
@@ -66,6 +68,10 @@ def test_short_requests_name_a_starter(text, name):
     "what does an explainer video cost?",
     "uninstall Grammar Fixer",
     "please turn on the explainer because I would really like to use it today",
+    # What the helper should do is said: a helper to work out, not a ready-made one picked by a word.
+    "add a summarizer for my downloads folder",
+    "get me an explainer for error messages",
+    "start a summarizer that writes notes about new pdfs",
 ])
 def test_other_messages_do_not(text):
     assert asks_for(text) is None
@@ -75,7 +81,8 @@ def test_saying_turn_on_adds_it_and_switches_it_on(engine):
     events = list(engine.send("turn on the highlight explainer"))
     agent = store.find_agent("Highlight Explainer")
     assert agent.blueprint == CUSTOM and agent.slots["when"] == WHILE_ON
-    assert is_switchable(agent, engine.blueprints)
+    assert is_switchable(agent)
+    assert agent.slots["skip_language"] == ""  # the card says it leaves nothing out; no rule is read for that
     assert last_list(events).active == ["Highlight Explainer"]
     assert "is on" in said(events)
 
@@ -127,5 +134,5 @@ def test_the_fake_engine_adds_them_too():
     engine = FakeEngine(delay=0)
     events = list(engine.send("turn on the highlight explainer"))
     agents = last_list(events)
-    assert "Highlight Explainer" in agents.agents and agents.active == ["Highlight Explainer", "School files"]
+    assert "Highlight Explainer" in agents.agents and agents.active == ["Highlight Explainer", "Home papers"]
     assert "Grammar Fixer" not in last_list(engine.send("install Grammar Fixer")).switchable

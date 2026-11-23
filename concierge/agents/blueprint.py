@@ -1,8 +1,14 @@
-"""Load the blueprint library (blueprints/*.yaml)."""
+"""Load the blueprints (blueprints/*.yaml): the questions asked in the plain way.
+
+What an agent can be made of is the catalog's (parts.py), and an agent is worked out in
+a conversation (designer.py). A blueprint is only what is left for a computer where no
+model can hold that conversation: the settings the plain questions fill in, one by one
+(builder.py), and what tells the router and the idea planner that a request is for it.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 import yaml
@@ -14,10 +20,10 @@ BLUEPRINT_DIR = Path(__file__).with_name("blueprints")
 class Slot:
     key: str
     label: str
-    type: str  # "folder", "text", "language" or "choice"
+    type: str  # "folder", "text", "choice" or "instruction"
     ask: str | None
     changeable: bool = False
-    choices: list[str] | None = None  # buttons for "choice" and "language" slots
+    choices: list[str] | None = None  # buttons for a "choice" slot
     default: str | None = None  # used when the user does not say
 
 
@@ -29,21 +35,10 @@ class Blueprint:
     when: str
     examples: list[str]
     slots: list[Slot]
-    can_do: list[str]
-    cannot_do: list[str]
-    can_change_files: bool = False
-    # Switch-on agents are switched on in the sidebar instead of asked.
-    switchable: bool = False
     # The shared template for agents made from parts (custom.yaml): never
     # offered as a kind of agent of its own.
     generic: bool = False
     blocks: list[str] = field(default_factory=list)  # from capabilities.yaml
-    default_name: str = ""  # e.g. "{language} translator"
-    reads: str = ""  # the card's "Reads" line when there is no folder
-    # Words people use for this kind of agent ("translat", "bubble"), so a
-    # message about it can be recognised without its exact name.
-    words: list[str] = field(default_factory=list)
-    extra: dict = field(default_factory=dict)
 
     def slot(self, key: str) -> Slot | None:
         return next((s for s in self.slots if s.key == key), None)
@@ -51,10 +46,14 @@ class Blueprint:
 
 def load_blueprints(directory: Path = BLUEPRINT_DIR) -> dict[str, Blueprint]:
     blueprints = {}
+    known = {item.name for item in fields(Blueprint)}
     for path in sorted(directory.glob("*.yaml")):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or set(data) - known:
+            # One this version doesn't know, such as one an older version shipped and an
+            # install over it left behind: passed over, or the app would not start at all.
+            print(f"Left out the blueprint {path.name}: it is not one this version of Noir knows.")
+            continue
         slots = [Slot(key=key, **spec) for key, spec in data.pop("slots").items()]
-        known = {f for f in Blueprint.__dataclass_fields__ if f != "extra"}
-        extra = {k: data.pop(k) for k in list(data) if k not in known}
-        blueprints[data["id"]] = Blueprint(slots=slots, extra=extra, **data)
+        blueprints[data["id"]] = Blueprint(slots=slots, **data)
     return blueprints

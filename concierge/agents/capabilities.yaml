@@ -16,8 +16,8 @@
 #   status   ready        built and usable in the app today
 #            planned      possible, but not built yet
 #            unsupported  the app will not do this, see note
-#   Which agent types combine which blocks is said by each blueprint's
-#   `blocks` list (agents/blueprints/*.yaml).
+#   Which blocks an agent can be put together from is said by the `blocks`
+#   lists in agents/blueprints/*.yaml.
 #   note     Shown to the user when it matters.
 #
 # Build a block, then change its status to ready here. Saved ideas that use

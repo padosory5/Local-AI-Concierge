@@ -1,6 +1,10 @@
-"""Decide what a message is: chat with Noir, a request for a new agent, a
-job for an agent the user already has, or an idea for another kind of helper
-(which the idea planner talks through, see planner.py).
+"""Decide what a message is: chat with Noir, a request to make a helper, a job
+for an agent the user already has, or a change to one.
+
+The router only finds out that a helper is wanted. What the helper is, is
+worked out afterwards: in a conversation (designer.py), or, on a computer where
+no model can hold one, by the plain questions and the idea planner (builder.py,
+planner.py).
 
 The model answers in a forced JSON format whose fields only allow the
 blueprints and agents that really exist, so it cannot invent either. Code
@@ -13,16 +17,17 @@ import re
 from dataclasses import dataclass
 
 from ..ollama import Ollama
+from . import parts
 from .blueprint import Blueprint
 from .store import Agent
 
 IDEA_OPTION = "idea: another kind of helper"
 
-# "make the translation stay until I unhighlight", "change it to Japanese"
+# "make the result stay until I unhighlight", "change it to answer more briefly"
 WANTS_CHANGE = re.compile(
     r"\b(change|edit|update|rename|make (it|the|my|that)|keep|stay|stays|instead|should|set it|"
     r"switch it to|use the|turn it into|longer|shorter|disappear\w*|vanish\w*|"
-    r"fix (the|my|this|that) (agent|translator|helper)|i want (it|her|the agent|my \w+) to)\b|바꿔|변경|수정|유지",
+    r"fix (the|my|this|that) (agent|helper)|i want (it|her|the agent|my \w+) to)\b|바꿔|변경|수정|유지",
     re.IGNORECASE,
 )
 
@@ -34,39 +39,37 @@ WANTS_NEW = re.compile(
     re.IGNORECASE,
 )
 
-
-# A watched-folder agent asked for plainly: something should happen when files land in a
-# folder. Decided in code: asked, the model took "when a pdf lands in my downloads, write
-# me a short summary in a notes file" for chat and offered a web search.
+# Standing work on the new files of a folder, asked for plainly: something should happen
+# each time one lands. That is a helper to make, whatever it is to do with them, and it is
+# decided in code: asked, the model took such a request for chat and offered a web search.
+# It says nothing of what the helper is for, which the conversation finds out. A file
+# only being new is not enough ("how do I make a new document?").
 WATCHES = re.compile(r"\b(when(ever)?|every time|each time|as soon as|once)\b.{0,40}\b(lands?|arrives?|comes? in|appears?|"
-                     r"is (saved|downloaded|added)|download(s|ed)?)\b|\bnew (files?|documents?|pdfs?|downloads?)\b|"
-                     r"\bas (they|it|files) (land|arrive|come)\b", re.IGNORECASE)
-SUMS_UP = re.compile(r"\b(summar\w*|sum (it|them|each|every|everything|what|the \w+|new \w+) ?up|sum up|brief me|"
-                     r"a few lines about|notes? (file|on what))\b", re.IGNORECASE)
-SORTS = re.compile(r"\b(organi[sz]e|sort|file (them|it|each|every)|put (it|them|each|every \w+) (in|into)|into folders?|"
-                   r"tidy)\b", re.IGNORECASE)
-# The words that say which kind of helper for files the user means. One kind named: that
-# kind, decided in code. None, or more than one, and Noir asks which (route "ask_kind")
-# instead of letting the model guess: asked, it made "an agent that can handle my files"
-# into Ask my documents.
-KIND_WORDS = {
-    "organizer": re.compile(r"\b(organi[sz]\w*|sort\w*|tidy|file (them|it|each|every|new)|put (it|them|each|every \w+) "
-                            r"(in|into)|into folders?|by (course|subject|topic|class))\b|정리", re.IGNORECASE),
-    "summarizer": re.compile(r"\b(summar\w*|sum (it|them|each|every|everything|what|up)|brief me|a few lines about|"
-                             r"notes? (file|on what))\b|요약", re.IGNORECASE),
-    "documents_qa": re.compile(r"\b(ask|questions?|search|look (things |something |stuff )?up|find (things|what|where|out)|"
-                               r"what (does|do) (it|they) say|quote|answers?)\b|질문", re.IGNORECASE),
-}
-FILES = re.compile(r"\b(files?|folders?|documents?|pdfs?|downloads?|papers?|notes|slides|manuals?|stuff)\b|파일|폴더|문서",
-                   re.IGNORECASE)
-# A helper is wanted, in so many words or as "can you handle my files".
-WANTS_HELPER = re.compile(r"\b(agent|helper|assistant|automation|something (that|for|to)|can you (handle|deal with|manage|"
-                          r"take care of|look after))\b|에이전트|도우미", re.IGNORECASE)
+                     r"shows? up|is (saved|downloaded|added)|download(s|ed)?)\b|"
+                     r"\b(every|each|any) new (file|document|pdf|download|picture|photo)\b|"
+                     r"\bas (i|we|they|it|files) (land|arrive|come|download|save)\b", re.IGNORECASE)
+# A question about how things are is no request for standing work, even with those words
+# in it ("what happens when a file lands in Downloads?").
+ASKS_HOW_IT_IS = re.compile(r"^\s*(what|why|how|where|which|who|does|do|did|is|are|was|were)\b", re.IGNORECASE)
+# That the message asks for something to be done, in whatever words: "can you", "I want",
+# "write me", "put it in", or a sentence that begins by saying what to do with their
+# things ("tidy my downloads"). What is asked for is none of the router's business. Without
+# it, a sentence with the words above is as likely a story about a problem ("when I
+# download the file it shows an error"), and that is left to the model.
+ASKS_TO = re.compile(
+    r"\b(can|could|would|will) you\b|\bplease\b|\bi(?:'d| would)? (want|need|like)\b|\b(automatically|from now on|for me)\b|"
+    r"\b(write|tell|show|send|give|remind|notify|warn|let|make|get|read) me\b|"
+    r"\b[a-z]+ (it|them) (in|into|to|under|by|as|up|away|where|somewhere)\b|"
+    r"^\s*(?!(?:when(?:ever)?|once|as|every|each|if|why|what|how|where|which|who|is|are|was|were|do|does|did|the|my|a|an|"
+    r"i|it|this|that|there)\b)[a-z]+ (my|the|every|each|all|any|new)\b",
+    re.IGNORECASE)
 
 
 @dataclass(frozen=True)
 class Route:
-    kind: str  # "chat", "new_agent", "run_agent", "change_agent" or "idea"
+    # "chat", "run_agent", "change_agent", or a helper to make: "new_agent" (the words of
+    # one blueprint fit it) or "idea" (any other)
+    kind: str
     blueprint: str | None = None
     agent: str | None = None
     request: str = ""  # what to hand the agent: the message without "ask my X agent"
@@ -87,16 +90,8 @@ def route(
         return Route("change_agent", agent=named.name, request=text)
     if named:
         return Route("run_agent", agent=named.name, request=_strip_agent_name(text, named.name))
-    if WATCHES.search(text) and SUMS_UP.search(text) and "summarizer" in blueprints:
-        return Route("new_agent", blueprint="summarizer", request=text)
-    if WATCHES.search(text) and SORTS.search(text) and "organizer" in blueprints:
-        return Route("new_agent", blueprint="organizer", request=text)
-    kinds = kinds_named(text, blueprints)
-    about_files = bool(FILES.search(text))
-    if about_files and (WANTS_NEW.search(text) or WANTS_HELPER.search(text)) and not names_an_agent(text, agents):
-        if len(kinds) == 1:
-            return Route("new_agent", blueprint=kinds[0], request=text)
-        return Route("ask_kind", request=text)  # a helper for files, but which kind isn't said
+    if WATCHES.search(text) and (WANTS_NEW.search(text) or (ASKS_TO.search(text) and not ASKS_HOW_IT_IS.match(text))):
+        return Route("idea", request=text)
 
     # One choice, not separate kind/blueprint/agent fields: a small model
     # would sometimes say "new agent" and then pick no blueprint.
@@ -120,32 +115,24 @@ def route(
         {"role": "user", "content": text},
     ]
     answer = ollama.chat_json(model, messages, schema, think=think)
-    chosen = options.get(answer.get("choice"), Route("chat"))
-    if chosen.kind == "run_agent" and _wrong_language(text, chosen.agent, agents):
-        return Route("chat")  # "into Japanese" is never a job for the Korean translator
-    if chosen.kind == "new_agent" and chosen.blueprint in KIND_WORDS:
-        # The model picked a kind for files: the words must agree, or say one kind.
-        if len(kinds) == 1 and kinds[0] != chosen.blueprint:
-            return Route("new_agent", blueprint=kinds[0], request=text)
-        if not kinds and about_files:
-            return Route("ask_kind", request=text)
-    return chosen
+    picked = options.get(answer.get("choice"), Route("chat"))
+    if picked.kind == "run_agent" and _works_on_text(picked.agent, agents):
+        # A helper that works on a piece of text is run from the chat by its name only
+        # (decided above, in code, where its name is taken off the text first). Picked by
+        # the model for a message that does not name it, it was handed the whole message:
+        # its rule was applied to the request and not to the text in it, and a helper
+        # that turns text into one language was picked for a request to turn some into
+        # another. Such a message is a one-off job on text, which the chat does.
+        return Route("chat")
+    return picked
 
 
-def kinds_named(text: str, blueprints: dict[str, Blueprint]) -> list[str]:
-    """The kinds of helper for files the message names by its words, in blueprint order."""
-    return [kind for kind in blueprints if kind in KIND_WORDS and KIND_WORDS[kind].search(text)]
-
-
-def _wrong_language(text: str, name: str, agents: list[Agent]) -> bool:
-    """A translating agent asked to translate into a different language."""
-    from ..quick.translate import language_in
-    from .recipe import target_language
-
+def _works_on_text(name: str | None, agents: list[Agent]) -> bool:
+    """Whether the agent of this name is a card that does its rule's job on a piece of
+    text: one for highlights, or one asked in the chat. Not one that answers from a
+    folder's documents, nor one that works on a folder's new files."""
     agent = next((a for a in agents if a.name == name), None)
-    target = target_language(agent.slots.get("instruction", "")) if agent else None
-    asked = language_in(text, target_only=True)
-    return bool(target and asked and asked != target)
+    return agent is not None and agent.blueprint == parts.CUSTOM and not parts.watches(agent)
 
 
 def _prompt(blueprints: dict[str, Blueprint], agents: list[Agent], evidence: dict[str, list[str]]) -> str:
@@ -196,30 +183,26 @@ def _loose(text: str) -> str:
 
 
 def wants_change(text: str, agent: Agent) -> bool:
-    """A change to the agent itself, not a job for it: "Korean translator: keep
-    calm" is a job (its name and a colon), "make the Korean translator stay
+    """A change to the agent itself, not a job for it: "Word explainer: keep
+    calm" is a job (its name and a colon), "make the Word explainer stay
     longer" is a change."""
     if re.match(rf"\s*{re.escape(agent.name)}\s*:", text, re.IGNORECASE):
         return False
     return bool(WANTS_CHANGE.search(text)) and not WANTS_NEW.search(text)
 
 
-def refers_to(text: str, agents: list[Agent], blueprints: dict[str, Blueprint]) -> Agent | None:
-    """The agent a message is about: named, or the only one of a kind the
-    message mentions ("the translation", "the bubble" when there is one
-    highlight translator)."""
+def refers_to(text: str, agents: list[Agent], blueprints: dict[str, Blueprint] | None = None) -> Agent | None:
+    """The agent a message is about: named, or the only one whose own words the
+    message uses: the words of its name and of what it does ("the explanation"
+    for "Explain this word in simple words"). An agent that works on the files of
+    a folder is known by its name alone: its rule is whole sentences about
+    files, and shares a word with almost anything said about one."""
     named = names_an_agent(text, agents)
     if named:
         return named
-    lowered = text.lower()
-    for blueprint in blueprints.values():
-        if any(word in lowered for word in blueprint.words):
-            of_kind = [a for a in agents if a.blueprint == blueprint.id]
-            if len(of_kind) == 1:
-                return of_kind[0]
-    # Agents made from parts have no kind words: use the words of their name
-    # and of what they do ("the translation" for "Translate the text into Korean").
-    matches = [a for a in agents if _stems(a.name + " " + a.slots.get("instruction", "")) & _stems(text)]
+    said = _stems(text)
+    matches = [a for a in agents
+               if _stems(a.name + ("" if parts.watches(a) else " " + str(a.slots.get("instruction") or ""))) & said]
     return matches[0] if len(matches) == 1 else None
 
 

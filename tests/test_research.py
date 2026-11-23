@@ -65,8 +65,10 @@ def test_a_price_comes_from_the_exchange_feed_not_a_snippet():
 def test_what_never_changes_is_never_looked_up():
     for text in ("solve x^2 - 5x + 6 = 0", "why is the sky blue", "what happened in 1066", "explain gravity",
                  "how do I take a screenshot", "translate this into Korean", "what does serendipity mean",
-                 "should I learn Python or JavaScript", "hey how are you"):
+                 "should I learn Python or JavaScript", "hey how are you",
+                 "hm its not worth it. forget about it"):  # "worth" alone once sent it to the web
         assert research.wants_lookup(text) is None, text
+    assert research.wants_lookup("what is Elon Musk's net worth") == research.SEARCH
     # A question code can't place is put to its model; small talk and timeless things never are.
     assert research.unsure("what's the capital of Korea?")
     assert not research.unsure("explain gravity")

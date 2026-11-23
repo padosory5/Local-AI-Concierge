@@ -1,6 +1,6 @@
 import pytest
 
-from concierge.agents import recipe, store
+from concierge.agents import parts, recipe, store
 from concierge.agents.blueprint import load_blueprints
 from concierge.agents.builder import AgentBuilder
 from concierge.agents.recipe import CUSTOM, IN_CHAT, WHILE_ON
@@ -55,19 +55,23 @@ def test_compose_a_switch_on_agent_from_parts():
     step = next(e for e in events if isinstance(e, Thinking))
     assert step.text.startswith('Wrote what it does: "Explain this English word')
     card = events[-1]
-    assert isinstance(card, AgentCard) and card.name == "Word explainer" and card.kind == "Made from parts"
-    assert card.can_do[0] == "Does: Explain this English word in simple Korean, with one example sentence."
+    assert isinstance(card, AgentCard) and card.name == "Word explainer" and card.kind == WHILE_ON
+    assert card.can_do[0] == "Rule: Explain this English word in simple Korean, with one example sentence."
     assert card.can_do[1] == f"Shows the result: {BUBBLE}"
     assert card.reads[0].startswith("Text you highlight")
 
     events = list(b.choose(card.id, "Create it"))
     result = next(e for e in events if isinstance(e, Result))
     assert result.text == 'Test: "serendipity"\ndone: serendipity'
-    assert "Switch it on in your helpers list" in events[-3].text
+    assert events[-3].text == "Word explainer is ready."  # how it is used from here is the engine's to say
     assert isinstance(events[-1], AgentList)
     saved = store.find_agent("Word explainer")
-    assert saved.blueprint == CUSTOM and saved.slots["when"] == WHILE_ON
-    assert recipe.is_switchable(saved, BLUEPRINTS)
+    assert saved.blueprint == CUSTOM and saved.slots["when"] == WHILE_ON and saved.slots["then"] == parts.SHOW
+    assert recipe.is_switchable(saved)
+    # What the plain questions never ask about is written down with its usual value: the
+    # card says that it leaves nothing out, and nothing reads its rule for that later.
+    assert saved.slots["skip_language"] == ""
+    assert b.take_created().name == "Word explainer" and not b.edited
 
 
 def test_compose_a_chat_agent():
@@ -75,7 +79,8 @@ def test_compose_a_chat_agent():
                        "example": "A long paragraph."})
     card = list(builder(model).compose("summarize text I paste in the chat", ["on_request", "summarize"]))[-1]
     assert card.reads[0].startswith("What you send it in the chat")
-    assert card.can_do == ["Does: Summarize the text in three bullet points.", "Answers in the chat"]
+    assert card.can_do == ["Rule: Summarize the text in three bullet points.", "Answers in the chat"]
+    assert card.kind == IN_CHAT
 
 
 def test_the_users_words_decide_how_it_shows_the_result():
@@ -91,21 +96,34 @@ def test_the_users_words_decide_how_it_shows_the_result():
     assert card.can_do[1] == f"Shows the result: {BOTH}"
 
 
-def test_a_translator_without_a_language_asks_which():
-    model = FakeModel({"name": "Highlight translator", "instruction": "Translate the highlighted text.",
+def test_the_rule_is_shown_as_it_was_written_and_the_card_is_where_it_is_put_right():
+    """Code used to read the rule a model wrote, and for one kind of helper it asked a
+    question of its own or wrote the rule again from the request. No kind is known any
+    more: whatever the rule says is on the card before anything is made, and "Change
+    something" changes it."""
+    model = FakeModel({"name": "Highlight helper", "instruction": "Translate the text.", "example": "Good morning"},
+                      rewrite="Translate the text into Korean.")
+    b = builder(model)
+    card = list(b.compose("translate my highlighted texts", ["while_on", "selected_text", "translate"]))[-1]
+    assert isinstance(card, AgentCard) and card.can_do[0] == "Rule: Translate the text."  # no question about a language
+    assert not any("Leaves out" in line for line in card.can_do)  # and no setting worked out from its words
+    question = list(b.choose(card.id, "Change something"))[-1]
+    assert isinstance(question, Question) and "What it does" in question.choices
+    assert list(b.choose(question.id, "What it does"))[-1].id == "instruction"
+    card = list(b.answer("it should give me Korean"))[-1]
+    assert isinstance(card, AgentCard) and card.can_do[0] == "Rule: Translate the text into Korean."
+
+
+def test_a_language_in_the_request_changes_nothing_code_does():
+    model = FakeModel({"name": "Highlight helper", "instruction": "Translate the text into Spanish, briefly.",
                        "example": "Good morning"})
     b = builder(model)
-    question = list(b.compose("translate my highlighted texts", ["while_on", "selected_text", "translate"]))[-1]
-    assert isinstance(question, Question) and question.id == "target_language" and "Korean" in question.choices
-    card = list(b.choose(question.id, "Korean"))[-1]
-    assert card.can_do[0] == "Does: Translate the text into Korean."
-
-
-def test_a_language_in_the_request_is_used_without_asking():
-    model = FakeModel({"name": "Highlight translator", "instruction": "Translate the highlighted text.",
-                       "example": "Good morning"})
-    card = list(builder(model).compose("translate what I highlight into Korean", ["while_on", "selected_text"]))[-1]
-    assert isinstance(card, AgentCard) and card.can_do[0] == "Does: Translate the text into Korean."
+    card = list(b.compose("translate what I highlight into Korean", ["while_on", "selected_text"]))[-1]
+    # The model's rule stands, wrong language and all: the card is the check, and code no
+    # longer puts a rule right for one kind of helper.
+    assert isinstance(card, AgentCard) and card.can_do[0] == "Rule: Translate the text into Spanish, briefly."
+    list(b.choose(card.id, "Create it"))
+    assert store.find_agent("Highlight helper").slots["skip_language"] == ""
 
 
 def test_same_instruction_twice_asks_first():
@@ -138,7 +156,7 @@ def test_change_what_it_does_by_talking(explainer):
     model = FakeModel(rewrite="Explain this English word in simple Japanese.")
     card = list(builder(model).edit(explainer, "explain them in Japanese instead"))[-1]
     assert isinstance(card, AgentCard) and card.actions[0] == "Save changes"
-    assert card.can_do[0] == "Does: Explain this English word in simple Japanese."
+    assert card.can_do[0] == "Rule: Explain this English word in simple Japanese."
 
 
 def test_change_a_setting_needs_no_rewrite(explainer):
@@ -156,8 +174,40 @@ def test_change_it_to_work_in_the_chat(explainer):
     card = list(b.choose("when", IN_CHAT))[-1]
     assert card.can_do[-1] == "Answers in the chat"
     events = list(b.choose(card.id, "Save changes"))
-    assert events[0].text.startswith("Saved. Word explainer now:")
-    assert not recipe.is_switchable(store.find_agent("Word explainer"), BLUEPRINTS)
+    assert events[0].text == "Saved the changes to Word explainer."
+    saved = store.find_agent("Word explainer")
+    assert not recipe.is_switchable(saved)
+    assert saved.slots["then"] == parts.ANSWER  # what it does with its result goes with when it works
+
+
+def test_a_rewritten_rule_takes_off_the_language_a_card_left_out():
+    """The plain questions can't tell whether text in that language should still be left
+    out once the rule says something else. Kept, a card changed to give another language
+    passed over text in the old one without a word; so it goes back to none, and that is said."""
+    leaves = {"instruction": "Translate the text into Korean.", "when": WHILE_ON, "show": BUBBLE,
+              "keep": UNTIL_UNHIGHLIGHT, "skip_language": "Korean", "name": "Korean Translator"}
+    agent = store.Agent("Korean Translator", CUSTOM, dict(leaves))
+    store.save(agent)
+    b = builder(FakeModel(rewrite="Translate the text into Japanese."))
+    events = list(b.edit(agent, "make it Japanese instead"))
+    step = next(e for e in events if isinstance(e, Thinking))
+    assert "what it does → Translate the text into Japanese." in step.text
+    assert "leaves out text already in → nothing" in step.text
+    card = events[-1]
+    assert card.can_do[0] == "Rule: Translate the text into Japanese."
+    assert not any("Leaves out" in line for line in card.can_do)
+    list(b.choose(card.id, "Save changes"))
+    assert store.find_agent("Korean Translator").slots["skip_language"] == ""
+
+    # A change that leaves the rule alone leaves the setting alone too, and the card goes on saying it.
+    store.save(store.Agent("Korean Translator", CUSTOM, dict(leaves)))
+    model = FakeModel()
+    b = builder(model)
+    events = list(b.edit(store.find_agent("Korean Translator"), "copy it to the clipboard instead"))
+    assert "leaves out" not in next(e for e in events if isinstance(e, Thinking)).text
+    assert events[-1].can_do[1:] == [f"Shows the result: {CLIPBOARD}", "Leaves out text that is already in Korean"]
+    list(b.choose(events[-1].id, "Save changes"))
+    assert store.find_agent("Korean Translator").slots["skip_language"] == "Korean"
 
 
 def test_typed_new_job_from_the_change_menu(explainer):
@@ -166,7 +216,7 @@ def test_typed_new_job_from_the_change_menu(explainer):
     question = list(b.choose("change", "What it does"))[-1]
     assert question.id == "instruction" and question.choices is None
     card = list(b.answer("give me synonyms instead"))[-1]
-    assert card.can_do[0] == "Does: Give three synonyms of the word."
+    assert card.can_do[0] == "Rule: Give three synonyms of the word."
 
 
 # ---------------------------------------------------------------- running
@@ -177,15 +227,17 @@ def test_run_instruction_returns_only_the_result():
     assert recipe.run_instruction(model, "noir", "Fix the grammar.", "me go") == "done: me go"
 
 
-def test_target_language_only_for_translators():
-    assert recipe.target_language("Translate the text into Korean.") == "Korean"
-    assert recipe.target_language("Explain this English word in simple Korean.") is None
+def test_nothing_here_reads_a_rule_to_find_out_what_kind_of_helper_it_is():
+    for gone in ("target_language", "needs_language", "with_language"):
+        assert not hasattr(recipe, gone), gone
 
 
 # -------------------------------------------------------------- old agents
 
 
-def test_old_translators_become_agents_from_parts():
+def test_old_translators_become_agents_from_parts(tmp_path, monkeypatch):
+    # The catalog knows every kind there ever was (parts.migrate); this only passes it on.
+    monkeypatch.setattr(parts.noir, "data_dir", lambda: tmp_path)
     store.save(store.Agent("Korean translator", "translate_selection",
                            {"language": "Korean", "show": CLIPBOARD, "name": "Korean translator"}))
     assert recipe.migrate() == ["Korean translator"]
@@ -193,7 +245,17 @@ def test_old_translators_become_agents_from_parts():
     assert agent.blueprint == CUSTOM
     assert agent.slots["instruction"] == "Translate the text into Korean."
     assert agent.slots["show"] == CLIPBOARD and agent.slots["keep"] == UNTIL_UNHIGHLIGHT
+    assert agent.slots["skip_language"] == "Korean"  # what it always did, now said by the card
     assert recipe.migrate() == []  # only once
+
+
+def test_the_agents_that_worked_on_a_folder_become_cards_at_the_same_call(tmp_path, monkeypatch):
+    # The catalog turns them into cards (parts.migrate); one call at startup does both.
+    monkeypatch.setattr(parts.noir, "data_dir", lambda: tmp_path)
+    store.save(store.Agent("Paper sorter", "organizer", {"folder": str(tmp_path), "groups": "A, B", "name": "Paper sorter"}))
+    assert recipe.migrate() == ["Paper sorter"]
+    card = store.find_agent("Paper sorter")
+    assert card.blueprint == CUSTOM and parts.watches(card) and parts.choices_of(card.slots) == ["A", "B"]
 
 
 # ---------------------------------------------------------------- routing
@@ -218,8 +280,30 @@ def test_the_shared_template_is_never_offered_as_a_kind_of_agent():
     assert "new agent: Ask my documents" in chooser.choices
 
 
-def test_a_language_the_model_made_up_is_asked_instead():
-    model = FakeModel({"name": "Text translator", "example": "Hi",
+def test_a_language_the_model_made_up_is_on_the_card_to_be_seen():
+    # Told never to guess a language, a model still named one. Code used to ask which
+    # language instead; now the rule is shown as written, before anything is made.
+    model = FakeModel({"name": "Text helper", "example": "Hi",
                        "instruction": "Translate the text into English unless another language is requested."})
-    question = list(builder(model).compose("translate my highlighted texts", ["while_on", "selected_text"]))[-1]
-    assert isinstance(question, Question) and question.id == "target_language"
+    card = list(builder(model).compose("translate my highlighted texts", ["while_on", "selected_text"]))[-1]
+    assert isinstance(card, AgentCard)
+    assert card.can_do[0] == "Rule: Translate the text into English unless another language is requested."
+    assert card.actions == ["Create it", "Change something", "Cancel"]
+
+
+def test_the_examples_the_recipe_writer_is_shown_name_no_language_and_no_ready_made_helper():
+    """A small model copies what it is shown: with a Korean translator first among the
+    examples, a request that named no language could come back translating into Korean."""
+    from concierge.agents.starters import load_starters
+    from concierge.quick.translate import LANGUAGES
+
+    class Reads(FakeModel):
+        def chat_json(self, model, messages, schema, think=None, keep_alive=None):
+            self.note = messages[0]["content"]
+            return super().chat_json(model, messages, schema, think, keep_alive)
+
+    model = Reads()
+    recipe.write_recipe(model, "noir", "translate what I highlight")
+    examples = model.note.split("Examples:", 1)[1].lower()
+    assert not [language for language in LANGUAGES if language.lower() in examples]
+    assert not [s.name for s in load_starters() if any(word in examples for word in (s.name.lower(), *s.words))]

@@ -120,6 +120,31 @@ def test_undo_leaves_what_the_user_changed_since(tmp_path):
     assert (tmp_path / "Pictures" / "mine.png").exists()
 
 
+def test_a_helpers_notes_file_is_never_counted_or_shelved(tmp_path, monkeypatch):
+    """A helper that writes notes keeps them in one file, by default inside the folder it
+    watches. Shelved into Documents by a sort of Downloads, the notes were split in two:
+    the helper's next note started a new file where the old one had been."""
+    from concierge.agents import parts, store
+
+    monkeypatch.setattr("concierge.quick.tidy.MIN_JOB_SECONDS", 0)
+    monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
+    downloads = tmp_path / "Downloads"
+    downloads.mkdir()
+    store.save(Agent("Reading log", parts.CUSTOM, {"when": parts.NEW_FILE, "then": parts.NOTE, "folder": str(downloads),
+                                                   "instruction": "Say in a line what it is.", "notes": "",
+                                                   "name": "Reading log"}))
+    notes = make(downloads, "Reading log.md", "## a.pdf\nWhat it is.\n\n")
+    fill(downloads, MIN_FILES)
+    asked, lights = [], Lights()
+    watch = TidyWatch(downloads, tmp_path / "log.json", lights, ask=lambda text, cancel: asked.append(text) or YES,
+                      quiet=lambda: True)
+    assert sum(part["count"] for part in watch.today()["noticed"]["plan"]) == MIN_FILES
+    watch.look()
+    assert lights.done.wait(5) and asked == [f"Sort {MIN_FILES} files in Downloads?"]
+    assert notes.read_text(encoding="utf-8") == "## a.pdf\nWhat it is.\n\n"
+    assert len(list((downloads / "Documents").iterdir())) == MIN_FILES
+
+
 def test_yes_sorts_and_shows_both_lights(tmp_path, monkeypatch):
     monkeypatch.setattr("concierge.quick.tidy.MIN_JOB_SECONDS", 0)
     fill(tmp_path, MIN_FILES)
@@ -172,7 +197,7 @@ def test_she_waits_while_the_user_is_busy(tmp_path):
 
 
 def test_a_failed_job_never_shows_green(tmp_path, monkeypatch):
-    def broken(folder, log):
+    def broken(folder, log, **more):
         raise RuntimeError("disk trouble")
 
     monkeypatch.setattr("concierge.quick.tidy.sort_folder", broken)

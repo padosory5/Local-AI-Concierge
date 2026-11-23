@@ -69,11 +69,13 @@ BROWSER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (
                  "Chrome/130.0 Safari/537.36")  # Yahoo answers a browser, not a script
 
 _I = re.IGNORECASE
-# Words that mean the answer is different today from last year, or last week.
+# Words that mean the answer is different today from last year, or last week. ("Worth" on
+# its own is not one: "hm its not worth it. forget about it" was offered a web search.
+# "Net worth" is below, and a price's worth is PRICE_WORDS' business.)
 CHANGING = re.compile(
     r"\b(today|tonight|tomorrow|yesterday|this (week|weekend|month|year)|right now|currently|current|latest|newest|"
     r"recent|recently|news|headlines?|breaking|happening|update[sd]?|price|prices|cost|costs|how much (is|are|does|do)"
-    r"|worth|stock|shares?|market|exchange rate|rate of|bitcoin|crypto|ethereum|score|scores|result|results|won|"
+    r"|stock|shares?|market|exchange rate|rate of|bitcoin|crypto|ethereum|score|scores|result|results|won|"
     r"winner|standings|ranking|rankings|rank|schedule|fixture|release date|released|out yet|version|"
     r"opening hours|open (now|today|on)|closed|holiday|when is the next|what day is|what('s| is) the (date|time)|"
     r"who is the (president|prime minister|ceo|leader|mayor|governor|king|queen|chancellor|champion|coach|"

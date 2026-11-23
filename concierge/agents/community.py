@@ -1,8 +1,9 @@
 """Agents to discover, and sharing your own.
 
-An agent made from parts is only words: a name, one instruction and a few settings,
-never code, so it's safe to share and safe to add. An agent that reads a folder can't
-be shared, because it's made of someone's own files and where they keep them.
+An agent that works on text is only words: a name, one instruction and a few settings,
+never code, so it's safe to share and safe to add. An agent that works on a folder, or
+answers from one, can't be shared, because it's made of someone's own files and where
+they keep them; and nothing that comes from the internet is ever let near a folder.
 
 The list everyone sees is community.json in a public GitHub repository of its own, so
 it needs no server and the project's code can stay private. Posting opens a GitHub
@@ -25,8 +26,9 @@ import requests
 
 from ..noir import data_dir
 from ..quick.agents import BOTH, BUBBLE, CLIPBOARD, FEW_SECONDS, UNTIL_UNHIGHLIGHT
-from . import store
-from .recipe import CUSTOM, IN_CHAT, MAX_INSTRUCTION, WHILE_ON
+from . import parts, store
+from .parts import CUSTOM, IN_CHAT, WHILE_ON
+from .recipe import MAX_INSTRUCTION
 from .starters import load_starters
 
 REPOSITORY = "padosory5/noir-agents"
@@ -39,11 +41,9 @@ MAX_NAME, MAX_ABOUT, MAX_BY = 40, 140, 40
 READY_MADE, COMMUNITY = "Noir", "Community"
 CATEGORIES = ("Writing", "Study", "Work", "Languages", "Code", "Everyday")
 OTHER_CATEGORY = "Everyday"
-STARTER_DETAILS = {
-    "Highlight Explainer": ("Explains what you highlight, in simple words.", "Study"),
-    "Grammar Fixer": ("Fixes the grammar and spelling of your text.", "Writing"),
-    "Quick Summarizer": ("Sums up any text in three short points.", "Everyday"),
-}
+# The languages a recipe may say it leaves out text in: the ones the catalog's own setting
+# allows, so a recipe can never promise more than a card can do.
+_SKIP_LANGUAGES = next(setting.choices for setting in parts.all_settings() if setting.key == "skip_language")
 
 
 class PostError(ValueError):
@@ -63,6 +63,8 @@ class Recipe:
     keep: str = UNTIL_UNHIGHLIGHT
     example: str = ""
     source: str = COMMUNITY
+    # Only for one that works while switched on: text already in this language is left out.
+    skip_language: str = ""
 
 
 def _words(value, limit: int) -> str:
@@ -85,19 +87,27 @@ def clean(raw) -> Recipe | None:
         return None
     if when not in (WHILE_ON, IN_CHAT) or show not in (BUBBLE, CLIPBOARD, BOTH) or keep not in (UNTIL_UNHIGHLIGHT, FEW_SECONDS):
         return None
+    # A language to leave out must be one the app can tell a text is in. Anything else is
+    # refused like any other setting it doesn't know, never passed on to be ignored later.
+    skip = raw.get("skip_language") or ""
+    if skip not in ("", *_SKIP_LANGUAGES):
+        return None
     source = READY_MADE if raw.get("source") == READY_MADE else COMMUNITY
     category = raw.get("category") if raw.get("category") in CATEGORIES else OTHER_CATEGORY
     return Recipe(store.slugify(name), name, _words(raw.get("by"), MAX_BY) or "Someone", category,
                   _words(raw.get("about"), MAX_ABOUT) or instruction[:MAX_ABOUT], instruction, when, show, keep,
-                  _words(raw.get("example"), MAX_ABOUT), source)
+                  _words(raw.get("example"), MAX_ABOUT), source,
+                  skip if when == WHILE_ON else "")  # a setting of that WHEN only
 
 
 def _starters() -> list[Recipe]:
+    # What the Agents page says of each is the starter's own (starters.yaml), like the rest of it.
     made = []
     for starter in load_starters():
-        about, category = STARTER_DETAILS.get(starter.name, (starter.instruction, OTHER_CATEGORY))
-        made.append(Recipe(store.slugify(starter.name), starter.name, READY_MADE, category, about, starter.instruction,
-                           starter.when, source=READY_MADE))
+        category = starter.category if starter.category in CATEGORIES else OTHER_CATEGORY
+        made.append(Recipe(store.slugify(starter.name), starter.name, READY_MADE, category,
+                           starter.about or starter.instruction[:MAX_ABOUT], starter.instruction, starter.when,
+                           source=READY_MADE, skip_language=starter.skip_language))
     return made
 
 
@@ -153,8 +163,13 @@ def install(recipe: Recipe) -> store.Agent:
     existing = store.find_agent(recipe.name)
     if existing:
         return existing
-    agent = store.Agent(recipe.name, CUSTOM, {"instruction": recipe.instruction, "when": recipe.when, "show": recipe.show,
-                                              "keep": recipe.keep, "name": recipe.name})
+    slots = {"instruction": recipe.instruction, "when": recipe.when, "show": recipe.show, "keep": recipe.keep,
+             "name": recipe.name}
+    if recipe.skip_language:
+        slots["skip_language"] = recipe.skip_language
+    # Whatever a card of its WHEN can say and the recipe doesn't, with its usual value.
+    slots.update(parts.defaults(slots))
+    agent = store.Agent(recipe.name, CUSTOM, slots)
     store.save(agent)
     return agent
 
@@ -171,16 +186,25 @@ def can_post() -> bool:
 def post_address(agent: store.Agent, about: str, category: str, by: str = "") -> str:
     """The GitHub page that posts this agent, filled in. Only the recipe goes in it,
     built field by field, so nothing else an agent holds can ever slip out."""
-    if agent.blueprint != CUSTOM:
-        raise PostError("An agent that reads your folders can't be shared, because it's made of your own files.")
+    if agent.blueprint != CUSTOM or parts.watches(agent):
+        raise PostError("An agent that works on one of your folders can't be shared, because it's made of your own "
+                        "files and where you keep them.")
     about = _words(about, MAX_ABOUT)
     if not about:
         raise PostError("Please say in one line what it does.")
-    recipe = clean({**{key: agent.slots.get(key) for key in ("instruction", "when", "show", "keep") if agent.slots.get(key)},
+    rule = _words(agent.slots.get("instruction"), parts.MAX_RULE + 1)
+    if len(rule) > MAX_INSTRUCTION:
+        # A rule worked out by talking can be twice as long as a shared one may be. Said,
+        # never cut: half a rule is another rule.
+        raise PostError(f"Its rule is too long to share: it is {len(rule)} characters, and a shared one can be at "
+                        f"most {MAX_INSTRUCTION}.")
+    settings = ("instruction", "when", "show", "keep", "skip_language")
+    recipe = clean({**{key: agent.slots.get(key) for key in settings if agent.slots.get(key)},
                     "name": agent.name, "about": about, "category": category, "by": _words(by, MAX_BY) or "Someone"})
     if recipe is None:
         raise PostError("This agent can't be shared as it is.")
-    entry = {key: value for key, value in asdict(recipe).items() if key not in ("id", "source", "example")}
+    entry = {key: value for key, value in asdict(recipe).items()
+             if key not in ("id", "source", "example") and not (key == "skip_language" and not value)}
     body = ("I'd like to share this agent. Please read it, and add it to "
             f"community.json if it looks good.\n\n```json\n{json.dumps(entry, ensure_ascii=False, indent=1)}\n```\n")
     return f"{POST_URL}?{urlencode({'title': f'New agent: {recipe.name}', 'body': body})}"

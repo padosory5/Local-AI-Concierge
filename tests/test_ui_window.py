@@ -2,11 +2,16 @@ import json
 import re
 import subprocess
 import sys
+import time
 import uuid
+from pathlib import Path
 
 import pytest
 
+from concierge import folderwatch as fw
+from concierge.agents import parts, store
 from concierge.events import NoirText
+from concierge.folderwatch import FolderWatch
 from concierge.ui import window
 from concierge.fake_engine import FakeEngine
 from concierge.ui.window import (
@@ -21,6 +26,7 @@ from concierge.ui.window import (
     ChatHub,
     GlassBridge,
     TodayBridge,
+    WatchBridge,
     centered,
     drawer_bounds,
     drawer_x,
@@ -77,11 +83,12 @@ def test_reply_streams_to_the_page_then_finishes():
 def test_button_clicks_reach_the_engine():
     page, window = page_for(ChatHub(FakeEngine(delay=0)))
     page.send("make an agent")
-    page.send("Desktop/Work")
+    page.send("keep the manuals together")
     window.calls.clear()
-    page.choose("file_types", "PDF only")
-    assert types(window) == ["AgentCard"]
-    assert "Desktop/Work" in window.events[0]["reads"][0]
+    page.choose("looks_at", "Only the file's name")
+    assert types(window)[-2:] == ["Result", "AgentCard"]  # the try-out, then the card
+    card = window.events[-1]
+    assert card["can_do"][0] == "Rule: keep the manuals together" and "never what's inside it" in card["reads"][0]
 
 
 def test_panel_and_full_app_show_the_same_conversation():
@@ -221,6 +228,10 @@ def test_an_agents_page_gets_what_the_agent_really_does():
     assert dict(translator["facts"])["How long it stays"] == "Until you unhighlight the text"
     documents = hub.details("Contracts helper")
     assert dict(documents["facts"]) ["Knows"] == "3 files"
+    # One that works on a folder's new files has a page of its own kind, never a translator's.
+    files = dict(hub.details("Home papers")["facts"])
+    assert files["When it works"] == "When a new file lands in Downloads" and files["Folders"] == "Manuals, Trips"
+    assert hub.details("Nobody") == {}
 
 
 def test_work_no_page_started_is_shown_on_every_page():
@@ -406,3 +417,273 @@ def test_a_long_paste_becomes_a_file_named_plainly():
     first, second = pasted_file(words), pasted_file("other")
     assert first.name == second.name == "Pasted text.txt" and first != second
     assert first.read_text(encoding="utf-8") == words
+
+
+# ------------------------------------ helpers that work while switched on, and the windows
+# The windows know nothing about what a helper is for: the rule, folders and files below
+# are made up, and the model is a pretend one that fills whichever form it is handed.
+
+
+class Filer:
+    """The built-in model as the folder watcher asks it: every file it can read is a
+    manual that goes in Boat, or gets one line written about it."""
+
+    def chat_json(self, model, messages, schema, think=None, keep_alive=None, options=None):
+        if "note" in schema["properties"]:
+            return {"what": "a manual", "note": "How to start the engine."}
+        return {"what": "a manual", "choice": "Boat"}
+
+    def capabilities(self, tag):
+        return ["completion"]
+
+    def list_models(self):
+        return ["noir:latest"]
+
+    def refresh(self, model, keep_alive):
+        pass
+
+    def unload(self, model):
+        pass
+
+
+class Watching:
+    """An engine as far as the windows' hooks go: what runs the helpers that work on a
+    folder's new files, and the undo of their jobs."""
+
+    def __init__(self, home):
+        # An hour ahead, so every file written counts as having stood still; it never
+        # looks by itself: the tests look by hand.
+        self.folderwatch = FolderWatch(Filer(), "noir", home / "folderwatch.json", home / "folderwatch_done.json",
+                                       clock=lambda: time.time() + 3600, look_seconds=3600)
+
+    def undo_move(self, id):
+        return self.folderwatch.undo(id)
+
+    def close(self):
+        self.folderwatch.stop()
+
+
+def file_card(folder, then, name="Paper sorter"):
+    slots = {"when": parts.NEW_FILE, "then": then, "instruction": "Manuals go in Boat.", "folder": str(folder),
+             "looks_at": parts.INSIDE_FILE, "name": name}
+    slots.update({"choices": "Boat", "open": parts.OPEN_NO, "into": ""} if then == parts.MOVE else {"notes": ""})
+    return store.Agent(name, parts.CUSTOM, slots)
+
+
+@pytest.fixture
+def watching(tmp_path, monkeypatch):
+    """A made-up home with a Downloads folder, and an engine that watches it for real."""
+    (tmp_path / "Downloads").mkdir()
+    monkeypatch.setattr(store, "agents_dir", lambda: tmp_path / "agents")
+    engine = Watching(tmp_path)
+    yield engine, tmp_path / "Downloads"
+    engine.close()
+
+
+class Pages:
+    """The full window and the drawer, as far as being told to redraw goes."""
+
+    def __init__(self):
+        self.told = []
+
+    def run_js(self, script):
+        self.told.append(script)
+
+
+def overlay_for(engine, monkeypatch):
+    """The windows around an engine, with nothing opened, and the note by the circle
+    replaced by a list of what it would have shown, each time answered with Undo."""
+    from concierge.quick import glow, note
+    from concierge.quick.tidy import TidyWatch
+    from concierge.ui.window import Overlay
+
+    shown = []
+    monkeypatch.setattr(glow, "full_screen_in_use", lambda: False)
+    monkeypatch.setattr(note, "tell", lambda lines, yes, no, cancel, seconds: shown.append((lines, yes, no)) or "Undo")
+    overlay = Overlay(engine, TidyWatch(practice=True))
+    overlay._full = overlay._glass = Pages()
+    return overlay, shown
+
+
+def test_the_windows_hear_from_what_runs_the_helpers_that_work_on_files(watching):
+    engine, downloads = watching
+    hub = ChatHub(engine)
+    changed, moved, working, stayed = [], [], [], []
+    hub.on_chores(lambda: changed.append(True))
+    hub.on_move(moved.append)
+    hub.on_working(working.append)
+    hub.on_stayed(stayed.append)
+    engine.folderwatch.switch(file_card(downloads, parts.MOVE), True)
+    (downloads / "engine.txt").write_text("How to start the engine", encoding="utf-8")
+    (downloads / "setup.exe").write_bytes(b"MZ" * 64)
+    engine.folderwatch.look()
+    assert [move["name"] for move in moved] == ["engine.txt"] and [report["name"] for report in stayed] == ["setup.exe"]
+    assert changed and working[0] is True and working[-1] is False  # the circle runs its line, then rests
+    # An engine that runs no such helpers (the practice one) has nothing to hook, and nothing breaks.
+    for quiet in (ChatHub(FakeEngine(delay=0)), ChatHub(object())):
+        for hook in (quiet.on_chores, quiet.on_move, quiet.on_working, quiet.on_stayed):
+            hook(print)
+
+
+def test_the_note_by_the_circle_says_what_the_record_says(watching, monkeypatch):
+    engine, downloads = watching
+    overlay, shown = overlay_for(engine, monkeypatch)
+    moved, stayed = [], []
+    overlay.hub.on_move(moved.append)
+    overlay.hub.on_stayed(stayed.append)
+    mover = file_card(downloads, parts.MOVE)
+    engine.folderwatch.switch(mover, True)
+    (downloads / "engine.txt").write_text("How to start the engine", encoding="utf-8")
+    engine.folderwatch.look()
+    overlay._show_move(moved[0])
+    lines, yes, no = shown[-1]
+    record = engine.folderwatch.done_lately()[0]
+    assert lines[0] == record["text"] == "Put engine.txt in Boat" and (yes, no) == ("Undo", "OK")
+    assert lines[1:] == moved[0]["steps"][1:] and "Read it as: a manual" in lines  # what was read and decided, small
+    # Undo on the note puts the file back through the engine, and the lists are told to redraw.
+    assert (downloads / "engine.txt").is_file() and not (downloads / "Boat" / "engine.txt").exists()
+    assert overlay._full.told == ["window.today && today.refresh()", "window.app && app.refresh()"]
+
+    # A helper that writes about a file moves nothing: the note says what was written, in
+    # the record's own words, and there is nothing to undo. (It once said "Put engine.txt in
+    # Reading log.md" with an Undo that undid nothing.)
+    engine.folderwatch.switch(mover, False)
+    engine.folderwatch.switch(file_card(downloads, parts.NOTE, "Reading log"), True)
+    (downloads / "pump.txt").write_text("How to prime the pump", encoding="utf-8")
+    engine.folderwatch.look()
+    overlay._show_move(moved[-1])
+    lines, yes, no = shown[-1]
+    assert lines[0] == engine.folderwatch.done_lately()[-1]["text"] == "Wrote about pump.txt in Reading log.md"
+    assert (yes, no) == (None, "OK") and not any(line.startswith("Put ") for line in lines)
+
+    # A file a helper looked at and left: where it stayed, and why, from the helper's own steps.
+    engine.folderwatch.switch(mover, True)
+    (downloads / "setup.exe").write_bytes(b"MZ" * 64)
+    engine.folderwatch.look()
+    overlay._show_stayed(next(report for report in stayed if report["name"] == "setup.exe"))
+    lines, yes, no = shown[-1]
+    assert lines[0] == "setup.exe stayed in Downloads" and lines[-1].endswith(fw.NO_TEXT) and yes is None
+
+
+def test_the_pages_show_a_helper_at_work_where_they_show_the_watchs_work():
+    class Engine:
+        doing = "Paper sorter: reading engine.txt now"
+
+        def chore_doing(self):
+            return self.doing
+
+    class Watch:
+        working = None
+
+        def today(self):
+            return {"working": self.working, "noticed": {"id": "sort", "text": "Sort them?"}}
+
+    class Overlay:
+        watch = Watch()
+
+    engine = Engine()
+    bridge = WatchBridge(ChatHub(engine), Overlay())
+    assert bridge.today()["working"] == "Paper sorter: reading engine.txt now"
+    assert bridge.today()["noticed"]["id"] == "sort"  # what the watch noticed is passed on as it is
+    Overlay.watch.working = "Sorting your Downloads folder"
+    assert bridge.today()["working"] == "Sorting your Downloads folder"  # the watch's own job comes first
+    Overlay.watch.working, engine.doing = None, ""
+    assert not bridge.today()["working"]
+    Overlay.watch = None
+    assert bridge.today() == {}
+
+
+def test_yes_and_no_outside_the_chat_only_ever_answer_the_watch():
+    class Watch:
+        answered = []
+
+        def answer(self, which, yes):
+            self.answered.append((which, yes))
+
+    class Overlay:
+        watch = Watch()
+
+    class Engine:
+        def __getattr__(self, name):  # nothing of the engine's is asked: no helper asks outside the chat
+            raise AssertionError(name)
+
+    WatchBridge(ChatHub(Engine()), Overlay()).answer("sort", 1)
+    assert Overlay.watch.answered == [("sort", True)]
+
+
+def test_the_chores_list_is_put_together_from_what_the_engine_gives():
+    class Bookings:
+        def listing(self):
+            return []
+
+    class Overlay:
+        watch = None
+        bookings = Bookings()
+
+    engine = FakeEngine(delay=0)
+    listing = WatchBridge(ChatHub(engine), Overlay()).chores()
+    rows = {chore["name"]: chore for chore in listing["chores"]}
+    assert set(rows) == {"Keep Downloads tidy", "Korean translator", "Home papers"}
+    assert rows["Home papers"]["on"] is True and rows["Korean translator"]["on"] is False
+    assert rows["Home papers"]["how"] == engine.chore_agents()[1]["how"]  # the engine's own sentence, as it is
+    assert rows["Home papers"]["last"] == "Put ferry-booking.pdf in Trips · 30 min ago"
+    assert rows["Korean translator"]["last"] == ""  # it keeps no record of its work
+    jobs = [job["text"] for day in listing["days"] for job in day["jobs"]]
+    assert jobs == ["Put ferry-booking.pdf in Trips", "Put dishwasher-manual.pdf in Manuals"]
+
+
+def test_undo_goes_to_the_engine_first_and_to_the_watch_for_what_is_not_the_engines():
+    class Watch:
+        undone = []
+
+        def undo(self, id):
+            self.undone.append(id)
+
+    class Overlay:
+        watch = Watch()
+
+    engine = FakeEngine(delay=0)
+    bridge = WatchBridge(ChatHub(engine), Overlay())
+    bridge.undo_sorting("practice-1")
+    assert Overlay.watch.undone == [] and engine.chore_done()[-1]["text"] == "Put 1 file back"
+    bridge.undo_sorting("a-sort-of-the-watchs")
+    bridge.undo_sorting()
+    assert Overlay.watch.undone == ["a-sort-of-the-watchs", None]
+
+
+def test_every_call_the_windows_make_is_one_both_engines_have():
+    """The windows ask the engine by name and take a usual answer when it has no such call,
+    so a call that was renamed in the engine fails without a word: the lists and the circle
+    once went on asking for names the engine no longer had, and showed nothing."""
+    from concierge.engine import NoirEngine
+
+    source = Path(window.__file__).read_text(encoding="utf-8")
+    asked = set(re.findall(r'\.(?:ask|run|announce)\((?:self, )?"(\w+)"', source))
+    assert {"send", "choose", "details", "chore_agents", "chore_done", "chore_doing", "undo_move", "set_agent"} <= asked
+    for name in sorted(asked):
+        assert callable(getattr(NoirEngine, name, None)), name
+        assert callable(getattr(FakeEngine, name, None)), name
+    # What runs the helpers that work on files is hooked by these names.
+    hooks = set(re.findall(r'self\._hook\("(\w+)"', source))
+    assert hooks == {"changed", "moved", "working", "stayed"}
+    real = NoirEngine(Filer())
+    for hook in hooks:
+        assert callable(getattr(real.folderwatch, hook)), hook
+    ChatHub(real).on_move(print)
+    assert real.folderwatch.moved is print
+
+
+def test_the_windows_side_loads_none_of_the_modules_the_helpers_no_longer_need():
+    import ast
+
+    from concierge import chores, fake_engine
+
+    for module in (window, fake_engine, chores):
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                names.update([*(node.module or "").split("."), *(alias.name for alias in node.names)])
+            elif isinstance(node, ast.Import):
+                names.update(part for alias in node.names for part in alias.name.split("."))
+        assert not names & {"organizer", "conductor", "talk"}, module.__name__

@@ -47,7 +47,9 @@ window.choresPage = (() => {
     const parts = [el("h1", "", "Chores"),
                    el("p", "sub", "Small things Noir takes care of on its own, on this computer. Every one can be switched off, and what it moves can be undone for a week.")];
     const line = el("input", "chore-ask");
-    line.placeholder = "Tell Noir a chore, like: name my downloads by what's inside them";
+    // The example must be a chore a helper can be made for: the one before asked for
+    // files to be renamed, which no helper does.
+    line.placeholder = "Tell Noir a chore, like: put every new download in a folder by what it's about";
     line.setAttribute("aria-label", "Tell Noir a chore");
     line.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && line.value.trim()) {

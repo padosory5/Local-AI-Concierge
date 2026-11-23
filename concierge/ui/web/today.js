@@ -289,9 +289,12 @@ window.today = (() => {
 
   // ------------------------------------------------------- an agent's page
 
+  // A helper with a switch may work on what's highlighted or on a folder's new files:
+  // the page can't tell which, so these lines only say whether it is on. Where and
+  // when it works is in its own facts (agent_details), written from its card.
   function stateOf(name) {
     if (!switchable.has(name)) return "Ask it in the chat";
-    return active.has(name) ? "On in every app" : "Off";
+    return active.has(name) ? "On" : "Off";
   }
 
   function miniSwitch(name) {
@@ -324,7 +327,7 @@ window.today = (() => {
     const mark = el("canvas", "agent-mark");
     mark.width = mark.height = 144;
     dots(mark, 72, 72, 5.2, (x, y) => (Math.hypot(x - 36, y - 36) < 32 ? Math.max(0, (on ? 1.05 : 0.7) - Math.hypot(x - 26, y - 23) / 44) : 0));
-    const state = canSwitch ? (on ? "On. Highlight text in any app." : "Off. Switch it on to use it in any app.") : "Ask it in the chat.";
+    const state = canSwitch ? (on ? "On." : "Off. Switch it on to use it.") : "Ask it in the chat.";
     const head = el("div", `agent-head ${on ? "on" : ""}`, mark,
                     el("div", "agent-titles", el("h1", "agent-name", name),
                        el("div", "agent-state", el("span", `dot ${on ? "on" : ""}`), state)));
@@ -406,7 +409,7 @@ window.today = (() => {
                       el("div", "dots-track", el("div", "working-dots"))));
       }
       for (const name of agents.filter((a) => active.has(a))) {
-        parts.push(el("div", "line", el("span", "what", name), el("span", "aside", "On in every app")));
+        parts.push(el("div", "line", el("span", "what", name), el("span", "aside", "On")));
       }
     }
 

@@ -66,8 +66,17 @@ def test_switch_on_translator_idea_is_ready():
 
 
 def test_ready_parts_that_no_agent_combines():
-    a = assess(steps("on_request", "folder_files", "translate"), BIG_PC, 3.8, BLUEPRINTS)
+    a = assess(steps("on_request", "folder_files", "ask_documents", "translate"), BIG_PC, 3.8, BLUEPRINTS)
     assert a.level == "not_built" and "no agent puts them together" in a.verdict
+
+
+def test_an_idea_for_the_files_that_land_in_a_folder_is_one_a_card_can_be_made_of():
+    # Every part a card can be made of is on the shared template, so such an idea is ready:
+    # what is made of it is worked out by talking (the engine says so when nobody can).
+    a = assess(steps("new_file", "folder_files", "classify", "move_files"), BIG_PC, 3.8, BLUEPRINTS)
+    assert a.level == "ready" and a.blueprint == "custom"
+    a = assess(steps("new_file", "folder_files", "summarize", "save_file"), LAPTOP, 2.1, BLUEPRINTS)
+    assert a.level == "ready" and a.blueprint == "custom"
 
 
 def test_bigger_model_that_fits_is_named_with_its_size():
@@ -250,6 +259,11 @@ def test_highlight_ideas_work_while_switched_on_unless_a_key_was_asked_for():
     assert [s.block.id for s in settled] == ["while_on", "selected_text", "translate", "show_popup"]
     kept = settle_triggers(picked, "translate what I highlight when I press Ctrl+F1", BLOCKS)
     assert kept[0].block.id == "hotkey"
+    # Any key asked for in words counts (the pattern's word edges were once saved as
+    # backspace characters, and these two became "while it's switched on").
+    for asked in ("translate what I highlight when I press a key", "when I press alt, read the highlighted word aloud"):
+        assert settle_triggers(picked, asked, BLOCKS)[0].block.id == "hotkey", asked
+    assert "\b" not in planner.ASKED_FOR_KEY.pattern
     added = settle_triggers(steps("selected_text", "translate"), "translate what I highlight", BLOCKS)
     assert added[0].block.id == "while_on"
     chat = settle_triggers(steps("on_request", "summarize"), "summarize what I paste", BLOCKS)

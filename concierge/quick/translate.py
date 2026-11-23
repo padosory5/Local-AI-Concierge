@@ -39,6 +39,10 @@ _SCRIPTS = {
     "Thai": r"[฀-๿]",
     "Hindi": r"[ऀ-ॿ]",
 }
+# The languages looks_like() can tell a text is in: the ones with letters of their own, and
+# English by its commonest words. For any other language it never says yes, so nothing may
+# promise to know text that is "already in" one of those.
+TELLABLE = tuple(name for name in LANGUAGES if name in _SCRIPTS or name == "English")
 
 
 def _lookup(word: str) -> str | None:

@@ -23,7 +23,7 @@ import sys
 import threading
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
 
@@ -89,9 +89,32 @@ def shelf_for(path: Path) -> str:
     return next((name for name, endings in SHELVES.items() if ending in endings), OTHER_SHELF)
 
 
-def loose_files(folder: Path, now: float | None = None) -> list[Path]:
-    """Finished files sitting directly in the folder, not in a folder of their own."""
+def notes_files() -> set[Path]:
+    """The files the user's helpers that write notes add them to, switched on or not. One
+    is kept inside the folder its helper watches unless the user named another place, and
+    shelved by a sort of Downloads, the notes were split in two: the next note started a
+    new file where the old one had been."""
+    from ..agents import parts, store  # here, not at the top: parts imports this package
+
+    try:
+        agents = store.list_agents()
+    except Exception:  # noqa: BLE001 - the helpers can't be read: none is known to keep a file here
+        return set()
+    kept = set()
+    for agent in agents:
+        try:
+            if agent.blueprint == parts.CUSTOM and parts.then_of(agent.slots) == parts.NOTE:
+                kept.add(parts.notes_path(agent.slots))
+        except (AttributeError, TypeError, ValueError, OSError):
+            continue  # one helper saved oddly must not stop the sort
+    return kept
+
+
+def loose_files(folder: Path, now: float | None = None, leave: Iterable[Path] = ()) -> list[Path]:
+    """Finished files sitting directly in the folder, not in a folder of their own, less
+    the ones in `leave`."""
     now = time.time() if now is None else now
+    leave = set(leave)
     try:
         entries = list(folder.iterdir())
     except OSError:
@@ -103,7 +126,7 @@ def loose_files(folder: Path, now: float | None = None) -> list[Path]:
             if (path.is_file() and not path.name.startswith(".")
                     and path.name.lower() not in SYSTEM_FILES and path.suffix.lower() not in UNFINISHED
                     and not getattr(info, "st_file_attributes", 0) & CLOUD_ONLY
-                    and now - info.st_mtime >= SETTLE_SECONDS):
+                    and now - info.st_mtime >= SETTLE_SECONDS and path not in leave):
                 found.append(path)
         except OSError:
             continue  # it disappeared or can't be read: leave it alone
@@ -119,10 +142,10 @@ def free_name(target: Path) -> Path:
     return candidate
 
 
-def sort_plan(folder: Path, now: float | None = None) -> list[dict]:
+def sort_plan(folder: Path, now: float | None = None, leave: Iterable[Path] = ()) -> list[dict]:
     """Where the loose files would go, before anything moves: shelf and count, biggest first."""
     counts: dict[str, int] = {}
-    for path in loose_files(folder, now):
+    for path in loose_files(folder, now, leave):
         counts[shelf_for(path)] = counts.get(shelf_for(path), 0) + 1
     return [{"shelf": shelf, "count": count} for shelf, count in sorted(counts.items(), key=lambda item: -item[1])]
 
@@ -147,13 +170,14 @@ def _keep(log: Path, sorts: list[dict]) -> None:
         log.unlink(missing_ok=True)
 
 
-def sort_folder(folder: Path, log: Path, now: float | None = None) -> int:
+def sort_folder(folder: Path, log: Path, now: float | None = None, leave: Iterable[Path] = ()) -> int:
     """Move each loose file onto its shelf and remember how, for undo_sort.
     A file that can't be moved, because a program has it open, stays put, and
-    a move counts only once the file is really in its new place."""
+    a move counts only once the file is really in its new place. `leave`: files
+    that are not to move, whatever they are."""
     moved = []
     try:
-        for path in loose_files(folder, now):
+        for path in loose_files(folder, now, leave):
             shelf = folder / shelf_for(path)
             try:
                 shelf.mkdir(exist_ok=True)
@@ -172,7 +196,7 @@ def sort_folder(folder: Path, log: Path, now: float | None = None) -> int:
 
 
 def record_moves(log: Path, moves: list[dict], agent: str = "") -> str:
-    """Write down moves another job made (an organizer's), so undo_sort can put them
+    """Write down moves another job made (a helper that moves files), so undo_sort can put them
     back like a sort of its own. Returns the new entry's id."""
     when = time.time()
     sort = {"id": f"{int(when * 1000)}-{len(_sorts(log))}", "when": when, "moves": list(moves), "agent": agent}
@@ -314,6 +338,7 @@ class TidyWatch:
         self.asking = False  # a question is on the screen right now
         self.changed: Callable[[], None] = lambda: None  # told whenever today() would say something new
         self.held: Callable[[], bool] = lambda: False  # true while it shouldn't ask anything yet
+        self.leave: Callable[[], set[Path]] = notes_files  # files a helper keeps for itself: never counted or moved
 
     # ----------------------------------------------------------- looking
 
@@ -444,7 +469,7 @@ class TidyWatch:
         return {which: dict(counts) for which, counts in self._answers.items()}
 
     def _count(self) -> int:
-        return self._practice_files if self.practice else len(loose_files(self.folder))
+        return self._practice_files if self.practice else len(loose_files(self.folder, leave=self.leave()))
 
     def _worth_asking(self, count: int) -> bool:
         return (bool(self.noticing) and count >= MIN_FILES and time.time() >= self._asleep_until
@@ -459,7 +484,7 @@ class TidyWatch:
         if self._video_waiting:
             noticed = {"id": VIDEO, "text": VIDEO_QUESTION}
         elif self._worth_asking(count):
-            plan = _practice_plan(count) if self.practice else sort_plan(self.folder)
+            plan = _practice_plan(count) if self.practice else sort_plan(self.folder, leave=self.leave())
             noticed = {"id": SORT, "text": _question(count), "plan": plan}
         undoable = [] if self.practice else [sort["id"] for sort in _sorts(self.log)]
         done = [{**job, "undo": job.get("sort") in undoable}
@@ -551,7 +576,7 @@ class TidyWatch:
             moved, self._practice_files = self._practice_files, 0
             details, sort = _where(_practice_plan(moved)), ""
         else:
-            moved = sort_folder(self.folder, self.log)
+            moved = sort_folder(self.folder, self.log, leave=self.leave())
             if moved:
                 from .. import activity
 
