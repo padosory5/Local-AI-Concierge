@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -36,8 +37,8 @@ HISTORY_CHARS = 9000
 # the cap is the wait, about 12 seconds on an RTX 5080 and over a minute on a
 # slow first load, so it's kept short.
 MAX_THOUGHT_CHARS = 4000
-# Noir stays in graphics memory while the program is open, and leaves it
-# when the program closes.
+# Noir stays in graphics memory while it is being used (IDLE_UNLOAD_SECONDS
+# below), and leaves it when the program closes.
 #
 # A normal exit (/exit, Ctrl+C) unloads it at once when UNLOAD_ON_EXIT is on.
 # A program that is killed (window or tab closed, Task Manager, crash) gets no
@@ -47,6 +48,11 @@ MAX_THOUGHT_CHARS = 4000
 UNLOAD_ON_EXIT = True
 KEEP_ALIVE = "60s"
 HEARTBEAT_SECONDS = 20
+# Its model leaves the graphics memory once nothing has asked it anything for this long,
+# and is back about three seconds after it is next needed (2.5 s to load, measured on an
+# RTX 5080). It used to stay for as long as the app was open, and the app sits on the
+# taskbar all day: 3.9 GB of a 16 GB card held whether or not anything was happening.
+IDLE_UNLOAD_SECONDS = 180
 
 
 def system_prompt(base: ModelEntry, rec: Recommendation, report: HardwareReport) -> str:
@@ -270,13 +276,17 @@ class NoirChat:
             self.check_in()
 
     def check_in(self) -> None:
-        """Keep Noir loaded for another KEEP_ALIVE, but only if it is loaded now.
+        """Keep Noir loaded for another KEEP_ALIVE, but only if it is loaded now and something
+        used it lately (a reply, a file judged, the Spot).
 
         Never loads it: memory is only taken once the user actually talks.
         """
         with self._lock:
             if self._closed.is_set():
                 return
+            used = getattr(self.ollama, "used", None)
+            if used is not None and time.time() - used.get(self.model.split(":")[0], 0) > IDLE_UNLOAD_SECONDS:
+                return  # nothing has used it for a while: no check-in, so Ollama lets it go
             try:
                 if any(m["name"].split(":")[0] == self.model for m in self.ollama.loaded()):
                     self.ollama.refresh(self.model, KEEP_ALIVE)

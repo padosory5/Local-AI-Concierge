@@ -12,6 +12,11 @@ computer's hardware:
 
 The answer is an IdeaCard. The user can make it (when every block is
 ready), save it to their ideas list, change it, or drop it.
+
+This is the way in only on a computer where no model can work an agent out
+with the user (designer.py): there, the conversation itself finds out what
+can be made, and says so when something can't. The ideas list is kept either
+way, and that conversation puts what it couldn't make into it.
 """
 
 from __future__ import annotations
@@ -88,7 +93,7 @@ def assess(steps: list[PlanStep], report: HardwareReport, noir_gb: float,
            blueprints: dict | None = None) -> Assessment:
     """Decide what is possible. Plain code: the model never judges itself.
 
-    blueprints: the agent types that exist. An idea can be made when one of
+    blueprints: the templates there are. An idea can be made when one of
     them is built from at least every block the idea needs.
     """
     card_steps = [_card_step(s) for s in steps]
@@ -159,8 +164,9 @@ def _difficulty(blocks: list[Block], report: HardwareReport, noir_gb: float
             + " Your computer has room for it next to Noir."), helpers, False
 
 
-# Words that show the user really asked for a shortcut key.
-ASKED_FOR_KEY = re.compile(r"shortcut|hot ?key|key|press|ctrl|control \+|alt|단축", re.IGNORECASE)
+# Words that show the user really asked for a shortcut key. (The \b here were once saved as
+# backspace characters, and "press a key" and "alt" were never seen.)
+ASKED_FOR_KEY = re.compile(r"shortcut|hot ?key|\bkeys?\b|\bpress|ctrl|control \+|\balt\b|단축", re.IGNORECASE)
 
 
 def settle_triggers(steps: list[PlanStep], request: str, blocks: dict[str, Block]) -> list[PlanStep]:
@@ -399,8 +405,8 @@ Examples:
 {{"title": "Grammar fixer", "steps": [{{"block": "hotkey", "detail": "Ctrl+Shift+G"}}, {{"block": "selected_text", "detail": ""}}, {{"block": "rewrite", "detail": "fix grammar"}}, {{"block": "replace_text", "detail": ""}}]}}
 "Remind me to drink water every hour" ->
 {{"title": "Water reminder", "steps": [{{"block": "schedule", "detail": "every hour"}}, {{"block": "show_popup", "detail": "drink water"}}]}}
-"Summarize the reports in my Work folder" ->
-{{"title": "Report summarizer", "steps": [{{"block": "on_request", "detail": ""}}, {{"block": "folder_files", "detail": "Work folder"}}, {{"block": "summarize", "detail": ""}}]}}
+"Pull the dates out of the letters in my Work folder" ->
+{{"title": "Date finder", "steps": [{{"block": "on_request", "detail": ""}}, {{"block": "folder_files", "detail": "Work folder"}}, {{"block": "extract", "detail": "dates"}}]}}
 "Play songs that fit my mood" ->
 {{"title": "Mood music", "steps": [{{"block": "on_request", "detail": ""}}, {{"block": "other", "detail": "choose and play music"}}]}}"""
 

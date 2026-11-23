@@ -42,6 +42,12 @@ def _normalize_url(host: str) -> str:
 class Ollama:
     def __init__(self, base_url: str | None = None):
         self.base_url = _normalize_url(base_url or os.environ.get("OLLAMA_HOST") or DEFAULT_URL)
+        # When each model was last asked something, by its name without the tag: Noir's own
+        # model is let go from the graphics memory once it has sat unused a while (noir.py).
+        self.used: dict[str, float] = {}
+
+    def _use(self, model: str) -> None:
+        self.used[model.split(":")[0]] = time.time()
 
     # ------------------------------------------------------------ server
 
@@ -120,7 +126,9 @@ class Ollama:
 
     def delete(self, name: str) -> None:
         try:
-            self._check(requests.delete(f"{self.base_url}/api/delete", json={"model": name}, timeout=30))
+            # Ollama answers a delete with nothing in it: read as JSON, that failed, and a
+            # model that had just been deleted was reported as "I can't reach Ollama".
+            self._check(requests.delete(f"{self.base_url}/api/delete", json={"model": name}, timeout=30), read_body=False)
         except requests.RequestException as exc:
             raise OllamaError(UNREACHABLE) from exc
 
@@ -186,6 +194,7 @@ class Ollama:
         if options:
             body["options"] = options
         self.last_tokens = (0, 0)
+        self._use(model)
         for event in self._stream("/api/chat", body, timeout=600):
             self._count(event)
             message = event.get("message", {})
@@ -215,6 +224,7 @@ class Ollama:
         if options:
             body["options"] = options
         self.last_tokens = (0, 0)
+        self._use(model)
         for event in self._stream("/api/chat", body, timeout=300):
             self._count(event)
             text = event.get("message", {}).get("content", "")
@@ -251,6 +261,7 @@ class Ollama:
             body["think"] = think
         if keep_alive is not None:
             body["keep_alive"] = keep_alive
+        self._use(model)
         reply = self._post("/api/chat", body)
         # Counted like a streamed answer, so a form its model fills (a research plan)
         # shows up in the tokens a job used.

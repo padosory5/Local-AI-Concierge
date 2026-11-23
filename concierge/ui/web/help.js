@@ -16,7 +16,7 @@ window.helpPage = (() => {
     { id: "explain", words: "understand what I highlight", kind: "agent", agent: "Highlight Explainer", say: "Turn on the Highlight Explainer", does: "Highlight a word anywhere. A bubble explains it." },
     { id: "spot", words: "write better in any app", kind: "spot", does: "Highlight your writing and tap Ctrl twice. The better version goes right back." },
     { id: "tidy", words: "keep Downloads tidy", kind: "notice", does: "When Downloads gets messy, I ask once, sort it into folders, and you can undo it." },
-    { id: "translate", words: "translate what I highlight", kind: "agent", agent: "Korean Translator", does: "Highlight text in another language. A bubble shows it in yours." },
+    { id: "translate", words: "translate what I highlight", kind: "agent", agent: "{home} Translator", does: "Highlight text in another language. A bubble shows it in yours." },
     { id: "grammar", words: "fix my writing", kind: "add", agent: "Grammar Fixer", say: "Install Grammar Fixer", does: "Fixes grammar and spelling, in the chat or from the Spot." },
     { id: "sum", words: "sum things up", kind: "add", agent: "Quick Summarizer", say: "Install Quick Summarizer", does: "Sums up any text in three short points." },
     { id: "files", words: "find things in my files", kind: "say", say: "Make an agent for my documents", does: "Answers questions from a folder of your files, and shows where it found each answer." },
@@ -62,9 +62,10 @@ window.helpPage = (() => {
   }
 
   function agentFor(topic) {
-    // The translator translates into the computer's own language.
+    // A line's ready-made agent may be named for the computer's own language ("{home}"):
+    // which line that is, is said by the line, never looked up here by what it is for.
     const { home } = state();
-    return topic.id === "translate" ? `${home === "English" ? "English" : home} Translator` : topic.agent;
+    return (topic.agent || "").replace("{home}", home);
   }
 
   async function setOn(topic, on) {

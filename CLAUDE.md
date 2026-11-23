@@ -62,7 +62,7 @@ stream).
 | `Question` | Noir's question; `choices` as buttons, which call `choose(id, choice)`. The user may also type an answer, which goes to `send()` |
 | `AgentCard` | A card with name, kind, what it reads, can do, cannot do, runs on, and `actions` as buttons calling `choose(id, action)`. When an existing agent is being changed, the first action is "Save changes" instead of "Create it" |
 | `Progress` | One status line ("Reading 23 files..."); each new one replaces the last, cleared by any other event |
-| `Result` | An agent's answer, with its `sources` (file path and quote) shown small underneath |
+| `Result` | An agent's answer, with its `sources` (file path and quote) shown small underneath. From `Try-out`: what a helper still being worked out would do, just before its card |
 | `AgentList` | The user's agents, for a sidebar or menu, each with a delete button calling `delete_agent(name)`. Agents in `switchable` work outside the chat while switched on: show an on/off switch calling `toggle_agent(name)`; `active` lists the ones on. Sent again whenever it changes |
 | `Error` | A friendly error message; the text is already written for the user |
 | `ChatList` | Saved conversations, newest first, with `current` marking the open one. Clicking one calls `open_chat(id)`; each has a delete button calling `delete_chat(id)` after a confirm |
@@ -71,9 +71,12 @@ stream).
 
 Build the UI against `FakeEngine` (`concierge/fake_engine.py`). It needs no
 model and plays scripted flows that produce every event: type anything for a
-chat reply, "make an agent" for the full agent setup, "ask ..." to run an
-agent, "translate", "screenshot" or "idea" for an idea card, "error" for an
-error. Its "Korean translator" agent can be switched on and off. Switch to the real engine with one line:
+chat reply, "make an agent" for a helper worked out by talking, in the real
+order (a question in words, one with buttons, a try-out, the card, then the
+files already there), a helper's name and a colon to ask it, "ask ..." to run
+an agent, "translate", "screenshot" or "idea" for an idea card, "error" for an
+error. Its made-up helpers are cards: "Korean translator" can be switched on
+and off, and "Home papers" works on a made-up Downloads. Switch to the real engine with one line:
 
 ```python
 from concierge.fake_engine import FakeEngine
@@ -84,76 +87,85 @@ engine = NoirEngine()    # real Noir: chat, creating agents, running them
 ```
 
 The real engine produces the same events as the fake one. Its `Question` ids
-are `folder`, `name`, `pick_folder`, `change`, `duplicate`, `language`,
-`show`, `idea_change`, `delete_agent`, `pick_agent_to_delete`, `target_language`, `fix_agent` and `conduct` (a question in a setup that is talked through, about no setting in particular), the agent card's id is `card` and
-the idea card's is `idea`; the UI should not depend on ids beyond passing
-them back. To try the
+are `design` (a question in a helper's designing conversation about no setting
+in particular), the settings it asks about with buttons (`looks_at`, `show`,
+`keep`, `open`, `skip_language`), `duplicate`, `first_pass`, `all_now`,
+`carry_on`, `rule_from_move`, `fix_agent`, `delete_agent`,
+`pick_agent_to_delete` and `web`, and where nobody can design `folder`,
+`name`, `pick_folder`, `change`, `when`, `instruction` and `idea_change`; the
+agent card's id is `card` and the idea card's is `idea`; the UI should not
+depend on ids beyond passing them back. To try the
 real agent flow, ask Noir to make an agent for `examples/sample_docs`
 (made-up contracts, a lease and meeting notes). Agents are saved per user in
 `%LOCALAPPDATA%\NoirAgents\agents`.
 
-## Agent types
+## Agents are cards
 
-Most agents have no kind of their own: they are **made from parts**. The
-idea planner breaks the user's request into building blocks; when every
-block exists, Noir writes one instruction for what the agent does with
-the text ("Explain this English word in simple Korean."), and the shared
-template `agents/blueprints/custom.yaml` holds the rest: when it works
-(while switched on, or when asked in the chat), how it shows the result
-(bubble, clipboard, both) and how long the result stays. One runner does
-every such agent's job (`agents/recipe.run_instruction`), so a translator, a
-word explainer and a grammar fixer are the same machine with different
-instructions. Noir only fills the template; it never writes code.
+An agent (a helper, to the user) is a card (`concierge/agents/parts.py`): WHEN it works, what
+it LOOKS AT, the RULE in plain words, and what it does THEN. The rule alone says what a helper
+is for: data, worked out with the user in a conversation and read by the built-in model for
+every item. The rest are parts from a catalog code owns, each mechanics only (watch a folder,
+move a file so it can be undone, show a bubble). Nothing in code, a prompt, a yaml or a test's
+product text may know what one helper is for. Every kind used to be written by hand (a
+1,300-line file organizer that knew only college courses), so Noir made only what somebody had
+built; the user asked for "a new conversation like we never had this conversation".
+`tests/test_old_kinds_gone.py` keeps the old kinds and their words out.
 
-- Switch-on agents (`concierge/quick/`): while on, every mouse highlight in
-  any program goes through the instruction and the result is shown in a
-  bubble above the text, copied, or both. Highlights are read through UI
-  Automation, or by pressing Ctrl+C and restoring the clipboard, never in
-  terminals. By default the bubble stays until the text is no longer
-  highlighted. Windows only, and only while Noir (or the terminal app) is
-  running.
-- Chat agents: "Grammar Fixer: me and him goes" runs the instruction on the
-  rest of the message and answers in the chat.
-- `documents_qa` ("Ask my documents") is the one agent with a blueprint of its
-  own, because it needs a search index rather than an instruction.
+The WHENs (`WHENS`) are `WHILE_ON` (text highlighted with the mouse), `IN_CHAT` (its name, a
+colon and the text) and `NEW_FILE` (a file lands in a folder); the THENs (`THENS`) `SHOW` (a
+bubble, the clipboard or both), `ANSWER`, `MOVE`, `NOTE` and `DOCUMENTS` (a folder's
+documents). `FITS`: WHILE_ON with SHOW, IN_CHAT with ANSWER or DOCUMENTS, NEW_FILE with MOVE
+or NOTE. Each part has its `about`, its settings (`Setting`: slot, label, type, the question
+when it must be known, how the design model fills it; one with a question and no usual value
+is `needed`, the rest get `defaults`) and its `facts`, which the design model may tell the
+user, each true to the code that runs the part. The settings: `folder`, `looks_at` (inside the
+file or its name), `choices` (folder names), `open` (may it make folders), `into` (where they
+are kept), `notes`, `show`, `keep`, `skip_language`, the rule (`instruction`, at most
+`MAX_RULE`, none for DOCUMENTS) and `name`; `examples` come only from "put X in Y". The texts
+are what is saved in the slots, so changing one orphans the agents saved with it. `card`,
+`describe` and `how` write every line the user reads about a card, places by name.
 
-Agents of the retired "Highlight translator" blueprint are turned into
-agents made from parts when the app starts (`recipe.migrate`).
+`skip_language` (on WHILE_ON, usually none) is what was a translator's special treatment: text
+already in that language, or with no letters, is passed over (`parts.leaves_out`, shared by
+the runtime and the try-out). Its choices are the languages code can tell
+(`translate.TELLABLE`), and nothing reads a rule for "translate". It is the language the
+result comes out in: a helper to show what Japanese sentences mean in English was given
+Japanese, its try-out did nothing, and once made it turned English into Japanese (21 Nov
+2026).
 
-Agents are changed by talking: "make the translation stay until I
-unhighlight it" opens the existing agent with the change applied and shows
-its card with Save changes (`AgentBuilder.edit`). Settings are found in code;
-a change to what it does ("make it Japanese", "shorter") is a rewritten
-instruction (`recipe.rewrite_instruction`). Code recognises a change request
-(`router.wants_change`) and which agent it is about, by name or by words from
-its name and instruction (`router.refers_to`). Words decide settings in code
-(`recipe.settings_from_words`): "highlight" means it works while switched on,
-"above"/"show" a bubble, "copy"/"clipboard" the clipboard; the model may only
-change a setting the message talks about, and an instruction is only ever the
-job ("Translate the text into Korean."), never when or where. A translator
-whose language the user did not say asks for it. A problem report ("it's not
-showing anything") gets a diagnosis from the agent's settings and a fix to
-click (`NoirEngine._diagnose`), not a blind change. Asking for an agent that
-repeats one the user has first asks whether to use or change it.
+A highlight card runs in `QuickAgents` (`concierge/quick/`): while on, every mouse highlight
+in any program goes through its rule (`recipe.run_instruction`) and the result is shown in a
+bubble above the text, copied, or both. Highlights are read through UI Automation, or by
+pressing Ctrl+C and restoring the clipboard, never in terminals. By default the bubble stays
+until the text is no longer highlighted. Windows only, and only while Noir (or the terminal
+app) is running. A chat card ("Grammar Fixer: me and him goes") runs its rule on the rest of
+the message with the chat's model, only when named: picked by the router's model for a message
+that didn't name it, a helper that turns text into one language was handed a request to turn
+some into another. `documents_qa` ("Ask my documents") is the one agent not saved as a card,
+its runtime being a search index (`agents/runner.py`).
 
-To let Noir build more kinds of agents, build a block (a trigger such as
-shortcut keys or new screenshots, an input, an output), mark it `ready` in
-`capabilities.yaml`, add it to `blocks` in `custom.yaml`, and teach
-`QuickAgents`/the engine to run it.
+Agents of earlier versions become cards at startup (`parts.migrate`): the file organizer
+NEW_FILE and MOVE with its folders, the summary writer NEW_FILE and NOTE, the old highlight
+translator a WHILE_ON card. Their rule is code's guess, so the ones for files come back off:
+the chat says so once, with the rule (`_say_changed`), and the chores line says "Off: its rule
+needs talking through" (`NEEDS_TALKING`) until it is changed or switched on
+(`CHANGED_HELPERS`, `CHANGED_TOLD`). `FolderWatch` takes over the old `organizer*.json` once,
+so undo history survives. On a copy of the user's own agents (22 Nov 2026) every check passed.
+
+To let Noir build more kinds, add a part: a WHEN or THEN with its settings and facts, its
+place in `FITS`, the code that runs it, and its block in `capabilities.yaml` marked `ready`
+and in `blocks` in `custom.yaml`, so the idea planner calls such an idea ready.
 
 ## Agent ideas
 
-When the user describes a helper they would like ("translate what I highlight
-when I press Ctrl+F1"), the router sends it to the idea planner
-(`concierge/agents/planner.py`). Noir's model breaks the idea into building
-blocks from `concierge/agents/capabilities.yaml`, and code decides the
-verdict from each block's `ai` need and `status` plus this computer's
-hardware (bigger models it may need are the `helpers` in `models.yaml`). The
-user can make it (all blocks ready), save it to their ideas list ("my ideas"),
-change it, or drop it. Saved ideas are kept in
-`%LOCALAPPDATA%\NoirAgents\ideas.json` and judged again whenever they
-are listed. When you build a block, set its `status` to `ready` in
-`capabilities.yaml`.
+The idea planner (`concierge/agents/planner.py`) breaks an idea into building blocks from
+`concierge/agents/capabilities.yaml`, and code decides the verdict from each block's `ai` need
+and `status` plus this computer's hardware (bigger models it may need are the `helpers` in
+`models.yaml`). With a model that can design it is not the way in: the designing conversation
+says honestly what can't be made and keeps it in the ideas list (`planner.save_idea`). Without
+one, the router's ideas go to the planner: make it (all blocks ready), save it ("my ideas"),
+change it, or drop it. Saved ideas are kept in `%LOCALAPPDATA%\NoirAgents\ideas.json` and
+judged again whenever they are listed.
 
 ## Minimized Noir
 
@@ -190,8 +202,8 @@ with Undo (`WatchBridge.chores`, from `chores.py`: `listing` puts together what
 a chore is anything that runs without being asked in the chat). Below is one line,
 "Tell Noir a chore, or ask". Typing folds the list away (`body.talking`) and the
 conversation takes the drawer, the same one as the full window, oldest at the top
-and newest by the box, with its questions' buttons working there too (the watch's and an organizer's, through
-the same `noticed`) and an agent card drawn whole (reads, can do, can't do, runs on: it
+and newest by the box, with its questions' buttons working there too (the watch's, through `noticed`; an
+earlier question's go dead once something else is said, `retireChoices`) and an agent card drawn whole (reads, can do, can't do, runs on: it
 once showed only the name); "‹ Chores"
 goes back. Messages are added, never redrawn, so nothing flickers.
 
@@ -235,301 +247,337 @@ built**: Yes only says so, plainly, with no light. `python -m concierge.ui
 --fake` is a practice run where both questions come soon after minimizing, the
 jobs only wait, and no files are looked at or moved.
 
-## How an agent is made, and how Noir talks about it
+## Working a helper out: the designing conversation
 
-An agent is a blueprint (`agents/blueprints/*.yaml`: which building blocks from
-`capabilities.yaml` it is made of, and which slots it needs) filled in through a
-conversation, then run by the code those blocks map to. Code drives the conversation:
-it reads what the first message already says (`AgentBuilder._prefill`, `watched_from`,
-`destination_from`, `courses_in`), asks only for what is still empty, shows one card and
-creates the agent on Create it; the model fills forms forced by a schema (which folder,
-what the agent does) and never decides. Two kinds watch a folder (`organizer.WATCHED_KINDS`,
-run by `Organizer` on one thread, summaries before moves): the file organizer
-(`organizer.yaml`) and the summary writer (`summarizer.yaml`: a few lines about each new
-document into a notes file, `notes_path`, `NOTES_DEFAULT`, `SUMMARY_NOTE`; `save_file` is a
-ready block now, and `recipe.describe` knows both). A request for either is routed in code
-before the model (`router.WATCHES` with `SUMS_UP` or `SORTS`: "when a pdf lands in my
-downloads, write me a short summary in a notes file" once went to chat and a web search),
-and a request for new work is never taken for a question about a chore or for a web
-lookup (`engine.ASKS_FOR_WORK`).
+Every request to make or change a helper (the router's `new_agent`, `idea` or `change_agent`,
+the planner's Make it, a fix after trouble, a file put somewhere by hand) goes to `Designer`
+(`concierge/agents/designer.py`) whenever a model can hold the conversation
+(`NoirEngine._new_helper`, `_change`, `_make`). It starts from nothing: what the router made
+of the request is dropped and no helper is offered. Standing work on new files, asked for in
+words (`router.WATCHES` with `ASKS_TO`, not `ASKS_HOW_IT_IS`), is routed in code: the model
+took such a request for chat and offered a web search.
 
-A helper for files whose kind the words don't say is asked about, never guessed
-(`router.KIND_WORDS`, `FILES`, `WANTS_HELPER`, `kinds_named`; route `ask_kind`,
-`NoirEngine._ask_kind`, `WHICH_KIND`, `KIND_SHORT`, `SOMETHING_ELSE_KIND`): "can you create
-an agent that can handle my files" once became Ask my documents, and now Noir asks what it
-should do with the files, with the kinds as buttons, an existing helper of those kinds to
-use instead, and Something else (the idea planner); a short answer typed instead of a click
-is joined to the request and routed again. One kind named by its words is that kind, in
-code, and a kind the model picked that the words contradict is overruled. During a setup
-an answer typed for a question not asked yet ("just keep them inside that folder" while
-the folder is still being chosen, "decide as you go" to the folder question) is filled in
-where it fits (`AgentBuilder._answer_any_slot`, `BY_CONTENT_WORDS`, `BY_NAME_WORDS`) and
-the open question is asked again, instead of the setup being dropped and the chat model
-answering about passwords; a click on a card not yet shown re-asks the open question. A
-short question with a pronoun soon after an organizer did something ("where did they go?")
-is about the files (`FOLLOWS_A_CHORE`, `CHORE_FRESH_SECONDS`, `chore_spoken_at`), never a
-web lookup. Other local-first apps (Open WebUI, AnythingLLM, Jan, LM Studio) set helpers up
-in forms and switch them on; their models only ever answer, never decide, which is why
-their conversations feel smooth. Here code decides and asks, and the model is only ever
-offered a choice it can refuse with "ask instead".
+Who designs is the engine's choice at each start (`_design_model`): the plan or key model the
+user picked, or the one Auto asks (`talker_form`: note, conversation and schema as one
+message, since the plans' apps drop system messages); else the first model on `designers` in
+`models.yaml` that is installed and fits beside Noir's own on the graphics card, never on the
+processor (`_local_designer`, `local_form`); else nobody. Only a model that passes
+`designer_eval` goes on that list, and one picked in the menu doesn't design unless it is
+there: in the first probe (10 Nov 2026) qwen3.5:9b switched the agent on with no yes and
+qwen3.6:35b-a3b said it would move files nobody had asked about.
 
-Noir says what code decided in its own words (`agents/talk.py`, `phrase`): code writes the
-plain line (the offer, a slot's question, "it's on", "okay", a kind or course question) and
-the model rewords it at `TEMPERATURE`; the rewording must keep every fact word for word
-(names, paths, numbers, codes, file names, listed by the caller or found in the line by
-`facts_in`), keep `KEPT_SHARE` of the line's own words (`words_of`), stay short and plain
-(`JARGON`) and still ask what the line asked (`ASKING_WORDS`), or the plain line is used; a
-line longer than `MAX_PLAIN` is a record and is never reworded, because a 4B model turned
-"left alone, as you said" into "since it's not a .png". Without a model (the tests, the
-practice run) the plain line is used, so tests see fixed text. No question in a blueprint
-carries an example that could look like the user's own life: the user saw "Physics 122,
-Calculus, History" in one and took it for his data.
+Each turn the design model reads a note code builds again (`note_for`): how to talk and
+design, the parts, what no helper can do (`NO_HELPER_CAN`), the card so far, what code can see
+(`_computer`: how many files of which endings are in the four places, the folders in them by
+name, the helpers they have; never a file's name), the last try-out and what was refused. It
+fills one form forced by a schema (`schema_for`): what they want, what to change, a WHEN and a
+THEN, every setting (a folder is a place from a list plus a name, `field_for`), a text to try,
+where things stand (`STILL_ASKING`, `NOTHING_MISSING`, `CALLED_OFF`, `MOVED_ON`,
+`CANT_BE_MADE`), what its question asks for, and last its words. A rule is written as the
+person would say it, statements about their things and what each kind is not: for 23 made-up
+files, 20 right as a model's list of "if" conditions, 22 as plain statements (20 Nov 2026).
+Nothing a model reads names a folder, subject or helper as an example: given one, a model
+offered it as the user's own, and a smaller one filled it in.
 
-## Setups talked through: the conductor
+The model talks and proposes; code decides (`_turn`, `_take_form`). A WHEN and a THEN are
+taken only when they go together. A folder must exist: looked for everywhere when the place is
+wrong, and by the folders it is reached through (`_by_its_steps`); one typed a letter off is
+asked about by its real name ("Did you mean Documents\Appliance manuals?", `NEARLY`), never
+taken in that turn. The model is told it need never know where a folder is: it asked where a
+named one was four turns running. A rule too long or saying how a result is shown goes back
+once and is then cut, and a system folder is refused. The name is the model's until there is a
+card, then only one the user gave (`NAMES_IT`: "call the folder ..." once named the agent). An
+empty value never erases a known one. What the question asks for is not taken from the same
+form, nor before a card a place nobody said (a notes file was quietly put in Documents). With
+a card up, or a helper being changed, a choice changes only when the turn speaks of it
+(`_speaks_of`): told "also leave the pictures alone", a model let the helper make new folders
+too (22 Nov 2026). A plain yes changes no known choice. A refused value (`Refused`) goes back
+once with the reason; refused twice, code says its own plain line and passes it over unless
+the user names it again (`Sketch.ignored`).
 
-In the plain setup above nobody is in the conversation: code asks the blueprint's questions
-in order and the 4B model rewords one line at a time without seeing the chat. In the user's
-own setup on 9 Nov "Inside that folder is simplest" came back as "inside the Sorted Folders
-folder", a folder that doesn't exist, and passed every check. So a blueprint that says how
-it works (`facts` in its yaml: the organizer and the summary writer; each line must stay
-true to the code) is talked through instead, when there is a model fit to do it
-(`agents/conductor.py`). Each turn that model, the conductor, reads how to talk and how to
-conduct (`VOICE`, `HOW_TO_CONDUCT`), the blueprint's facts, each setting with its question
-and how to fill it, the draft as code has checked it (`AgentBuilder._known`: places by
-name, never a whole path), what code can see (`_facts`: the places, how many files of
-which endings are in the folder and never their names, the agents already made) and the
-setup's own conversation (`Draft.turns`), and fills one form forced by a schema
-(`schema_for`): a value for every setting, where things stand (`STILL_ASKING`,
-`NOTHING_MISSING`, `CALLED_OFF`, `MOVED_ON`), which setting its question is about, and
-last its words. A folder is a place from a list plus a name (`field_for`, `PLACE_NAMES`,
-`INSIDE`), so a model can't misspell a place or make up a path. Nothing in that note is an
-example of a folder's name: given "like College", one model offered it to the user as if
-it were theirs and a smaller one filled it in as the answer.
+With nothing needed missing, nothing refused and nothing asked, the usual values are filled
+in, the words said, the try-out run and the card shown (Create it or Save changes, Change
+something, Cancel). The first proposal waits for an answer (`Sketch.proposed`), since a card
+came under "Which folder should it watch?" for a folder the model had guessed; not when the
+first message named every folder (`_said_it_all`), after a plain yes, or for a change. Only
+the button, or a whole message that is a plain yes while the card is up and Noir asked nothing
+(`CARD_YES`, `AGREES`, `SAVE_YES`), makes anything; "never mind" ends it in code
+(`_calls_off`). Code cleans the words: an opening offer, a closing "Shall we begin?"
+(`tidy_say`), "Does that look right?" under a card (`CONFIRMS`), talk of a card that won't
+come (`CARD_WAITS`); with the card up the model is told so (`CARD_IS_UP`). A plain yes to "a
+bubble, the clipboard, or both?" gets "Which one would you like?" once (`WHICH_ONE`): asked
+after every yes, a helper was never made (22 Nov 2026). A helper that repeats one they have is
+asked about once, in code (`duplicate`).
 
-The model talks and proposes; code decides (`AgentBuilder._conduct`, `_take_form`). Every
-value is checked: the folder to watch must exist (`_form_folder`, looked for everywhere
-when the place the model gave is wrong), a new folder needs a place (`_form_place`), a name
-is only taken if the user gave the agent one (`NAMES_IT`: "can you call the folder School"
-once named the agent School), an empty value never erases a known one. What code
-refuses (`Refused`) goes back to the model once with the reason and what to do about it
-(for a folder that isn't there: say so and ask, and use the name nowhere else; hinted
-instead that it might be where the sorted folders go, the model made a mistyped "my Scool
-folder" into a new destination nobody had asked for); refused twice, code says its own
-plain line, what was known stays as it was, and that value is passed over from then on unless
-the user names it again (`Draft.ignored`: without that, a 9B model answered three
-different messages with "I can't find a folder called College"). "Nothing missing" with
-something missing is asked again, and the card is shown by code as soon as nothing needed
-is missing (`needed`: a setting with a question and no usual value), whatever the model
-says of where things stand: let hold the card back to ask once more, it asked about a
-setting that has a usual value. Only a turn in which code refused something waits with
-the card: asked for a folder that isn't there, the model said so, asked which folder to
-watch, and guessed Downloads for the draft, and a card for Downloads showed under its
-question. Nothing the model says makes an agent: only the card's
-button, or a whole message that is a plain yes while the card is up (`CARD_YES`; "ok but
-put them in Documents" is a change), and not even that when Noir has just asked something,
-since the yes then answers the question. In the first probe (10 Nov: the model given the conversation
-but no guard) three of four local models switched the agent on with no yes or said they
-would move a bank statement, which is why. A click on a question's button sets that
-setting in code and is said to the model like anything typed; Change something on the card
-asks in words. An opening offer that says nothing ("I can certainly help you with that.")
-is taken off in code (`OPENING_OFFER`: told not to, the model still wrote it), and so is a
-closing offer or "Shall we begin?" (`tidy_say`, with `noir.CLOSING_FILLER` and
-`CLOSING_NUDGE`); once the card is up the model is
-told so (`CARD_IS_UP`), or every answer ends by pointing at its button. A conductor that fails (`ConductorError`: Ollama stopped, the plan signed out,
-a form that can't be read) leaves the plain questions, from wherever the draft is. The
-lines code writes after a talked-through setup ("File organizer is ready.", "It's on ...")
-are said as written, not reworded (`AgentBuilder.conducted`).
+The try-out is code's (`_try_out`). For new files a local design model leaves memory first and
+`FolderWatch.rehearse` runs the card on the newest files in its folder, moving, writing and
+recording nothing: "name → folder (read as ...)", "name: stays (why)", or the note. Eight
+files took 5.5 seconds with the built-in model to load, 2.6 loaded (20 Nov 2026). After a
+change the same files are tried again, each changed one saying what it was. A text helper is
+tried on their own text or a sample, called a sample. The model reads its own rule as right,
+so code looks at the result: files their message speaks of that come out as before go to the
+mender, and code says what is true (`_tried_again`: "still comes out as before", "also comes
+out differently"), or that a claimed change wasn't made (`NOT_CHANGED`, `ALREADY_SO`;
+`_echoes` for an old change written down again). A text to try, or a question at the card,
+leaves the card as it stood: asked "will it touch the stuff thats already in there?", a model
+answered well, rewrote the rule too, and three files came out otherwise (22 Nov 2026). A text
+try-out plainly in another language puts `skip_language` right (`_comes_out_in`).
 
-Who conducts is the engine's choice at each start (`NoirEngine._conductor`): a plan or key
-model the user picked, or the one Auto sends hard questions to (`talker_form`: the note,
-the conversation and the schema as one message, since the plans' apps drop system
-messages, and the JSON read out of the reply by `read_form`); else the first model on the
-`conductors` list in `models.yaml` that is installed and fits beside Noir's own on the
-graphics card (`_local_conductor`, `local_form`; loaded for the setup, freed when it ends,
-`Conductor.done`); else nobody, and the plain questions are asked. A local model picked
-in the menu doesn't conduct unless it is on that list. Only a model that passes `python -m
-concierge.conductor_eval <tag>` goes on it: seven scripted setups through the real engine
-on a made-up home (the user's own with its typos, an answer out of order, a worry about
-old files and a question about bank statements; one message that says everything, then
-two changes at the card; never mind; a question about something else; a folder that isn't
-there; the summary writer; one in Korean), checking what code ended up with and what was
-never done, and printing every word to be read, since no check can judge the words (several
-of the fixes above came from reading a run that had passed every check). On 10 Nov 2026
-Gemma 4 12B passed 50 of 50 in each of its last three runs, about 45 seconds a run; Qwen
-3.5 9B failed three to seven checks in each of four runs and the 4B three to five (they put the
-destination in the folder to watch, dropped a change said at the card, and answered
-Korean in English), so size alone puts nobody on the list. The plan path
-(`talker_form`) is covered by tests with a pretend model only: no real setup has been run
-through a plan yet, where each turn costs what any answer does (about 29k tokens through
-Claude Code). `organizer_eval` switches the conductor off (`NoirEngine.conducts`), since it
-is about what the organizer does and must run the same on every computer.
+Four small forms do jobs the whole form did badly (gemma4:12b). The opening (`OPENING`): a
+first message that only names a trouble gets one question about their situation, right for 42
+of 45 (20 Nov 2026), where the whole form met "my downloads folder is a mess" with a helper
+and a question about folders four times of four. The writer (`WRITE`) writes the draft rule
+out once before the card from the conversation alone, taking out what was never said, 3 of 3
+(20 Nov 2026); only here, never for a change. The mender (`MEND`) writes the rule again when a
+correction didn't take: told to say what a thing is and is not, 8 of 8 files in four rewrites
+of four (20 Nov 2026). The aside (`ASIDE`): is the message about something else? 153 of 153
+(51 messages, three times each, 22 Nov 2026), where the whole form handed back one aside of
+three; the built-in model got 3 of 26 wrong, so only a design model here decides it, and a
+plan's says it in the whole form.
 
-## Chores Noir builds: the file organizer
+Told once, each from a failure: that folders and how a helper decides are the model's to
+propose, not to ask of someone who came because they didn't know; that a usual value is not
+worth a question; which results go with its WHEN (rough notes were offered a notes file, three
+plays of three); that a chat helper is asked by its name and a colon (not "whenever you paste
+your notes"). What needs something no part reaches (mail, a website, another program, sending
+or buying) is said in its very next words, `CANT_BE_MADE`, and kept in the ideas list: of
+fifteen first messages, twice each (20 Nov 2026), every one that can't be made was said so in
+one turn, and none that can was refused.
 
-A chore is anything that runs without being asked in the chat; the first one Noir
-builds for people is the file organizer (`agents/blueprints/organizer.yaml`,
-`concierge/organizer.py`). "Organize my school files by what's inside them" reaches
-it through the router (a kind of agent of its own, `switchable`, `watches: true`) or
-through the idea planner (its blocks `new_file`, `folder_files`, `classify` and
-`move_files` are all ready now). The setup is the discussion: which folder to watch
-(Downloads is where most things land), how to tell files apart (`by`: what's inside
-each file, which means the built-in model reads the first pages on this computer, or
-the file's name, quicker but only as good as the names), and which folders
-(`groups`: the user's list, or Decide as you go, where it names folders by what it
-finds and reuses them). What the first message already says isn't asked again
-(`AgentBuilder._prefill` reads "inside" and "by name", and `watched_from` reads "from
-Downloads" as the folder to watch, in code: asked as a free question, the model once took
-"a folder on my desktop called College", the destination, for it; a folder that is the
-destination is refused with a question), the card comes from the
-slots (`organizer_card`), and Create it saves the agent and hands it to the engine
-(`AgentBuilder.take_created`, `NoirEngine._building`), which switches it on and asks
-whether to go through the documents already there (`ORGANIZE_NOW`, `GO_THROUGH`,
-`ONLY_NEW`; `_organize_now` runs `Organizer.run_once` with Progress and a Result).
+A change to a helper they have is the same conversation (`Designer.edit`), from the saved
+card: nothing is saved before Save changes (`EDITING`), and code adds once "X stays as it is
+until you press Save changes on the card", as a model wrote "I have updated the helper". A
+change only the router's model saw may be handed back on its first turn (`Sketch.unsure`:
+"explain why I should update my drivers" shares a word with a rule). A helper deleted
+meanwhile is not saved again. Once saved, a helper for files that was off is asked "Switch it
+on?", and a renamed one keeps nothing under its old name.
 
-Only what lands after it is switched on counts: everything in the folder at that
-moment is written down as old (`Organizer._seen`), so "only new files from now on" means
-it. What it has seen, and why each file it left stayed, is kept in `organizer_state.json`
-(`seen`, `SEEN_KEPT`, `skipped`), so a restart changes nothing: a file that landed a
-moment before one is still new, and "why didn't you move it" still has its answer; the
-first version wrote the folder down as old again at every start, and output.pdf, landed
-just before a restart, became old with no record, so "nothing new" was all the user heard.
-A file whose job broke is recorded with that reason (`look`), never lost in silence. The first live run had no such line and filed
-60 old downloads, CVs and immigration forms among them, into two folders. The line is
-drawn again whenever the watched folder changes (`switch`, `refresh`): an agent changed
-from watching College to Downloads once kept College's empty baseline and filed 28 old
-downloads ten seconds after "Only new files from now on". While on,
-`Organizer` looks at each watched folder every `LOOK_SECONDS` on a thread of its own:
-any file at all (every kind is a candidate, since a practice5.py for CSE 163 once sat
-unread while only documents counted; `files.read_pages` reads documents, code and any text
-by looking at its bytes (`text_of`), spreadsheets, slides and OpenDocument files from the
-XML in their zip (`OFFICE_PARTS`, `office_text`, no spreadsheet library), zips and tars
-by the names inside (`archive_listing`), markup without its tags (`without_tags`), a
-notebook by its cells, and the organizer reads a picture through the installed vision
-model (`Organizer.seer`: the catalog's vision helper, else any model Ollama says has
-vision; `SEE_NOTE`) and a scanned PDF through its first page's picture, the picture shrunk
-to `SEE_PIXELS` on its longer side and the model given `SEE_CONTEXT` of room (`shrink`: a
-scanned page of 3300 by 2550 was 8,000 tokens against a room of 4,096, the call failed
-without a word and output.pdf, six photographed pages of a MATH 207 midterm, counted as
-unreadable); a program or a video gives nothing and is judged by its name alone) that has
-sat still for `SETTLE_SECONDS` (a download
-still arriving is left alone, `.crdownload` and the like too) is read (`READ_CHARS`
-of its text, `files.read_pages`). With folders the user named, the built-in model
-fills one form forced by a schema: what kind of document it is ("course material" or
-"something else"; a tuition statement, a CV and an I-20 form once went into PHYS122
-because they named the course, so only the first kind ever moves) and which of those
-folders, "another course" or "not sure", the folders listed by name only: a few file
-names already in each, tried as a hint, made the 4B model call hw2_pandas.py "something
-else", and bare names got five of five right. A course code in the file decides before
-the model (`course_codes`, `folder_codes`, `COURSE_CODE`: letters in CAPS and a number, so
-"Kane 130" is not one): a code that names one of the folders is that folder; a code none
-of them is becomes a question ("phys121_ch3_notes.pdf looks like a new course, PHYS 121.
-Make a folder for it, called PHYS121?", `_ask_subject`), since the model saw "physics" in
-PHYS 121 notes and filed them under the only physics folder; material with no code that
-the model calls "another course" is named by the subject form (`_topic`) and asked about
-the same way. A yes makes the folder (the name the user typed, else the one offered), adds
-it to the organizer's folders (`_add_folder`, saved with the agent) and files what was
-held; a no leaves that course alone (`SUBJECT_WAITING`, `SUBJECT_REFUSED`); both are kept
-in `subjects` and the question waits across restarts. In the chat a short name typed while
-such a question waits is the folder's name (`_names_a_folder`, `_question_for_name`: the
-question whose course the name echoes, else the newest). Deciding as
-it goes, the model only says what the document is about, as a subject or course name
-("Physics 122", never "Physics 122 Lab 3"), and whether it is sure; code matches those
-words to the folders made so far (`closest`, by shared telling words, `STOPWORDS`
-left out) or makes a new one (`folder_name`). The model is never asked to choose
-between a folder it made and "a new folder": a 4B model took the existing folder every
-time, and a club guide became the home of every lab handout. Code does everything
-else: the file moves under a free name into the watched folder or the place the user
-named (the `into` slot: "inside my desktop calling it College" is read by
-`destination_from`, course codes like "phys122 and cse163" by `courses_in`, both
-filled in from the first message), the move is written to the same log as Downloads
-sorting (`tidy.record_moves`, so `undo_sort` and `can_undo` work unchanged, for
-`UNDO_DAYS`), and the job joins the organizer's own done list (`organizer_done.json`),
-which the chores list merges with the watch's. The user sees the organizer at work on the circle
-and beside it. While a file is read and judged (`Organizer.working`, `ChatHub.on_working`,
-`Overlay._working`) the circle blinks once (`Mini.blink`, `BLINK_SECONDS`, `BLINK_DIM`: it
-dims for a moment and comes back) and runs its line, then goes back to what it showed.
-Each job keeps its steps as it goes (`_note`, `_steps`: "Noticed output.pdf in Downloads",
-"A scanned page: read it through qwen3-vl:8b", "It's about Math 207, a new folder", "Put it
-in 바탕 화면\Math 207"), and a file moved while watching is told to the window with them
-(`Organizer.moved`, `ChatHub.on_move`, `Overlay._moved`): the small log by the circle, the
-same window as its questions (`quick/note.py`, `tell`, `LOG_SECONDS`), shows what happened
-on its first line and what was read and decided in small lines under it, with Undo and OK
-for `MOVE_NOTE_SECONDS`; a file read and left is told the same way with why it stayed
-(`Organizer.stayed`, `ChatHub.on_stayed`, `Overlay._stayed`, `STAY_NOTE_SECONDS`), one note
-at a time, never during a game, a video or a slideshow, Windows for now. The decision step
-also goes into the job's line in the chores list. A pass asked for in the chat tells the
-chat instead. A summary writer's notes file is never a file to sort (`files`
-skips it: it once got filed under PHYS122 for the lab it summarised), and its note says
-where the summary went. A file the model isn't sure about stays
-and isn't asked about again; nothing leaves the computer, which is why the judging is
-always the built-in model's job (the card says so; pictures go through the vision helper
-when one is installed, else by name). Documents and code (`KINDS_AUTO`) move as soon as
-they read as material. Any other kind (a spreadsheet, slides, a picture, a zip...) is held
-back the first time one reads as material and the user is asked once, for the kind
-(`Organizer.asking`, `_ask_kind`, `questions`, `answer`; `kinds` keeps each yes or no per
-organizer in `organizer_state.json`, and a question waits across restarts): "hw3_data.xlsx
-looks like CSE163 material. Sort .xlsx files like it from now on?" A yes moves the files
-held back and every such file from then on; a no leaves that kind alone (`KIND_WAITING`
-and `KIND_REFUSED` are the reasons they keep). The question reaches the user everywhere
-the watch's do: `WatchBridge.today` puts it in `noticed` for the drawer and Today when the
-watch has none, `WatchBridge.answer` routes a `kind:` id to `NoirEngine.organizer_answer`,
-a note by the circle asks it (`ChatHub.on_ask`, `Overlay._asked`, `ASK_NOTE_SECONDS`), the
-circle shows rings while it waits (`Overlay.refresh_mini`), and a plain yes or no in the
-chat answers it (`_plain_answer`, `NO_WORDS`). The facts note tells the chat model the
-question and whether a vision model is installed. What was on comes back when the app starts (`organizer_state.json`,
-`Organizer.refresh`); it runs on the Mac too.
+Something else asked in the middle sets the helper aside as it stood (`Designer.aside`), the
+engine answers it, and under each answer asks "Carry on with the helper we were working out?"
+(`carry_on`), since only the last question's buttons work; Carry on brings back its card and
+try-out. Words that sound serious (`safety.crisis`) set it aside too, with no question: left
+active, an "ok" would have been a yes to its card.
 
-With an organizer, questions about it are answered in code, never by the chat model,
-which once said it "couldn't see or move files" right after a move. "Where did you put
-it", "where's the folder" and "which folder is the physics lab in now?" (`WANTS_WHERE`,
-or `WHERE_WORDS` with a file it moved or left named by a word of its name, `_mentions`):
-`_say_where`, from `Organizer.last_moves` (read from the move log, so a pass's files
-count) and the agent's settings, always as the whole path, which the user asked for
-after a folder went to a Desktop they never see; a file that stayed is said to have
-stayed, and why. "Why didn't you move the receipt?" (`WANTS_WHY`, `_say_why`): every
-file it read and left keeps its reason (`Organizer.skipped`, `verdict`, `last_skipped`),
-as a short label such as "not material for any of the folders". "What did you do"
-(`WANTS_STATUS`, `_say_status`): the moves and what stayed, grouped by reason.
-"Organize it", "I just downloaded a file", "move the files" (`WANTS_ORGANIZE`,
-`_organize_now` over what landed since it was switched on; "go through everything",
-`WANTS_EVERYTHING`, and the first pass the user is asked about go over all of it; a file
-the message names is looked at again whatever was decided before, `run_once(only=...)`),
-and the result says why what stayed did. When nothing is new, the answer says what was
-looked at already and why it stayed, and asks the questions still waiting right there in
-the chat with buttons (`_nothing_new`, `_pending_questions`, answered through
-`_handle_choice` by their `kind:` or `subject:` id), instead of "wait 20 seconds", which
-once was all the user heard about a file that had been judged. "Put output.pdf in math"
-(`WANTS_PLACE`, `_place`, `Organizer.place`) moves the file where the user says, makes the
-folder if need be, and teaches the organizer: that course's code and that kind of file go
-there from now on. A question about the chore itself ("is it still
-on?", "can you also sort pictures?", "why did nothing happen?": `ABOUT_CHORES` with
-`WANTS_ANSWER`) goes to the chat model with a note of facts in front (`_chores_note`,
-`_answer_about_chores`): with a plan or key model set up (Auto, or one picked in the
-menu) that model gets the record and the question, so the user talks through what went
-wrong with the better model, which is the orchestrator they expect; else its own model
-answers from the same record (`NoirChat.jobs`, like `about`). Routing, forms and the
-judging of files stay on the small model and in code, since through Claude Code even one
-question reads about 29k tokens. The note holds: what each organizer watches, where its folders are, the last
-moves and the files that stayed with their paths and reasons, and what kinds of file it
-moves. Such a question never goes to the web (`_lookup_kind`: "pictures" once sent it
-to an image search), the idea planner or the builder (the router once began a second
-organizer for Pictures), and one the router still hands to the organizer is answered
-the same way (`_run_agent`), not run as a pass. `python -m concierge.organizer_eval`
-plays all of this with the real model on a made-up home, in a temporary folder with a
-temporary data folder, and must pass every check; it is how each live failure was
-reproduced before it was fixed.
+After "put X in Y", with a model that can design, the engine asks once for that file whether
+files like it should always go there (`rule_from_move`); a yes opens `Designer.edit` with what
+they did. On 22 made-up files (20 Nov 2026) one example put 3 of 5 like files right, the rule
+written again from what they did 4 of 5, and examples that say "leave it" helped nothing, so
+only moves become examples.
+
+Trouble ("it's not showing anything", `TROUBLE`, only about a helper: "my wifi isn't working"
+is none) gets code's check of the mechanics first (`_diagnose`): highlights where they can't
+be read, an old card saved to be asked in the chat, a result copied not shown, switched off,
+Ollama out of reach, a highlight it leaves out, nothing highlighted since. If nothing
+mechanical is wrong, the report opens `Designer.edit` with code's line on what was checked. A
+helper for files is offered Switch it on, or told its record. Code never reads a rule to judge
+it.
+
+A plan or key model that designs gets what the user types, folder and helper names and file
+counts by ending, never a file's name or contents, as the conversation says when it opens: the
+try-out as counts, code's sentences without file names (`_for_turns`: in the one play through
+a plan, 22 Nov 2026, one took a file's name to GPT), "a file" for a name in "put X in Y". A
+turn through Codex read about 18.7k tokens (22 Nov 2026). What a helper reads and judges never
+leaves the computer.
+
+## When nobody can design: the plain way
+
+With no plan or key model and no designer that fits, the plain questions make what they can
+(`agents/builder.py`): a documents helper (`create_documents_agent`, which the designer uses
+too), and a text helper from the idea planner (`compose`: the built-in model writes the rule,
+`recipe.write_recipe`, and words decide the rest in code, `settings_from_words`: "highlight"
+means while switched on, "above" or "show" a bubble, "copy" the clipboard). The card shows the
+rule before anything is made, which is the check. A text helper is changed setting by setting,
+a new job being a rewritten rule (`rewrite_instruction`), which takes `skip_language` off:
+kept, "make it Japanese" would go on skipping Korean. A helper for a folder's new files, or an
+idea made of such blocks (`FILE_PARTS`), gets `NO_DESIGNER`: that takes a stronger model, a
+ChatGPT or Claude plan or a bigger one here.
+
+## The one step the built-in model takes
+
+Every card for files runs one way (`concierge/agents/worker.py`): the built-in model reads the
+rule and the beginning of one file (`content_for`, `READ_CHARS`) and fills one small form,
+knowing nothing of the conversation; code does the rest. Each note is kept word for word as
+measured, the numbers in its comments: changing one means measuring again.
+
+Choosing (`choose`, `CHOOSE_NOTE`) lists the folders by name only, Leave it where it is
+(`LEAVE`), Not sure (`UNSURE`) and what the user told it before (`TOLD_BEFORE`); the form is
+`what`, then `choice` from those. File names from each folder, tried as a hint, made the 4B
+model miss a file it got right from bare names. The last sentence once spoke as the one agent
+there used to be ("a bill, a form or a list that only mentions a subject ..."); of five
+endings on 24 made-up files, two rules, twice each (20 Nov 2026), "a file that only mentions a
+thing is not a file of that thing" got 23 of 24 with a terse rule and 21 with a full one, the
+old 21 with both, and every miss was a file moved that should have stayed. When it may make
+folders (`open`) the form asks only for a name (`FILE_IT`, `OPEN_PLACES`) and code decides
+whether it exists (`parts.same_folder`) or is new (`parts.folder_name`): offered "a new
+folder" beside existing ones, a small model always took one that existed. For folders named
+after each client, told to use the ones made so far, it put five files, all wrong, into the
+first; with no list, twelve went into ten folders; with the list only for spelling, five moved
+(25 made-up files, 20 Nov 2026). Still weak, so the designer proposes named folders.
+
+A note (`write_note`) is two small forms: whether the rule asks anything about this file
+(`ASK_FIRST`), then the note in its own words, never lines copied out (`WRITE_NOTE`), in a
+language code names (`_language`). With one form an English rule gave three of six notes in
+Russian and files to leave were written about; with two, 32 of 35 right (20 Nov 2026). A note
+that is the rule again, or "None", is no note. A file with nothing readable is left and no
+model asked, unless the card goes by names.
+
+## Cards that work on new files: the folder runtime
+
+One machine runs every card whose WHEN is a new file in a folder (`concierge/folderwatch.py`,
+`FolderWatch`), on Windows and the Mac: the chores Noir builds. A new one is switched on at
+once, with the question whether to go through the files already there (`FIRST_PASS`).
+
+Only what lands after it is switched on counts: what is there then is written down as seen.
+What each card has seen, its folders, why each file it left stayed, which were on and `since`
+when are kept in `folderwatch_state.json`, read once at start (read at each refresh, it lost
+reasons not yet written). A restart changes nothing: a file that landed just before is still
+new (once it became old with no record, and "nothing new" was all the user heard), and an
+empty record is a record too. The line is drawn again when the folder changes (`switch`,
+`refresh`): a changed agent kept the old folder's baseline and filed 28 old downloads ten
+seconds after "Only new files from now on", and the first live run, with no line, filed 60.
+
+Each watched folder is looked at every `LOOK_SECONDS` on a thread of its own (one
+`os.scandir`). Every file counts but one hidden or Windows' own (`WINDOWS_OWN`,
+`SYSTEM_FILES`: a moved desktop.ini renames a folder on screen), a download still arriving
+(`UNFINISHED`), a notes file (one was filed with the document it was about) and one kept only
+in the cloud (`CLOUD_ONLY`: read, OneDrive fetches it; moved, it leaves the user's other
+devices). A file is noticed when first seen (`_noticed`: the circle blinks) and read once its
+size and time have stood still for `SETTLE_SECONDS` and nothing holds it open (`_ready`); it
+was twenty seconds by the file's own time plus a look every eight, half a minute in which
+nothing showed. The model warms meanwhile (`_warm`, once per `WARM_GAP_SECONDS`). One still
+growing after `ARRIVING_SECONDS` is a big download, one that can't be opened is in use: the
+line says which and the circle rests; after `GIVE_UP_SECONDS` it is left with the reason
+(`STILL_CHANGING`, `HELD_OPEN`), or a log some program keeps writing would be "just landed"
+for good. A card that writes notes goes before one that moves the file (`_notes_first`), or
+the note was never written.
+
+Only a file's beginning is read (`item`, `read_start`): an export.csv of 301 MB took 7.3
+seconds and 1.6 GB read whole, and takes 7 milliseconds now (19 Nov 2026). `files.read_pages`
+reads text by its bytes (`text_of`), office files from their XML (`office_text`), zips by the
+names inside (`archive_listing`), markup without tags. A picture goes to a model that can see
+(`seer`: Noir's own when it can, being loaded already, else the vision helper, else any model
+with vision), shrunk to `SEE_PIXELS` with `SEE_CONTEXT` of room (a scanned page of 3300 by
+2550 was 8,000 tokens against 4,096 and failed silently); a helper is freed when the look ends
+(`_release_helper`). `SEE_NOTE` asks for the words in a field of their own: asked only to
+describe one, the 4B model named the kind of screenshot and copied nothing; asked for the
+words, it copied all 25 lines of six test pictures, half a second each (19 Nov 2026). A
+scanned PDF is read through its first page's picture, a program or recording
+(`NOTHING_TO_READ`) never opened, and with "Only the file's name" nothing inside is looked at.
+
+One file is in hand at a time, whoever asked (`_work`, a re-entrant lock): the look and a pass
+asked for in the chat once took the same file in the same second. A pass lists its files
+behind that lock, so the file being read is counted first (else "nothing new has landed" about
+it), and ones the look took meanwhile count as `already`. `place`, Undo and forgetting wait
+behind it too, and the look checks under it that the card is still on, so one switched off or
+deleted takes no file more. A deleted card's state goes with it (`forget`): kept, a new agent
+of that name began with the old one's files seen.
+
+Then the worker's form, and code. A move goes under a free name, never deletes or overwrites,
+and is logged like Downloads sorting (`tidy.record_moves`, undone with `undo_sort` for
+`UNDO_DAYS`). A new folder the rule called for is learned onto the card as saved now, never
+the copy in hand (`_learn`: from that copy, a change just made in the chat was written over).
+A file already in the chosen folder stays (`ALREADY_THERE`), or it would be renamed at every
+look. A note goes at the end of the notes file under "## name · time". A file left keeps why
+(`skipped`: "the rule leaves it: <what it was read as>", `NO_TEXT`...), so "why didn't you
+move it?" has a true answer. One left because the model couldn't be reached (`NO_MODEL`) is
+tried again once Ollama answers (`RETRY_SECONDS`), and at once by a pass: written down as
+handled, it never was. A file put back by Undo counts as seen for every card on its folder.
+
+The user must be able to tell it is alive and at what: they downloaded files, saw nothing for
+two minutes, and couldn't tell. `status(name)` is one plain line ("x.pdf just landed: reading
+it in a moment", "Reading x.pdf now (2 of 5)"), `doing()` the one thing in hand. Each job
+keeps its steps (`_note`: "Read it as: ...", "The rule puts it in ...") and is told to the
+windows (`moved`, with the record's line in `text`, `stayed`, `working`, `changed`): the
+circle blinks and runs its line while anything is in hand (`_in_hand`, worked out from what is
+there so it can't drift), and the log by the circle (`move_lines`, `stay_lines`) shows that
+line, what was read and decided, and Undo. The windows get `chore_agents` (with `now`,
+`since`, `left`, `why_off`), `chore_doing`, `chore_done` and `undo_move`; a chore's line
+(`chores._last_line`) is what it does now, else what it did or left last, else "On since 1:10
+AM. Nothing new has landed since." Keep Downloads tidy never touches a notes file
+(`tidy.notes_files`).
 
 Where Desktop, Documents, Downloads and Pictures really are comes from Windows
-(`concierge/places.py`, `known_folder`, SHGetKnownFolderPath): with OneDrive backup on
-the Desktop the user sees is `OneDrive/Desktop` (`OneDrive/바탕 화면` on a Korean
-Windows), and the first organizer put its College folder in `C:/Users/me/Desktop`,
-which the user never looks at. `destination_from`, `place_dirs` and `downloads_dir`
-all ask it. A move's record keeps the whole place (`where`), and the done line says
-`College/PHYS122` (`shown_folder`) when the folders live somewhere else. The
-chores list gets its agents from `NoirEngine.chore_agents` (name, kind, on, how) and
-the organizer's jobs from `organizer_done`; `undo_move` puts one back, which
-`WatchBridge.undo_sorting` tries before the watch's own undo; `ChatHub.on_chores`
-lets the window redraw when an organizer did something.
+(`concierge/places.py`, `known_folder`, SHGetKnownFolderPath): with OneDrive backup on the
+Desktop the user sees is `OneDrive/Desktop` (`OneDrive/바탕 화면` on a Korean Windows), and the
+first file helper put its folders in `C:/Users/me/Desktop`, which the user never looks at. A
+move's record keeps the whole place (`shown_folder`).
+
+Questions about these helpers are answered in code from the card and the records, never by the
+chat model, which once said it "couldn't see or move files" right after a move
+(`_about_files`), and only when the message is about files or a helper at all
+(`_about_the_files`): "where should I go on vacation this summer?" got where the folders are.
+Why a file stayed (`WANTS_WHY`) is its kept reason; where it went (`WANTS_WHERE`) the whole
+path; what it did (`WANTS_STATUS`) the moves and what stayed. "Go through them" (`WANTS_PASS`,
+an order and not a question, which "how do I organize all my recipes?" once was taken for)
+takes what landed since it was switched on, or offers Switch it on, since off, every file
+counts as new; "go through everything" (`WANTS_EVERYTHING`) counts and asks first (`all_now`);
+with nothing new it says what was looked at and why it stayed. "Put x.pdf in Letters"
+(`WANTS_PLACE`) moves the file named best, one the card moved included, since people correct
+those, and keeps it as an example. "Where did they go?" soon after a job (`FOLLOWS_A_CHORE`)
+is about the files, but not by its pronoun alone: "is it going to rain in Seattle tomorrow?"
+was answered from the chores. A question about the work (`ABOUT_CHORES`, `HELPER_DOES`) goes
+to the chat model with the record in front (`_chores_note`), a plan or key model getting
+folders by name and files by kind, for that question only. New work (`ASKS_FOR_WORK`,
+`WATCHES`, a place none of them works in, `PLACE_SAID`) is a helper to make: "can you organize
+all my desktop files too?" went through Downloads. None of this, nor a message about their own
+files (`OWN_THINGS`), goes to the web.
+
+Given up with the hand-written organizer: course codes deciding before the model, run-time
+questions about each new kind of file and course folder, folders named by subject. It was one
+agent's knowledge in code, and could only sort a student's files. Nothing asks at run time
+now: a file the rule doesn't settle stays with its reason, and the user puts it right by
+talking or by placing one file.
+
+`python -m concierge.designer_eval` plays it all with the real models: thirteen conversations
+through the real engine (`--list`), from a thin request corrected after the try-out to a move
+by hand becoming the rule, one in Korean, each a made-up person on a made-up home with its own
+data folder. The checks hold whether the design model takes a turn more or fewer: what code
+ended up with, what was never done, the fullest form under `ROOM_SHARE` of the room, never
+both models in memory. Every word is printed, since several fixes came from reading a play
+that passed. On 22 Nov 2026 gemma4:12b passed 175, 174 and 175 of 175 (the miss was the chat
+model's own sum), then 177 of 177 after the last fixes, 7.4 to 7.8 seconds a turn. `--plan
+codex` plays one through the ChatGPT plan: once, 22 Nov 2026 ("thin", 20 of 20, 14.2 seconds a
+turn), before the last fixes.
+
+Known and left: code's lines are English whatever the language; where nobody can design only
+documents and text helpers are made; a folder added with + starts a documents helper; the
+small model names new folders weakly; the chat model's own side answers; a text helper's rule
+sometimes says "leave ... alone" unasked (a note sentence fixed that and broke two other
+things, 22 Nov 2026); a chat helper is sometimes offered a notes file. Still weak on 22 Nov:
+the mender once wrote against what the user said; the small model sometimes ignores the rule
+(a picture moved under "do not move any pictures"); a question about a usual value costs a
+turn; "Which one?" is tested only without a model; a new file named like one moved earlier is
+never handled, files seen being kept by path.
+
+## What it holds on the graphics card
+
+The user's card has 16 GB and about 2.6 GB of it is the Windows desktop's own. They found the
+app holding 15 of the 16. Every figure here was measured with `nvidia-smi` on an RTX 5080,
+Ollama's own numbers being unreliable (`python -m concierge measure <tag>`):
+
+| | on the card | to load |
+| --- | --- | --- |
+| Noir's own model (`noir`, 4B, 4,096 of room) | 3.9 GB | 2.5 s |
+| a picture read by its own model | nothing more | — |
+| the vision helper `qwen3-vl:8b` at 8,192 | 8.1 GB | 2.5 s |
+| the same at 4,096 | 7.4 GB | 2.2 s |
+| the design model `gemma4:12b` at 8,192 | 9.2 GB | 5.9 s |
+
+So: its own model leaves the card once nothing has asked it anything for
+`noir.IDLE_UNLOAD_SECONDS` (`NoirChat.check_in` simply stops checking in, and Ollama frees it
+after `KEEP_ALIVE`; `Ollama.used` notes every call, so a file judged or a Spot job counts as
+use just as a chat answer does). It used to stay for as long as the app was open, and the app
+sits on the taskbar all day. It is back about three seconds after it is next wanted, and a
+file that lands warms it while it settles (`FolderWatch._warm`), so the wait is hidden. A
+vision helper is only loaded when its own model can't see, and is freed at the end of that
+look rather than five minutes later. The design model and Noir's own are never in memory
+together (9.2 + 3.9 + 2.6 would fill the card): Noir's own is unloaded whenever the design
+model has to come in, and a local design model leaves before every try-out, which is the
+built-in model's work (`DesignModel.done`). In a play of 22 Nov 2026 the whole card showed
+10,737 to 11,623 MiB with the design model in, 5,399 to 6,347 with the built-in one, 1,511
+before. A local design model reads 8,192 of room (`DESIGN_CONTEXT`): its note alone is about
+18,500 characters, and the fullest form of the plays of 22 Nov 2026 held 5,805 tokens. Nothing
+here is a guess: when a number changes, measure it again and write what the card said.
 
 ## The Spot
 
@@ -739,7 +787,7 @@ Today starts with what it did this week (`concierge/activity.py`: only the kind
 of job and when, never the words, kept a month), then what's running, what it
 noticed and what was done today.
 
-An agent's page shows what it does and how it's set up, from `recipe.describe`
+An agent's page shows what it does and how it's set up, from `parts.describe`
 through `Engine.details(name)` and `TodayBridge.agent_details`, outside
 `events.py` because it's only read when the page opens. What's typed on that
 page goes to that agent.
@@ -886,13 +934,14 @@ message goes and why in its thinking (`say`), the reply's line names the model
 same question of the plan and replaces its answer in its memory; the window doesn't
 draw that button any more, though the engine still offers it. Each kind kept here
 and each ask-again is counted (`auto.json`, `record`, `counts`), so a kind people keep
-asking again for shows up. Agents, the router and forms stay on its model with Auto.
+asking again for shows up. Agents, the router and forms stay on its model with Auto;
+only working a helper out goes to the plan.
 Auto asks the plan model picked last (`ModelMenu.auto_target`, `auto_cloud` in the
 settings), else a plan's Sonnet, else the first keyed model. `python -m
 concierge.auto_eval` checks it with the real model and must stay at 100%.
 
-Only its answers and agents asked in the chat move to the picked model
-(`NoirChat.talker`). Deciding what a message is for and filling in forms stay with
+Only its answers, agents asked in the chat and working a helper out move to the
+picked model (`NoirChat.talker`). Deciding what a message is for and filling in forms stay with
 its own small model, and so do switch-on agents, because those see whatever the user
 highlights in any program. The documents agent stays too. The windows say so
 whenever a model off the computer is chosen. Names in the yaml come from OpenRouter's
@@ -1022,7 +1071,9 @@ surprise someone. Bookings are saved in the data folder, or in memory with `--fa
 Grammar Fixer, Quick Summarizer). "Turn on the highlight explainer" or "install
 Grammar Fixer" adds one straight away and switches it on if asked
 (`starters.asks_for`, `NoirEngine._add_starter`), decided in code with no
-model involved. After that it is an ordinary agent made from parts.
+model involved, and only by its whole name, or by one of its words with nothing
+else said: by one word, a request for something that sums up what lands in
+Downloads got a helper that answers in the chat. After that it is a card.
 
 ## UI technology
 
@@ -1058,14 +1109,16 @@ concierge.ui --fake --setup` plays the page with nothing fetched (`PracticeSetup
 
 ## Other systems (the Mac)
 
-The window, the chat, agents asked in the chat, the documents agent, web lookups,
+The window, the chat, agents asked in the chat, the documents agent, helpers for a
+folder's new files, web lookups,
 research jobs, the Models pages and the plans all run on macOS. What reads other
 programs is Windows for now: the Spot, switch-on agents (highlights), its noticing
 (Downloads, lectures), the circle, the icon by the clock and the light. Each is
 gated in code, never only in the pages' words: `TidyWatch.start` looks at nothing
 and `noticing` is False, `BreakSpotter` never spots a break, `NoirEngine.quick`
-is None (so `AgentList.switchable` is empty and a switch answers "Windows for
-now"), `Overlay._ready` makes no Mini, Tray, DoubleTap or EdgePull, and `welcome()["windows"]`
+is None (so `AgentList.switchable` has only helpers for a folder's files, a highlight
+helper's switch answers "Windows for now", and the designing conversation offers no
+highlight helper, `parts.whens`), `Overlay._ready` makes no Mini, Tray, DoubleTap or EdgePull, and `welcome()["windows"]`
 tells the pages, which show "Windows for now" on those lines and leave the Spot
 step out of the first two minutes. A Mac window minimizes to the Dock, and Quit is
 in Settings. The modules that talk to Windows (`quick/bubble.py`, `glow.py`,
@@ -1089,7 +1142,9 @@ expects it), `make_icons.py` draws its icon from the tray's disc, `noir.iss` is
 the Windows installer (Inno Setup, like Ollama's: per user, no admin prompt, the
 data folder never touched), and `build.py` runs them in order and then starts the
 built app with `--check`, which loads every part and opens nothing, so a build that
-can't start is caught before anyone installs it. `python packaging/build.py` does it
+can't start is caught before anyone installs it. Over an older version the
+program's own files go first (`[InstallDelete]`), and `load_blueprints` passes over
+a yaml it doesn't know: two blueprints left behind would have stopped the app. `python packaging/build.py` does it
 on this computer; `.github/workflows/release.yml` does it on GitHub's Windows and
 Mac (Apple Silicon) runners when a `v*` tag is pushed and attaches
 `Noir-Setup-<version>.exe` and `Noir-<version>.dmg` to the release. Both are
@@ -1112,9 +1167,9 @@ python -m concierge.ui --fake --setup  # the first run's setup page, fetching no
 python -m concierge.ui --check  # load every part, open nothing (what a build is checked with)
 python packaging/build.py     # the installer (Windows) or disk image (Mac) for this system
 pytest                       # all tests; none need Ollama
-python -m concierge.agents.eval_router   # router accuracy with the real model (45 of 47 on 9 Nov 2026: "manuals in Downloads" went to an existing agent, a browser-translation idea to the translator; neither touched by the code rules)
-python -m concierge.organizer_eval       # the file organizer end to end with the real model, on a made-up home (every check must pass)
-python -m concierge.conductor_eval       # setups talked through, with the conductor this computer would use, on a made-up home (every check must pass; name a tag to try another model)
+python -m concierge.agents.eval_router   # router accuracy with the real model (47 of 47 on 22 Nov 2026, and 47 of 47 counting only whether a helper is wanted)
+python -m concierge.designer_eval        # helpers worked out by talking and then at work: 13 conversations through the real engine with the real models, on made-up homes (every check must pass; 177 of 177 with gemma4:12b on 22 Nov 2026; name a tag to try another model, --only to play some, --list to name them, --plan codex to play one through the ChatGPT plan)
+python -m concierge measure <tag>        # what a model really takes on this computer's card, since Ollama's own figure is often wrong
 ```
 
 ## Conventions
@@ -1142,19 +1197,18 @@ variables inside a function do not need listing.
 | `concierge/__init__.py` | Both | `__version__` |
 | `packaging/` | Both | `noir.py` (what the packaged app runs), `noir.spec`, `make_icons.py` (`ICO_SIZES`, `ICNS_SIZES`, `make`), `noir.iss`, `build.py` (`DIST`, `INNO`, `main`, `built_program`, `check`, `windows_installer`, `mac_image`, `run`); workflow `.github/workflows/release.yml` |
 | `concierge/hardware.py` | Engine | `GB`, `MIN_USABLE_VRAM_GB`, `GPU`, `HardwareReport`, `detect`, `parse_nvidia_smi`, `describe` |
-| `concierge/catalog.py` | Engine | `CATALOG_PATH`, `GPU_SHARE`, `APPLE_SHARE`, `CPU_SHARE`, `CPU_MAX_GB`, `GPU_HEADROOM_GB`, `RAM_HEADROOM_GB`, `DISK_HEADROOM_GB`, `CPU_HELPER_SHARE`, `ModelEntry`, `HelperModel`, `Recommendation`, `load_catalog`, `load_helpers`, `load_conductors`, `helper_room`, `pick_helper`, `find_model`, `memory_budget`, `recommend`; models in `models.yaml` (`models`, `helpers`, `conductors`) |
-| `concierge/chores.py` | Both | `TIDY`, `AGENT`, `BOOKING`, `MAX_JOBS`, `REPEAT_WORDS`, `ACTION_WORDS`, `listing`, `days`, `day_label`, `ago` |
+| `concierge/catalog.py` | Engine | `CATALOG_PATH`, `GPU_SHARE`, `APPLE_SHARE`, `CPU_SHARE`, `CPU_MAX_GB`, `GPU_HEADROOM_GB`, `RAM_HEADROOM_GB`, `DISK_HEADROOM_GB`, `CPU_HELPER_SHARE`, `ModelEntry`, `HelperModel`, `Recommendation`, `load_catalog`, `load_helpers`, `load_designers`, `helper_room`, `pick_helper`, `find_model`, `memory_budget`, `recommend`; models in `models.yaml` (`models`, `helpers`, `designers`) |
+| `concierge/chores.py` | Both | `TIDY`, `AGENT`, `BOOKING`, `MAX_JOBS`, `REPEAT_WORDS`, `ACTION_WORDS`, `listing`, `days`, `day_label`, `ago`, `clock_time` |
 | `concierge/quick/drawer.py` | UI | `EDGE_PIXELS`, `OPEN_PIXELS`, `Screen`, `screen_at`, `real_pixels`, `EdgePull` |
 | `concierge/places.py` | Both | `KNOWN`, `known_folder` |
-| `concierge/organizer.py` | Engine | `ORGANIZER`, `LOOK_SECONDS`, `SETTLE_SECONDS`, `READ_CHARS`, `MAX_FOLDER_NAME`, `DONE_KEPT`, `CONTENT`, `BY_NAME`, `DECIDE`, `DOCUMENTS`, `CODE`, `KINDS_AUTO`, `IMAGES`, `MAX_IMAGE_MB`, `SEE_NOTE`, `SEE_SCHEMA`, `KIND_WAITING`, `KIND_REFUSED`, `SUBJECT_WAITING`, `SUBJECT_REFUSED`, `ANOTHER`, `SUMMARIZER`, `WATCHED_KINDS`, `THREE_LINES`, `ONE_PARAGRAPH`, `NOTES_DEFAULT`, `SUMMARY_NOTE`, `SUMMARY_SCHEMA`, `NO_SUMMARY`, `COURSE_CODE`, `FOLDER_CODE`, `NOT_SURE`, `UNFINISHED`, `DECIDE_WORDS`, `SAME_PLACE`, `PLACES`, `CALLED`, `PATH`, `COURSE`, `STOPWORDS`, `TOPIC_NOTE`, `PICK_NOTE`, `SUBJECT`, `SOMETHING_ELSE`, `NO_TEXT`, `NOT_MATERIAL`, `NOT_SURE_WHICH`, `UNSURE_TOPIC`, `SKIPPED_KEPT`, `WATCHED`, `SEE_PIXELS`, `SEE_CONTEXT`, `SEEN_KEPT`, `how`, `organizer_card`, `summarizer_card`, `notes_path`, `shrink`, `course_codes`, `folder_codes`, `spoken_code`, `groups_from`, `courses_in`, `watched_from`, `destination_from`, `shown_folder`, `folder_name`, `words_of`, `closest`, `Organizer` (`verdict`, `skipped`, `last_skipped`, `moved`, `asked`, `working`, `stayed`, `kinds`, `subjects`, `asking`, `questions`, `answer`, `seer`, `place`); blueprint `agents/blueprints/organizer.yaml` |
-| `concierge/organizer_eval.py` | Engine | `REQUEST`, `OLD`, `NEW`, `STAYS`, `pdf`, `word`, `drop`, `Run`, `main`; command `python -m concierge.organizer_eval [--keep]` |
-| `concierge/conductor_eval.py` | Engine | `SAYS_DONE`, `ABOUT_LATER`, `claims_done`, `SAYS_STAYS`, `CANT_FIND`, `HANGUL`, `Trial`, `main`; command `python -m concierge.conductor_eval [tag ...] [--keep]` |
+| `concierge/folderwatch.py` | Engine | `LOOK_SECONDS`, `SETTLE_SECONDS`, `WARM_GAP_SECONDS`, `ARRIVING_SECONDS`, `GIVE_UP_SECONDS`, `ARRIVING`, `IN_USE`, `STILL_CHANGING`, `HELD_OPEN`, `NOTHING_TO_READ`, `READ_CHARS`, `READ_WHOLE`, `WHOLE_BYTES`, `PIECE_CHARS`, `DONE_KEPT`, `IMAGES`, `MAX_IMAGE_MB`, `SEE_PIXELS`, `SEE_CONTEXT`, `SEE_KEEP_ALIVE`, `SEEN_KEPT`, `SEE_NOTE`, `SEE_SCHEMA`, `NO_TEXT`, `NO_MODEL`, `NO_ANSWER`, `ALREADY_THERE`, `LEFT_BY_RULE`, `NOT_SURE_WHERE`, `NOTHING_ASKED`, `NO_RULE`, `NOTHING_TO_DO`, `NOT_MOVED`, `NOTES_NOT_WRITTEN`, `SKIPPED_KEPT`, `UNFINISHED`, `WINDOWS_OWN`, `RETRY_SECONDS`, `REHEARSE_FILES`, `REHEARSE_OPENED`, `REHEARSE_NOTE_CHARS`, `DECIDED`, `OLD_LOG`, `OLD_DONE`, `OLD_STATE`, `STATE_NAME`, `shrink`, `read_start`, `shown_folder`, `FolderWatch` (`is_on`, `switch`, `forget`, `refresh`, `stop`, `look`, `status`, `doing`, `files`, `new_files`, `count_files`, `run_once`, `place`, `item`, `rehearse`, `seer`, `done_lately`, `last_moves`, `last_skipped`, `undo`; `active`, `made`, `skipped`, `since`, `vision`; told to the windows: `changed`, `moved`, `working`, `stayed`) |
+| `concierge/designer_eval.py` | Engine | `ASK_FOR_PLACES`, the made-up homes (`SHOP`, `SHOP_WANTS`, `SHOP_SAYS`, `SHOP_ALSO`, `SHOP_WANTS_TWO`, `SHOP_SAYS_TWO`, `SHOP_LATER`, `HOUSE`, `HOUSE_PAPERS`, `HOUSE_PAPERS_LATER`, `MANUALS`, `KOREAN_HOME`, `KOREAN_WANTS`, `HOBBY_DOWNLOADS`, `HOBBY_PICTURES`), `SAYS_DONE`, `ABOUT_LATER`, `SAYS_STAYS`, `SAYS_CANNOT`, `HANGUL`, `AGREE`, `AGREE_KO`, `LANDS_SECONDS`, `ROOM_SHARE`, `claims_done`, `folder_like`, `as_wanted`, `first_wrong`, `card_in`, `question_in`, `result_in`, `ends_asking`, `words_in`, `card_memory`, `pdf`, `scan`, `write_pdf`, `sheet`, `slides`, `picture`, `photo`, `packed`, `word`, `drop`, `aged`, `Home`, `Run`, `Counted`, `NoWatcher`, `Bubbles`, `RealHome`, `Talk`, `shop_home`, `house_home`, `korean_home`, `hobby_home`, `mover`, the conversations (`thin`, `notes`, `highlight`, `chat`, `documents`, `cannot`, `korean`, `at_once`, `called_off`, `aside`, `change`, `by_hand`, `trouble`), `CONVERSATIONS`, `Plan`, `Play` (`check`, `check_whole`), `main`; command `python -m concierge.designer_eval [tag] [--only name ...] [--plan codex] [--keep] [--forms] [--list]` |
 | `concierge/activity.py` | Engine | `ANSWERED`, `EXPLAINED`, `TRANSLATED`, `POLISHED`, `SUMMED_UP`, `HELPED`, `SORTED`, `READ`, `KEPT_DAYS`, `WEEK_DAYS`, `record`, `this_week` |
 | `concierge/voice.py` | Engine | `BUDGETS`, `KIND_WORDS`, `SHORTER_SHARE`, `STYLE`, `SMALL_TALK_STYLE`, `POINTS`, `NO_POINTS`, `EXPLAIN_SHAPE`, `EXTRA`, `MATH_STYLE`, `SCIENCE_STYLE`, `DRAWING`, `DRAW_WORDS`, `OPENER`, `QUOTE`, `BOLD_BULLET`, `RULE_ECHO`, `ECHO_START`, `HEADING`, `RULE`, `TABLE_ROW`, `TABLE_LINE`, `SAFE_START`, `FIRST_SENTENCE`, `kind_of`, `guide`, `tidy` |
 | `concierge/pictures.py` | Engine | `API`, `USER_AGENT`, `TIMEOUT`, `MAX_PICTURES`, `MAX_LOOKUPS`, `PICTURE_PIXELS`, `NO_PICTURES`, `BOLD`, `PART`, `BETWEEN`, `PLACE_WORDS`, `names_in`, `same_place`, `place`, `worth_asking`, `for_answer` |
 | `concierge/safety.py` | Engine | `CRISIS`, `HEALTH`, `MONEY`, `CRISIS_REPLY`, `CRISIS_REPLY_KO`, `HEALTH_NOTE`, `MONEY_NOTE`, `crisis`, `crisis_reply`, `caution` |
-| `concierge/noir.py` | Engine | `NOIR_MODEL`, `PERSONA_PATH`, `NUM_CTX`, `HISTORY_CHARS`, `MAX_THOUGHT_CHARS`, `UNLOAD_ON_EXIT`, `KEEP_ALIVE`, `HEARTBEAT_SECONDS`, `CLOSING_FILLER`, `ANSWERED_SENTENCES`, `without_closing_filler`, `system_prompt`, `configure`, `needs_configure`, `NoirChat` (`kind`, `draws`, `jobs`), `data_dir`, `load_state`, `save_state` |
-| `concierge/ollama.py` | Engine | `DEFAULT_URL`, `DOWNLOAD_PAGE`, `UNREACHABLE`, `OllamaError`, `Ollama` (`last_tokens`: read and written by the last chat; `find_program`, `start` for the first run) |
+| `concierge/noir.py` | Engine | `NOIR_MODEL`, `PERSONA_PATH`, `NUM_CTX`, `HISTORY_CHARS`, `MAX_THOUGHT_CHARS`, `UNLOAD_ON_EXIT`, `KEEP_ALIVE`, `HEARTBEAT_SECONDS`, `IDLE_UNLOAD_SECONDS`, `CLOSING_FILLER`, `ANSWERED_SENTENCES`, `without_closing_filler`, `system_prompt`, `configure`, `needs_configure`, `NoirChat` (`kind`, `draws`, `jobs`), `data_dir`, `load_state`, `save_state` |
+| `concierge/ollama.py` | Engine | `DEFAULT_URL`, `DOWNLOAD_PAGE`, `UNREACHABLE`, `OllamaError`, `Ollama` (`last_tokens`: read and written by the last chat; `used`: when each model was last asked something, for `NoirChat.check_in`; `find_program`, `start` for the first run) |
 | `concierge/conversations.py` | Engine | `TITLE_CHARS`, `Conversation`, `ChatBook`, `title_from` |
 | `concierge/models.py` | Engine | `LOCAL`, `CUSTOM`, `LOOPBACK`, `GB`, `FITS`, `SLOW`, `NO_DISK`, `LocalModel`, `ModelMenu` (Auto adds `auto_target`, `plan_used`, `fast_talker`; the meter `usage`), `nice_name` |
 | `concierge/huggingface.py` | Engine | `API`, `TIMEOUT`, `LIST_LIMIT`, `SIZE_WORKERS`, `CACHE_SECONDS`, `GB`, `SORTS`, `VISION`, `PREFERRED`, `QUANTIZATION`, `PART`, `HubError`, `HubModel`, `best_file`, `browse`, `tag_from` |
@@ -1172,33 +1226,34 @@ variables inside a function do not need listing.
 | `concierge/research.py` | Engine | `SETTINGS`, `WEB_QUESTION`, `YES_LOOK`, `NO_LOOK`, `WEB`, `WEATHER`, `SEARCH`, `IMAGES`, `PRICE`, `MAX_RESULTS`, `MAX_IMAGES`, `SNIPPET_CHARS`, `EXTRACT_CHARS`, `FINDINGS_CHARS`, `TIMEOUT`, `USER_AGENT`, `GEOCODE`, `FORECAST`, `WHERE_AM_I`, `WIKIPEDIA`, `MAX_PAGES`, `PAGE_CHARS`, `PAGE_BYTES`, `PAGE_TIMEOUT`, `SKIP_PAGES`, `BRAVE_SEARCH`, `SEARCH_KEY`, `SEARCH_KEY_PAGE`, `TAGS_TO_DROP`, `TAG`, `BLOCK_END`, `YAHOO_SEARCH`, `YAHOO_CHART`, `COINGECKO_SEARCH`, `COINGECKO_PRICE`, `BROWSER_AGENT`, `CHANGING`, `TIMELESS`, `WEATHER_WORDS`, `IMAGE_WORDS`, `PRICE_WORDS`, `CRYPTO_WORDS`, `PRICE_FILLER`, `QUESTION`, `PLACE_AFTER`, `PLACE_BEFORE`, `PLACE_KO`, `SKY`, `SEARCH_ENGINES`, `Findings`, `wants_lookup`, `unsure`, `model_form`, `settings_path`, `allowed`, `allow`, `lookups`, `place_in`, `weather`, `price_subject`, `price`, `search_key`, `set_search_key`, `brave`, `search`, `page_text`, `read_page`, `images`, `wikipedia`, `look_up`, `note` |
 | `concierge/sources.py` | Engine | `TIERS_PATH`, `PRIMARY`, `REFERENCE`, `ORDINARY`, `FARM`, `TIER_WORDS`, `TIER_POINTS`, `SUBJECT_POINTS`, `MODEL_POINTS`, `FRESH_POINTS`, `MIN_SNIPPET_MATCH`, `CURRENT_WORDS`, `STOPWORDS`, `FARM_LOOKS`, `JUDGE_NOTE`, `JUDGE_SCHEMA`, `Choice`, `load_tiers`, `site_of`, `words_of`, `tier_of`, `relevance`, `pick`, `judge_with`, `said`; tiers in `sources.yaml` |
 | `concierge/researcher.py` | Engine | `RESEARCH`, `RESEARCH_WORDS`, `MAX_QUERIES`, `PAGES_PER_QUERY`, `MAX_PAGES`, `SUMMARY_LINES`, `SINGLE_ASK_WRITTEN`, `SEARCH_WAIT`, `ENOUGH_SEARCHES`, `PAGES_PER_SITE`, `SPARE_PAGES`, `MIN_PAGE_CHARS`, `PLAN_NOTE`, `PLAN_SCHEMA`, `STALE_YEAR`, `WORKER_NOTE`, `MERGE_NOTE`, `Page`, `Account`, `wants_research`, `fresh_queries`, `plan`, `gather`, `summarise`, `merge`, `plan_tokens_after`, `last_plan_answer`, `settle`, `account_lines`, `when_now`, `sources_of` |
-| `concierge/engine.py` | Engine | `SPOT_KINDS`, `MEASURED_JOBS`, `TROUBLE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `WANTS_DELETE`, `WANTS_IDEAS`, `WANTS_ON`, `WANTS_OFF`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `DELETE_IT`, `KEEP_IT`, `FOLLOW_UPS`, `ORGANIZE_NOW`, `GO_THROUGH`, `ONLY_NEW`, `WANTS_WHERE`, `WANTS_STATUS`, `WANTS_ORGANIZE`, `WANTS_PLACE`, `WANTS_EVERYTHING`, `WANTS_WHY`, `WHERE_WORDS`, `WANTS_ANSWER`, `ABOUT_CHORES`, `ASKS_FOR_WORK`, `FOLLOWS_A_CHORE`, `CHORE_FRESH_SECONDS`, `NO_WORDS`, `WHICH_KIND`, `SOMETHING_ELSE_KIND`, `KIND_SHORT`, `NoirEngine` (adds `follow_up`, `follow_up_words`, `after_answer`, `pictures`, and `pending_lookup`, `found` for the web; outside the contract: `ask_again` for Auto, `setup_state` and `setup_begin` for the first run, `chore_agents`, `organizer_done`, `undo_move`, `organizer_questions` and `organizer_answer` for the chores list; `conducts`: whether a setup may be talked through) |
+| `concierge/engine.py` | Engine | `WANTS_DELETE`, `HELPER_WORDS`, `SWITCH_WORDS`, `WANTS_IDEAS`, `WANTS_WHERE`, `WANTS_STATUS`, `STATUS_ALONE`, `WANTS_PASS`, `ASKS_HOW`, `PRONOUN_OBJECT`, `WANTS_WHY`, `WHERE_WORDS`, `ABOUT_CHORES`, `FOLLOWS_A_CHORE`, `FOLLOW_UP_ASKS`, `CHORE_FRESH_SECONDS`, `FILE_WORDS`, `YOU_HANDLED`, `HELPER_DOES`, `PLACE_SAID`, `ASKS_FOR_WORK`, `OWN_THINGS`, `WANTS_ANSWER`, `NO_WORDS`, `WANTS_PLACE`, `WANTS_EVERYTHING`, `WANTS_ON`, `WANTS_OFF`, `TROUBLE`, `DELETE_AGENT`, `PICK_AGENT_TO_DELETE`, `FIX_AGENT`, `FIX_IT`, `LEAVE_IT`, `SWITCH_IT_ON`, `DELETE_IT`, `KEEP_IT`, `SPOT_KINDS`, `MEASURED_JOBS`, `FOLLOW_UPS`, `FIRST_PASS`, `GO_THROUGH`, `ONLY_NEW`, `ALL_NOW`, `LEAVE_THEM`, `CARRY_ON`, `CARRY_ON_YES`, `DROP_IT`, `RULE_FROM_MOVE`, `CHANGE_THE_RULE`, `JUST_THIS_ONE`, `FILE_PARTS`, `CHANGED_HELPERS`, `CHANGED_TOLD`, `NEEDS_TALKING`, `NoirEngine` (adds `follow_up`, `follow_up_words`, `after_answer`, `pictures`, and `pending_lookup`, `found` for the web; `folderwatch`, `designer`, `builder`, `planner`, and for its own questions `going_through`, `all_asked`, `carry_asked`, `ruling`, `rule_asked`, `rule_refused`, `changed_off`, `changed_over`; outside the contract: `ask_again` for Auto, `setup_state` and `setup_begin` for the first run, `details`, `chore_agents`, `chore_done`, `chore_doing` and `undo_move` for the chores lists; `designs`: whether a helper may be worked out with a model) |
 | `concierge/setup.py` | Engine | `OLLAMA`, `MODEL`, `NOIR`, `INSTALLERS`, `SILENT_INSTALL`, `DOWNLOAD_TIMEOUT`, `INSTALL_SECONDS`, `START_SECONDS`, `QUICK_START_SECONDS`, `CHUNK`, `MAC_OPEN`, `SetupError`, `Setup` |
-| `concierge/fake_engine.py` | Engine | `FakeEngine`, `PracticeOllama`, `PracticeKeys`, `PracticeAccounts`, `PracticeSetup`, `practice_models` |
+| `concierge/fake_engine.py` | Engine | `FakeEngine` (the engine's `chore_agents`, `chore_done`, `chore_doing` and `undo_move`, over made-up `helpers`), `PracticeOllama`, `PracticeKeys`, `PracticeAccounts`, `PracticeSetup`, `practice_models` |
 | `concierge/cli.py` | Engine | `DIM`, `PLAIN`, `main`, `cmd_hardware`, `cmd_recommend`, `cmd_setup`, `cmd_chat`, `cmd_measure`, `cmd_history`, `TerminalScreen`; command `python -m concierge [hardware, recommend, setup, chat, measure, history]`; in the chat `/think` turns thinking on or off |
-| `concierge/agents/blueprint.py` | Engine | `BLUEPRINT_DIR`, `Slot`, `Blueprint`, `load_blueprints`; templates in `agents/blueprints/*.yaml` (`documents_qa`, `organizer`, `summarizer`, and `custom`: the shared template for agents made from parts) |
-| `concierge/agents/conductor.py` | Engine | `STILL_ASKING`, `NOTHING_MISSING`, `CALLED_OFF`, `MOVED_ON`, `CONDUCT`, `PLACE_NAMES`, `INSIDE`, `PLACE_SLOTS`, `CONDUCT_CONTEXT`, `CONDUCT_TEMPERATURE`, `CONDUCT_KEEP_ALIVE`, `MAX_TURNS`, `MAX_SAY`, `VOICE`, `HOW_TO_CONDUCT`, `FORM_NOTE`, `MORE_STATUS`, `CARD_COMES`, `CARD_IS_UP`, `OPENING_OFFER`, `CLOSING_NUDGE`, `JSON_ONLY`, `Form`, `ConductorError`, `Turn`, `Conductor` (`turn`, `waking`, `done`), `tidy_say`, `field_for`, `schema_for`, `needed`, `note_for`, `local_form`, `talker_form`, `read_form` |
-| `concierge/agents/talk.py` | Engine | `MAX_CHARS`, `MAX_PLAIN`, `TEMPERATURE`, `KEPT_SHARE`, `ASKING_WORDS`, `PHRASE_NOTE`, `QUESTION_NOTE`, `JARGON`, `UNQUOTED`, `FACT_IN_LINE`, `STOPWORDS`, `phrase`, `facts_in`, `words_of` |
-| `concierge/quick/agents.py` | Engine | `BUBBLE`, `CLIPBOARD`, `BOTH`, `UNTIL_UNHIGHLIGHT`, `FEW_SECONDS`, `CHECK_SECONDS`, `CHECK_FOR_SECONDS`, `QuickAgents` |
+| `concierge/agents/blueprint.py` | Engine | `BLUEPRINT_DIR`, `Slot`, `Blueprint`, `load_blueprints` (passes over a yaml it doesn't know); templates in `agents/blueprints/*.yaml` (`documents_qa`, and `custom`: what the plain way needs for a card) |
+| `concierge/agents/parts.py` | Engine | `CUSTOM`, `WHILE_ON`, `IN_CHAT`, `SAMPLE_TEXT`, `SAMPLE_QUESTION`, `NEW_FILE`, `SHOW`, `ANSWER`, `MOVE`, `NOTE`, `DOCUMENTS`, `INSIDE_FILE`, `NAME_ONLY`, `OPEN_NO`, `OPEN_YES`, `WRITE`, `CHOOSE`, `SEARCH`, `MAX_RULE`, `MAX_CHOICES`, `MAX_EXAMPLES`, `MAX_FOLDER_NAME`, `DOCUMENTS_QA`, `PLACE_NAMES`, `INSIDE`, `NONE`, `SAMPLE_FILES`, `STOPWORDS`, `Setting`, `Part`, `RULE`, `NAME`, `WHENS`, `THENS`, `FITS`, `whens`, `then_of`, `fits`, `settings_for`, `all_settings`, `needed`, `missing`, `defaults`, `mode`, `watches`, `is_switchable`, `choices_of`, `as_given`, `same_name`, `folder_name`, `words_of`, `same_folder`, `skip_language`, `leaves_out`, `destination`, `notes_path`, `short_place`, `shown_place`, `card`, `describe`, `how`, `migrate`; a card's slots `when`, `then`, `instruction`, `folder`, `looks_at`, `choices`, `open`, `into`, `notes`, `show`, `keep`, `skip_language`, `name` |
+| `concierge/agents/worker.py` | Engine | `LEAVE`, `UNSURE`, `FILE_IT`, `READ_CHARS`, `MAX_WHAT`, `MAX_NOTE`, `CHOOSE_NOTE`, `OPEN_PLACES`, `NONE_YET`, `OPEN_FOLDER`, `TOLD_BEFORE`, `ASK_FIRST`, `WRITE_IT`, `NOTHING`, `ASK_SCHEMA`, `WRITE_NOTE`, `WRITE_SCHEMA`, `THE_RULES_OWN`, `RULE_AGAIN`, `RULE_AGAIN_WORDS`, `OWN_WORDS`, `NO_NOTE`, `HEADING`, `Item`, `Outcome`, `Ask`, `choose`, `write_note`, `content_for` |
+| `concierge/agents/designer.py` | Engine | `STILL_ASKING`, `NOTHING_MISSING`, `CALLED_OFF`, `MOVED_ON`, `CANT_BE_MADE`, `DESIGN`, `NOT_CLEAR`, `NONE_FIT`, `TOLD`, `NOT_TOLD`, `DESIGN_CONTEXT`, `DESIGN_TEMPERATURE`, `DESIGN_KEEP_ALIVE`, `REHEARSE_FILES`, `MAX_TURNS`, `MAX_SAY`, `MAX_WANTS`, `MAX_SAMPLE`, `NOTE_SHOWN`, `SAME_OUTCOME`, `MAX_NAME`, `NEARLY`, `MAX_LOOKED`, `MAX_FOLDERS_TOLD`, `TRY_OUT`, `NOT_KNOWN`, `A_PATH`, `SYSTEM_FOLDER`, `NO_DESIGNER`, `WHEN`, `THEN`, `NAMES_IT`, `NAMES_A_THING`, `SAVE_YES`, `AGREES`, `STANDS_ALONE`, `QUOTED_NAME`, `AND_WORD`, `VOICE`, `HOW_TO_DESIGN`, `OPENING`, `OPENING_SCHEMA`, `PART_OF_THIS`, `SOMETHING_ELSE`, `ASIDE`, `ASIDE_SCHEMA`, `ASIDE_ASKS`, `MEND`, `MEND_SCHEMA`, `WRITE`, `NO_HELPER_CAN`, `EDITING`, `FORM_NOTE`, `CARD_COMES`, `CARD_SAVES`, `CARD_IS_UP`, `CARD_WAITS`, `POINTS_AT_CARD`, `MORE_STATUS`, `OPENING_OFFER`, `CLOSING_NUDGE`, `MORE_HELP`, `CONFIRMS`, `SECOND_QUESTION`, `NO_CHANGE`, `NOT_CHANGED`, `ALREADY_SO`, `CLAIMS_CHANGE`, `PLAIN_WORDS`, `OFFERS_MORE`, `WHICH_ONE`, `ECHOED`, `ECHOED_LOOSELY`, `SHOWN_HOW`, `JSON_ONLY`, `Form`, `DesignerError`, `DesignModel` (`fill`, `waking`, `done`), `local_form`, `talker_form`, `read_form`, `tidy_say`, `field_for`, `schema_for`, `note_for`, `names_in`, `row_line`, `Refused`, `Sketch`, `Designer` (`active`, `available`, `start`, `edit`, `answer`, `choose`, `set_aside`, `carry_on`, `drop`, `take_created`; `handoff`, `aside`, `created`, `edited`, `replaced`) |
+| `concierge/quick/agents.py` | Engine | `BUBBLE`, `CLIPBOARD`, `BOTH`, `UNTIL_UNHIGHLIGHT`, `FEW_SECONDS`, `CHECK_SECONDS`, `CHECK_FOR_SECONDS`, `ANSWERED`, `LEFT_OUT`, `NO_MODEL`, `NOTHING_BACK`, `QuickAgents` (`last`: what came of each card's last highlight) |
 | `concierge/quick/bubble.py` | Engine | `GAP`, `MAX_WIDTH`, `COLORS`, `GWL_EXSTYLE`, `WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW`, `WS_EX_TOPMOST`, `show_seconds`, `Bubble` |
 | `concierge/quick/selection.py` | Engine | `DRAG_PIXELS`, `DOUBLE_CLICK_SECONDS`, `MIN_CHARS`, `MAX_CHARS`, `NO_COPY_APPS`, `Rect`, `CF_UNICODETEXT`, `foreground_app`, `SelectionWatcher`, `read_selection`, `highlighted_text`, `save_clipboard`, `restore_clipboard`, `set_clipboard_text` |
 | `concierge/quick/glow.py` | Engine | `LILAC`, `GREEN`, `THICKNESS_SHARE`, `RIM_SHARE`, `BRIGHTEST`, `RUN_SECONDS`, `HOLD_SECONDS`, `FADE_SECONDS`, `FRAME_SECONDS`, `LINE_SHARE`, `LINE_BREATH_SECONDS`, `WS_POPUP`, `LIGHT_STYLE`, `light_at`, `pixel`, `reached`, `eased`, `full_screen_in_use`, `work_screen`, `real_pixels`, `Layer`, `pump`, `Glow` |
 | `concierge/quick/note.py` | Engine | `COLORS`, `CIRCLE_ROOM`, `BOTTOM_GAP`, `SHOW_SECONDS`, `LOG_SECONDS`, `WRAP_PIXELS`, `CHECK_MS`, `ARRIVE_STEPS`, `ARRIVE_MS`, `ARRIVE_PIXELS`, `SOLID`, `ask`, `tell` |
 | `concierge/quick/watching.py` | Engine | `LECTURE_WORDS`, `VIDEO_SITES`, `BROWSERS`, `PLAYERS`, `looks_like_lecture`, `lecture_on_screen` |
-| `concierge/quick/tidy.py` | Engine | `MIN_FILES`, `SETTLE_SECONDS`, `FIRST_LOOK_SECONDS`, `LOOK_SECONDS`, `SNOOZE_DAYS`, `IGNORED_DAYS`, `BREAK_SECONDS`, `TYPING_GAP_SECONDS`, `MIN_JOB_SECONDS`, `PRACTICE_FIRST_LOOK_SECONDS`, `PRACTICE_JOB_SECONDS`, `VIDEO_LOOK_SECONDS`, `PRACTICE_VIDEO_SECONDS`, `QUESTION_GAP_SECONDS`, `PRACTICE_QUESTION_GAP_SECONDS`, `UNDO_DAYS`, `LECTURE_NOTES_BUILT`, `CLOUD_ONLY`, `YES`, `NOT_NOW`, `SORT`, `VIDEO`, `VIDEO_QUESTION`, `NO_VIDEO_SUMMARY`, `PRACTICE_LECTURE`, `DONE_KEPT`, `SHELVES`, `OTHER_SHELF`, `UNFINISHED`, `SYSTEM_FILES`, `downloads_dir`, `log_path`, `shelf_for`, `loose_files`, `free_name`, `sort_plan`, `sort_folder`, `record_moves`, `sorts_on_record`, `last_sort`, `moved_to`, `can_undo`, `undo_sort`, `BreakSpotter`, `TidyWatch` |
+| `concierge/quick/tidy.py` | Engine | `MIN_FILES`, `SETTLE_SECONDS`, `FIRST_LOOK_SECONDS`, `LOOK_SECONDS`, `SNOOZE_DAYS`, `IGNORED_DAYS`, `BREAK_SECONDS`, `TYPING_GAP_SECONDS`, `MIN_JOB_SECONDS`, `PRACTICE_FIRST_LOOK_SECONDS`, `PRACTICE_JOB_SECONDS`, `VIDEO_LOOK_SECONDS`, `PRACTICE_VIDEO_SECONDS`, `QUESTION_GAP_SECONDS`, `PRACTICE_QUESTION_GAP_SECONDS`, `UNDO_DAYS`, `LECTURE_NOTES_BUILT`, `CLOUD_ONLY`, `YES`, `NOT_NOW`, `SORT`, `VIDEO`, `VIDEO_QUESTION`, `NO_VIDEO_SUMMARY`, `PRACTICE_LECTURE`, `DONE_KEPT`, `SHELVES`, `OTHER_SHELF`, `UNFINISHED`, `SYSTEM_FILES`, `downloads_dir`, `log_path`, `shelf_for`, `notes_files`, `loose_files`, `free_name`, `sort_plan`, `sort_folder`, `record_moves`, `sorts_on_record`, `last_sort`, `moved_to`, `can_undo`, `undo_sort`, `BreakSpotter`, `TidyWatch` (`leave`) |
 | `concierge/quick/spot.py` | Engine | `DOUBLE_TAP_SECONDS`, `TAP_SECONDS`, `MAX_SPOT_CHARS`, `MAX_HELPERS`, `SUM_UP_CHARS`, `SHORTEN_CHARS`, `WRITING`, `READING`, `ERROR`, `CODE`, `NOTHING`, `ERROR_WORDS`, `CODE_SIGNS`, `WRITE_FOR_ME`, `ACTIONS`, `home_language`, `kind_of`, `actions_for`, `job`, `caret_box`, `selection_editable`, `DoubleTap` |
-| `concierge/quick/translate.py` | Engine | `LANGUAGES`, `language_in`, `looks_like` |
-| `concierge/agents/builder.py` | Engine | `PLACES`, `CANCEL_WORDS`, `YES_WORDS`, `BY_CONTENT_WORDS`, `BY_NAME_WORDS`, `BLOCKED`, `SKIP_WHILE_SEARCHING`, `CARD`, `CHANGE`, `PICK_FOLDER`, `DUPLICATE`, `REPLACE`, `MAKE_ANOTHER`, `CREATE_IT`, `SAVE_CHANGES`, `RENAME`, `TARGET_LANGUAGE`, `LANGUAGE_CHOICES`, `CARD_YES`, `NAMES_IT`, `NOT_KNOWN`, `A_PATH`, `MAX_COUNTED`, `SYSTEM_FOLDER`, `custom_card`, `Refused`, `Draft`, `AgentBuilder` (`take_created`; `conductor` and `conducted` for a setup talked through), `say`, `place_dirs`, `find_folders`, `agent_for_folder`, `is_blocked`, `describe_files`, `short_place`, `files_in` |
+| `concierge/quick/translate.py` | Engine | `LANGUAGES`, `TELLABLE`, `language_in`, `looks_like` |
+| `concierge/agents/builder.py` | Engine | `PLACES`, `CANCEL_WORDS`, `YES_WORDS`, `BLOCKED`, `SKIP_WHILE_SEARCHING`, `CARD`, `CHANGE`, `PICK_FOLDER`, `DUPLICATE`, `REPLACE`, `MAKE_ANOTHER`, `CREATE_IT`, `SAVE_CHANGES`, `RENAME`, `CARD_YES`, `MAX_COUNTED`, `Draft`, `AgentBuilder` (`start`, `start_for_folder`, `compose`, `edit`, `answer`, `choose`, `take_created`; `created`, `edited`, `replaced`), `say`, `place_dirs`, `find_folders`, `agent_for_folder`, `is_blocked`, `describe_files`, `files_in`, `create_documents_agent` |
 | `concierge/agents/planner.py` | Engine | `BLOCKS_PATH`, `OTHER`, `MAX_STEPS`, `IDEA`, `IDEA_CHANGE`, `KEY_COMBO`, `ASKED_FOR_KEY`, `settle_triggers`, `MAKE_IT`, `SAVE_IDEA`, `CHANGE_IDEA`, `DROP_IDEA`, `HELPER_ROLES`, `ROLE_WORDS`, `Block`, `PlanStep`, `Assessment`, `IdeaDraft`, `IdeaPlanner`, `load_blocks`, `assess`, `clean_detail`, `ideas_path`, `list_ideas`, `save_idea`, `describe_ideas`; building blocks in `agents/capabilities.yaml` |
-| `concierge/agents/recipe.py` | Engine | `CUSTOM`, `WHILE_ON`, `IN_CHAT`, `MAX_INSTRUCTION`, `HIGHLIGHT_WORDS`, `CHAT_WORDS`, `SHOW_WORDS`, `COPY_WORDS`, `STAY_WORDS`, `SHORT_WORDS`, `SAMPLE_TEXT`, `SAMPLE_QUESTION`, `MECHANICS`, `describe`, `run_instruction`, `target_language`, `settings_from_words`, `needs_language`, `with_language`, `write_recipe`, `rewrite_instruction`, `is_switchable`, `migrate` |
+| `concierge/agents/recipe.py` | Engine | `CUSTOM`, `WHILE_ON`, `IN_CHAT`, `SAMPLE_TEXT`, `SAMPLE_QUESTION`, `describe` and `is_switchable` (passed on from parts), `MAX_INSTRUCTION`, `HIGHLIGHT_WORDS`, `CHAT_WORDS`, `SHOW_WORDS`, `COPY_WORDS`, `STAY_WORDS`, `SHORT_WORDS`, `MECHANICS`, `run_instruction`, `settings_from_words`, `write_recipe`, `rewrite_instruction`, `migrate` |
 | `concierge/agents/files.py` | Engine | `TEXT_TYPES`, `SUPPORTED`, `OFFICE_PARTS`, `ARCHIVES`, `MARKUP`, `TEXT_SAMPLE`, `OFFICE_CHARS`, `MAX_LISTED`, `text_of`, `without_tags`, `office_text`, `archive_listing`, `MAX_FILES`, `MAX_FILE_MB`, `PASSAGE_CHARS`, `PASSAGE_OVERLAP`, `Passage`, `ScanResult`, `scan`, `read_pages`, `split`, `passages_of`, `tokens`, `SearchIndex`, `folder_signature` |
-| `concierge/agents/router.py` | Engine | `IDEA_OPTION`, `WANTS_CHANGE`, `WANTS_NEW`, `WATCHES`, `SUMS_UP`, `SORTS`, `KIND_WORDS`, `FILES`, `WANTS_HELPER`, `kinds_named`, `Route`, `route`, `wants_change`, `refers_to`, `names_an_agent`; test cases in `agents/router_cases.yaml` |
-| `concierge/agents/community.py` | Engine | `REPOSITORY`, `INDEX_PATH`, `INDEX_URL`, `POST_URL`, `TIMEOUT`, `CACHE_SECONDS`, `MAX_NAME`, `MAX_ABOUT`, `MAX_BY`, `READY_MADE`, `COMMUNITY`, `CATEGORIES`, `OTHER_CATEGORY`, `STARTER_DETAILS`, `PostError`, `Recipe`, `clean`, `recipes`, `find`, `install`, `can_post`, `post_address`; shared agents in `agents/community.json` |
-| `concierge/agents/starters.py` | Engine | `STARTERS_PATH`, `WANTS_ADD`, `MAX_WORDS`, `Starter`, `load_starters`, `asks_for`, `install`; recipes in `agents/starters.yaml` |
+| `concierge/agents/router.py` | Engine | `IDEA_OPTION`, `WANTS_CHANGE`, `WANTS_NEW`, `WATCHES`, `ASKS_HOW_IT_IS`, `ASKS_TO`, `Route`, `route`, `wants_change`, `refers_to`, `names_an_agent`; test cases in `agents/router_cases.yaml` |
+| `concierge/agents/community.py` | Engine | `REPOSITORY`, `INDEX_PATH`, `INDEX_URL`, `POST_URL`, `TIMEOUT`, `CACHE_SECONDS`, `MAX_NAME`, `MAX_ABOUT`, `MAX_BY`, `READY_MADE`, `COMMUNITY`, `CATEGORIES`, `OTHER_CATEGORY`, `PostError`, `Recipe` (`skip_language`), `clean`, `recipes`, `find`, `install`, `can_post`, `post_address`; shared agents in `agents/community.json` |
+| `concierge/agents/starters.py` | Engine | `STARTERS_PATH`, `WANTS_ADD`, `MAX_WORDS`, `Starter` (`about`, `category`, `skip_language`), `load_starters`, `asks_for`, `install`; recipes in `agents/starters.yaml` |
 | `concierge/agents/runner.py` | Engine | `TOP_PASSAGES`, `MAX_CONTENTS`, `STOPWORDS`, `run`, `matching_words`, `clean_answer`, `refresh_index`, `best_sentence` |
 | `concierge/agents/store.py` | Engine | `Agent`, `agents_dir`, `slugify`, `list_agents`, `find_agent`, `name_taken`, `save`, `load_index`, `delete` |
-| `concierge/agents/eval_router.py` | Engine | `CASES`, `main`; command `python -m concierge.agents.eval_router` |
-| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `DRAWER_WIDTH`, `DRAWER_GAP`, `MOVE_NOTE_SECONDS`, `STAY_NOTE_SECONDS`, `ASK_NOTE_SECONDS`, `DRAWER_MIN_HEIGHT`, `DRAWER_SLIDE_STEPS`, `DRAWER_SLIDE_SECONDS`, `DRAWER_FOG`, `DRAWER_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `EXPORTS`, `EXPORT_WAIT_HOURS`, `EXPORT_CHECK_SECONDS`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub` (adds `restart` after the first run's setup, `latest` for the last list of a kind, `on_chores`, `on_move`, `on_ask`, `on_working`, `on_stayed`), `ChatBridge` (a page calls its `startup`, `send`, `choose`, `ask_again`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `chores`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`, `set_web`, `set_search_key`, `open_link`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `setup_state`, `setup_begin`, `setup_finish`, `measure`, `set_spot`, `switch_agent`, `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`, `forget_history`, `open_export_page`, `look_around`, `find_downloads`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `paste_text`, `follow_up`, `after_answer`, `pictures`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `sign_in_account`, `install_account`, `check_accounts`, `use_account`, `usage`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_drawer`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay` (the drawer: `toggle_drawer`, `hide_drawer`, `pull_drawer`, `release_drawer`; `refresh_mini`), `pasted_file`, `full_size`, `centered`, `drawer_bounds`, `drawer_x`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug] [--setup] [--version] [--check]` |
+| `concierge/agents/eval_router.py` | Engine | `CASES`, `MAKES`, `main`; command `python -m concierge.agents.eval_router` |
+| `concierge/ui/window.py` | UI | `WEB_DIR`, `TITLE`, `UNEXPECTED_ERROR`, `EDGE_GAP`, `DRAWER_WIDTH`, `DRAWER_GAP`, `MOVE_NOTE_SECONDS`, `STAY_NOTE_SECONDS`, `DRAWER_HEIGHT_SHARE`, `DRAWER_MAX_HEIGHT`, `DRAWER_MIN_HEIGHT`, `DRAWER_SLIDE_STEPS`, `DRAWER_SLIDE_SECONDS`, `DRAWER_FOG`, `DRAWER_LOAD_SECONDS`, `FULL_SHARE`, `FULL_MIN_SIZE`, `SCREEN_SETTLE_SECONDS`, `PICTURES`, `EXPORTS`, `EXPORT_WAIT_HOURS`, `EXPORT_CHECK_SECONDS`, `APP_ID`, `ONE_COPY`, `SPOT_WIDTH`, `SPOT_START_HEIGHT`, `SPOT_MIN_HEIGHT`, `SPOT_GAP`, `SPOT_SETTLE_SECONDS`, `PASTE_SETTLE_SECONDS`, `REMEMBERED`, `Area`, `ChatHub` (adds `restart` after the first run's setup, `latest` for the last list of a kind, `on_chores`, `on_move`, `on_working`, `on_stayed`, which attach to `engine.folderwatch`), `ChatBridge` (a page calls its `startup`, `send`, `choose`, `ask_again`, `new_chat`, `open_chat`, `delete_chat`, `delete_agent`, `toggle_agent`, `reset`), `WatchBridge` (adds `today`, `chores`, `answer`, `undo_sorting`, `set_noticing`, `activity`, `privacy`, `set_web`, `set_search_key`, `open_link`), `TodayBridge` (adds `agent_details`, `quit_app`, `welcome`, `set_welcomed`, `setup_state`, `setup_begin`, `setup_finish`, `measure`, `set_spot`, `switch_agent`, `bring_in_history`, `understand_history`, `what_i_know`, `keep_fact`, `forget_history`, `open_export_page`, `look_around`, `find_downloads`, `send_files`, `pick_files`, `pick_images`, `pick_folder`, `screenshot`, `paste_text`, `follow_up`, `after_answer`, `pictures`, `models`, `pick_model`, `save_key`, `forget_key`, `more_models`, `open_key_page`, `sign_in_account`, `install_account`, `check_accounts`, `use_account`, `usage`, `hide_model`, `add_custom_model`, `remove_custom_model`, `delete_model`, `browse_models`, `get_model`, `cancel_download`, `downloads`, `recipes`, `add_recipe`, `post_agent`, `pinned_chats`, `pin_chat`, `search_chats`, `reservations`, `add_reservation`, `remove_reservation`, `switch_reservation`), `GlassBridge` (adds `open_app`, `hide_drawer`), `SpotBridge` (`run`, `put_back`, `fit`, `close`), `Overlay` (the drawer: `toggle_drawer`, `hide_drawer`, `pull_drawer`, `release_drawer`; `refresh_mini`), `move_lines`, `stay_lines`, `pasted_file`, `full_size`, `centered`, `drawer_bounds`, `drawer_x`, `place_spot`, `work_area`, `first_copy`, `bring_forward`, `main`; command `python -m concierge.ui [--fake] [--debug] [--setup] [--version] [--check]` |
 | `concierge/ui/mini.py` | UI | `MINI_SIZE`, `EDGE_GAP`, `DISC_SHARE`, `FRAMES`, `FRAME_SECONDS`, `RESTING`, `BRIGHT`, `FADE_STEP`, `FULL_SCREEN_CHECK_SECONDS`, `IDLE`, `WORKING`, `ASKING`, `BLINK_SECONDS`, `BLINK_DIM`, `LILAC`, `WHITE`, `is_click`, `premultiplied`, `draw_frames`, `Mini` (`blink`) |
 | `concierge/ui/tray.py` | UI | `ICON_SIZE`, `INK`, `DOTS`, `tray_picture`, `Tray` |
 | `concierge/ui/web/` | UI | `today.html`, `today.css`, `today.js` (full window, global `today.refresh()`, `today.show`, `today.closeMenus`, `today.redraw`, `today.spotTried`, `today.chatsArrived`, `today.ui`), `help.js` (global `helpPage`: Help me and Who are you), `about.js` (global `aboutPage`: About you and the first two minutes), `setup.js` (global `setupPage`: the first run's setup page), `chores.js` (global `choresPage`: the Chores page), `room.js` (global `roomPage`: What I see and Reservations), `discover.js` (global `discover`: the Agents page and parts it shares), `models.js` (global `modelPage`: the model menu and the Models page; `modelPage.loadUsage` and `modelPage.openUsage` for the usage meter), `spot.html`, `spot.css`, `spot.js` (the Spot, global `spot.open`), `glass.html`, `glass.css`, `glass.js` (the drawer, with its own `app.onEvent`, `app.mirror`, `app.shown`, `app.refresh`), `fonts/`, `vendor/` (KaTeX and highlight.js, for maths and code offline), `style.css`, `app.js`; JavaScript globals `app.onEvent(event)`, `app.mirror(state)`, `app.shown()` (called by `ChatHub` and `Overlay`), `app.say`, `app.prefill`, `app.toggleAgent`, `app.deleteAgent`, `app.openChat`, `app.deleteChat`, `app.attach`, `app.setModelName` and `app.addRecipe` (called by today.js, discover.js and models.js); window event `engine-event` |

@@ -93,7 +93,7 @@ def test_fake_engine_deletes_an_agent_after_asking():
     question = next(e for e in engine.delete_agent("Contracts helper") if isinstance(e, Question))
     assert question.choices == ["Delete it", "Keep it"]
     events = list(engine.choose(question.id, "Delete it"))
-    assert events[-1].agents == ["Korean translator", "School files"]
+    assert events[-1].agents == ["Korean translator", "Home papers"]
 
 
 # ------------------------------------------------------- duplicate folder

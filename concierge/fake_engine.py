@@ -1,4 +1,4 @@
-"""A scripted engine for building the UI before the real agent pipeline exists.
+"""A scripted engine for building the UI and for the practice run, with no model.
 
 It follows the same Engine contract as the real one (see events.py) and
 produces every event type, so each part of the UI can be built and clicked
@@ -6,9 +6,13 @@ through. No Ollama or model is needed.
 
 What to type to see each flow:
     anything               Noir streams a chat reply
-    "make an agent"        agent setup: Question (typed answer), Question
-    (or mention documents,   with buttons, AgentCard, Progress, Result
-    files or a folder)
+    "make an agent"        a helper worked out by talking, in the order the real
+    (or mention documents,   app does it: a Question answered in words, a
+    files or a folder)       Question with buttons, a try-out (Result), the
+                             AgentCard, Create it, then whether to go through
+                             the files already there (Progress, Result)
+    a helper's name, a colon and anything
+                           ask that helper, as its page's Try this does
     "ask ..."              run the existing agent: Progress, Result with sources
     "translate ...", "screenshot ..." or "idea"
                            an IdeaCard: Noir's verdict on a helper idea
@@ -19,24 +23,33 @@ What to type to see each flow:
 
 Conversations are kept in memory (same ChatBook as the real engine), so New
 chat, reopening and deleting chats work too, and so does deleting an agent.
+
+The helpers it starts with are made up, and each is a card the way the real app
+saves one (agents/parts.py), kept in memory: what their pages, the chores list
+and a new helper's card say is written by the same code as in the real app.
 """
 
 from __future__ import annotations
 
 import time
+from collections import Counter
 from collections.abc import Iterator
 from dataclasses import asdict
+from pathlib import Path
 
 from . import auto, hardware, usage
-from .agents import community
-from .agents.recipe import CUSTOM, WHILE_ON, describe
-from .agents.starters import asks_for, load_starters
+from .agents import community, parts
+from .agents.builder import CANCEL_WORDS, CARD, CARD_YES, CREATE_IT
+from .agents.designer import DESIGN, TRY_OUT, row_line
+from .agents.starters import asks_for
 from .agents.store import Agent
 from .agents.store import slugify as store_slug
 from .attachments import read_attachments
 from .quick import spot
+from .quick.agents import BUBBLE, UNTIL_UNHIGHLIGHT
 from .conversations import ChatBook
-from .engine import FOLLOW_UPS, WANTS_ON
+from .engine import FIRST_PASS, FOLLOW_UPS, GO_THROUGH, ONLY_NEW, WANTS_ON
+from .folderwatch import LEFT_BY_RULE, NO_TEXT
 from .models import ModelMenu
 from .events import (
     AgentCard,
@@ -52,7 +65,28 @@ from .events import (
     Result,
     Source,
     SystemInfo,
+    Thinking,
 )
+
+# The practice run's own home, made up: nothing here ever names or looks at a real folder.
+_HOME = "C:/Users/you"
+_BUILT_IN = "Qwen 3.5 4B"  # the made-up built-in model, as startup() names it
+# The practice conversation in which a helper is worked out (the real one is
+# agents/designer.py). With no model there is nobody to work it out with, so a script
+# plays one helper through: what the user types is taken as its rule, word for word, and
+# everything else is made up and says so. The questions, the try-out and the card come in
+# the order and the shape the real ones do, and the card's lines are written by the same
+# code (parts.card), so the practice card never falls behind the real one.
+_ASKS_WHAT = ("What should it take off your hands? Tell me what gets in your way now, and what a good result would "
+              "look like.")
+_ASKS_HOW = "Should it go by what's inside each file, or only by the file's name?"
+_PROPOSES = ("Practice: with a model I'd work this out with you. Here I take what you typed as its rule and play a "
+             "helper for the new files in Downloads: each one is put in a folder by your rule, and what the rule "
+             f"doesn't cover stays where it is. {_ASKS_HOW}")
+_SUMS_UP = ("It will watch Downloads, put each new file your rule covers in a folder, and leave the rest alone. "
+            "Below is how a try-out looks, on made-up files, and then its card.")
+_CHANGED = "I've put that into the rule. Here it is tried again, and its card as it is now."
+_LOOKS = (parts.INSIDE_FILE, parts.NAME_ONLY)
 
 
 class PracticeOllama:
@@ -112,11 +146,17 @@ class FakeEngine:
         """setup: play the first-run setup page, fetching nothing (python -m concierge.ui --fake --setup)."""
         # Seconds between streamed pieces and progress steps; 0 for tests.
         self.delay = delay
-        self.agents = ["Contracts helper", "Korean translator", "School files"]
-        self.switchable = {"Korean translator", "School files"}
-        self.on: set[str] = {"School files"}
-        self.draft: dict = {}
-        self.waiting_for: str | None = None  # which typed answer we expect next
+        now = time.time()
+        self.helpers = _practice_helpers()  # the made-up helpers, as cards; never saved
+        # The one that works on a folder's new files starts switched on, with two jobs done,
+        # so the chores list has something in it.
+        watcher = next(agent for agent in self.helpers if parts.watches(agent))
+        self.on: set[str] = {watcher.name}
+        self.since = {watcher.name: now - 3 * 3600}  # when each helper was last switched on
+        self.jobs = _practice_jobs(now, watcher.name)
+        self._moved = {job["sort"]: 1 for job in self.jobs}  # how many files each job moved, for Undo
+        self.sketch: dict | None = None  # the helper being worked out in the practice conversation
+        self.going_through: str | None = None  # the helper just made, waiting for "go through them?"
         self.deleting: str | None = None
         self.auto_last = ""  # Auto's last choice, for follow-ups
         self.answered = ""  # the last plain chat reply, which Shorter and More detail can follow
@@ -149,10 +189,15 @@ class FakeEngine:
         yield self.book.chat_list()
 
     def send(self, text: str, think: bool = False) -> Iterator[Event]:
-        from .events import Thinking
         self.answered = ""
 
         def with_thinking():
+            if self.sketch is not None:
+                # A helper is being worked out: what is typed belongs to that conversation and
+                # is no chat answer, so it isn't thought about, sent to a plan by Auto, or
+                # marked as written by the model picked in the menu.
+                yield from self._reply(text)
+                return
             chosen = self.menu.chosen()
             here = not chosen or chosen.get("here")
             if chosen and chosen.get("auto"):
@@ -176,7 +221,6 @@ class FakeEngine:
         yield from self.book.record(text, with_thinking())
 
     def ask_again(self) -> Iterator[Event]:
-        from .events import Thinking
         chosen = self.menu.chosen() or {}
         cloud = (chosen.get("cloud") or {}).get("name", "")
         if not cloud:
@@ -232,7 +276,7 @@ class FakeEngine:
         yield from self.book.new()
 
     def open_chat(self, id: str) -> Iterator[Event]:
-        self.draft, self.waiting_for = {}, None
+        self.sketch = self.going_through = None
         if self.book.open(id) is None:
             yield Error("That conversation could not be found.")
         else:
@@ -244,12 +288,17 @@ class FakeEngine:
 
     def toggle_agent(self, name: str) -> Iterator[Event]:
         def flip():
-            if name not in self.switchable:
+            agent = self._find(name)
+            if agent is None or not parts.is_switchable(agent):
                 yield Error(f"{name} isn't an agent that can be switched on.")
                 return
-            self.on ^= {name}
-            state = "on. Highlight text in any program" if name in self.on else "off"
-            yield from self._say(f"{name} is {state}.")
+            self._switch(agent, name not in self.on)
+            if name not in self.on:
+                yield from self._say(f"{name} is off.")
+            elif parts.watches(agent):
+                yield from self._say(f"{name} is on. {parts.how(agent)} Only files that land from now on are handled.")
+            else:
+                yield from self._say(f"{name} is on. Highlight text in any program.")
             yield self._agent_list()
         yield from self.book.record("", flip())
 
@@ -263,17 +312,15 @@ class FakeEngine:
             yield from self.toggle_agent(name)
 
     def recipes(self) -> dict:
-        have = {name.lower() for name in self.agents}
+        have = {agent.name.lower() for agent in self.helpers}
         return {"categories": list(community.CATEGORIES),
                 "recipes": [{**asdict(recipe), "added": recipe.name.lower() in have}
                             for recipe in community.recipes(online=False)]}
 
     def add_recipe(self, id: str) -> Iterator[Event]:
         recipe = community.find(id, online=False)
-        if recipe and recipe.name not in self.agents:
-            self.agents.append(recipe.name)
-            if recipe.when == WHILE_ON:
-                self.switchable.add(recipe.name)
+        if recipe:
+            self._add(recipe.name, recipe.instruction, recipe.when, recipe.skip_language)
         yield self._agent_list()
 
     def post_agent(self, name: str, about: str, category: str, by: str = "") -> dict:
@@ -281,12 +328,11 @@ class FakeEngine:
 
     def switch_agent(self, name: str, on: bool) -> Iterator[Event]:
         recipe = community.find(store_slug(name), online=False)
-        if on and name not in self.agents and recipe:
-            self.agents.append(name)
-            if recipe.when == WHILE_ON:
-                self.switchable.add(name)
-        if name in self.switchable:
-            self.on = self.on | {name} if on else self.on - {name}
+        if on and self._find(name) is None and recipe:
+            self._add(name, recipe.instruction, recipe.when, recipe.skip_language)
+        agent = self._find(name)
+        if agent and parts.is_switchable(agent):
+            self._switch(agent, on)
         yield self._agent_list()
 
     def activity(self) -> dict[str, int]:
@@ -332,23 +378,39 @@ class FakeEngine:
     def forget_history(self) -> None:
         self._portrait = {}
 
+    # What the chores lists show, under the names the real engine has for them.
+
     def chore_agents(self) -> list[dict]:
-        return [{"name": "School files", "kind": "organizer", "on": "School files" in self.on,
-                 "how": "Watches Downloads and moves each new document into folders it names as it goes, by what's inside each one."},
-                {"name": "Korean translator", "kind": "highlight", "on": "Korean translator" in self.on,
-                 "how": "While it's on, what you highlight in any program goes through it, and the answer shows above the text."}]
+        """The helpers that work while switched on, the way the real engine lists them:
+        each line made from the card alone, whatever the helper is for."""
+        lines = []
+        for agent in self.helpers:
+            on = agent.name in self.on
+            if parts.watches(agent):
+                lines.append({"name": agent.name, "kind": "files", "on": on, "how": parts.how(agent), "now": "",
+                              "since": self.since.get(agent.name, 0) if on else 0, "left": None, "why_off": ""})
+            elif parts.is_switchable(agent):
+                lines.append({"name": agent.name, "kind": "highlight", "on": on, "how": parts.how(agent)})
+        return lines
 
-    def organizer_done(self) -> list[dict]:
-        import time
+    def chore_done(self) -> list[dict]:
+        """The jobs the made-up helpers did, oldest first, and the ones done in this practice run."""
+        return [dict(job) for job in self.jobs]
 
-        now = time.time()
-        return [{"when": now - 5400, "text": "Put Lecture 7 notes.pdf in Physics 122", "undo": True, "details": "from Downloads",
-                 "sort": "practice-1", "agent": "School files"},
-                {"when": now - 1800, "text": "Put problem-set-3.pdf in Calculus", "undo": True, "details": "from Downloads",
-                 "sort": "practice-2", "agent": "School files"}]
+    def chore_doing(self) -> str:
+        return ""  # nothing works on its own in the practice run
 
     def undo_move(self, id: str) -> int:
-        return 0
+        """Undo on a practice job. No file was moved, so only the list changes, the way the
+        real one's does: the job can't be undone twice, and putting back is a job too."""
+        job = next((job for job in self.jobs if id and job["sort"] == id and job["undo"]), None)
+        if job is None:
+            return 0
+        job["undo"] = False
+        back = self._moved.get(id, 1)
+        self.jobs.append({"when": time.time(), "text": f"Put {back} file{'' if back == 1 else 's'} back", "undo": False,
+                          "details": "", "sort": "", "agent": "", "where": ""})
+        return back
 
     def setup_state(self) -> dict:
         return self.setup.state() if self.setup else {"needed": False}
@@ -372,17 +434,34 @@ class FakeEngine:
         return {"text": f"Practice: the answer to \"{words}\" would appear here."}
 
     def details(self, name: str) -> dict:
-        starter = next((s for s in load_starters() if s.name == name), None)
-        if starter:
-            return describe(Agent(name, CUSTOM, {"instruction": starter.instruction, "when": starter.when}))
-        if name in self.switchable:
-            return describe(Agent(name, CUSTOM, {"instruction": "Translate the text into Korean."}))
-        return describe(Agent(name, "documents_qa", {"folder": "C:/Users/you/Documents/Contracts"},
-                              contents=["lease.pdf", "offer.docx", "notes.txt"]))
+        """What a helper's page shows, from its card. Empty if there's no such helper."""
+        agent = self._find(name)
+        return parts.describe(agent) if agent else {}
+
+    def _find(self, name: str) -> Agent | None:
+        return next((agent for agent in self.helpers if agent.name == name), None)
+
+    def _add(self, name: str, instruction: str, when: str, skip_language: str = "") -> Agent:
+        """A ready-made or shared helper joins the made-up ones, as the card the real app saves for it."""
+        agent = self._find(name)
+        if agent is None:
+            slots = {"instruction": instruction, "when": when, "show": BUBBLE, "keep": UNTIL_UNHIGHLIGHT, "name": name}
+            if skip_language:
+                slots["skip_language"] = skip_language
+            slots.update(parts.defaults(slots))
+            agent = Agent(name, parts.CUSTOM, slots)
+            self.helpers.append(agent)
+        return agent
+
+    def _switch(self, agent: Agent, on: bool) -> None:
+        if on and agent.name not in self.on:
+            self.since[agent.name] = time.time()
+        self.on = self.on | {agent.name} if on else self.on - {agent.name}
 
     def _agent_list(self) -> AgentList:
-        return AgentList(list(self.agents), sorted(self.switchable & set(self.agents)),
-                         sorted(self.on & set(self.agents)))
+        names = [agent.name for agent in self.helpers]
+        return AgentList(names, sorted(agent.name for agent in self.helpers if parts.is_switchable(agent)),
+                         sorted(self.on & set(names)))
 
     def delete_agent(self, name: str) -> Iterator[Event]:
         def ask():
@@ -392,8 +471,7 @@ class FakeEngine:
         yield from self.book.record("", ask())
 
     def reset(self) -> None:
-        self.draft = {}
-        self.waiting_for = None
+        self.sketch = self.going_through = None
         self.book.new()
 
     def close(self) -> None:
@@ -403,20 +481,16 @@ class FakeEngine:
 
     def _reply(self, text: str) -> Iterator[Event]:
         lowered = text.lower()
-        if self.waiting_for == "folder":
-            self.waiting_for = None
-            self.draft["folder"] = text.strip()
-            yield from self._say("Got it. Should it read every file there, or only some kinds?")
-            yield Question("file_types", "Which files should it read?", ["PDF only", "Word only", "Everything"])
+        if self.sketch is not None:
+            yield from self._design(text)
+        elif asked := next((agent for agent in self.helpers if lowered.startswith(f"{agent.name.lower()}:")), None):
+            yield from self._ask(asked, text)
         elif starter := asks_for(text):
-            if starter.name not in self.agents:
-                self.agents.append(starter.name)
-                if starter.when == WHILE_ON:
-                    self.switchable.add(starter.name)
-            if starter.when != WHILE_ON:
+            agent = self._add(starter.name, starter.instruction, starter.when, starter.skip_language)
+            if starter.when != parts.WHILE_ON:
                 yield from self._say(f"{starter.name} is ready. Start your message with its name to use it.")
             elif WANTS_ON.search(text):
-                self.on.add(starter.name)
+                self._switch(agent, True)
                 yield from self._say(f"{starter.name} is on. Highlight text in any program.")
             else:
                 yield from self._say(f"{starter.name} is ready. Use its switch to turn it on.")
@@ -438,13 +512,13 @@ class FakeEngine:
         elif lowered.startswith("ask "):
             yield from self._run_agent("Contracts helper", text)
         elif any(word in lowered for word in ("make", "create", "agent", "document", "files", "folder")):
-            self.draft = {"name": "Contracts helper" if "contract" in lowered else "Documents helper"}
-            self.waiting_for = "folder"
-            yield from self._say(
-                "I can set up an agent that reads a folder of your files and answers "
-                "questions about them, quoting where it found each answer."
-            )
-            yield Question("folder", "Which folder should it read?")
+            # A helper is asked for. Nothing is known about it yet and none is offered: the
+            # conversation starts from what the user wants, as the real one does.
+            self.sketch = {"stage": "wants", "rule": "", "looks_at": parts.INSIDE_FILE,
+                           "name": self._free_name("Downloads helper")}
+            yield Thinking("Working a helper out is a conversation. With a model, it talks it through with you; "
+                           "in the practice run a script plays it.")
+            yield Question(DESIGN, _ASKS_WHAT)
         else:
             self.answered = ("This is the fake engine talking. Real replies stream in like this, "
                              "a few words at a time, until the reply is done.")
@@ -453,8 +527,11 @@ class FakeEngine:
     def _choice(self, id: str, choice: str) -> Iterator[Event]:
         if id == "delete_agent":
             name, self.deleting = self.deleting, None
-            if choice == "Delete it" and name in self.agents:
-                self.agents.remove(name)
+            agent = self._find(name) if name else None
+            if choice == "Delete it" and agent:
+                self.helpers.remove(agent)
+                self.on.discard(name)
+                self.since.pop(name, None)
                 yield from self._say(f"Deleted {name}.")
                 yield self._agent_list()
             else:
@@ -465,22 +542,29 @@ class FakeEngine:
             yield from self._say('Saved "Highlight translator" to your ideas (1 saved).')
         elif id == "idea":
             yield from self._say("Okay, I've put that idea aside.")
-        elif id == "file_types":
-            self.draft["file_types"] = choice
-            yield self._card()
-        elif id == "card":
-            if choice == "Create it":
-                yield from self._create()
-            elif choice == "Change something":
-                yield Question("change", "What would you like to change?", ["Folder", "Which files"])
+        elif id == FIRST_PASS:
+            name, self.going_through = self.going_through, None
+            agent = self._find(name) if name else None
+            if choice == GO_THROUGH and agent:
+                yield from self._go_through(agent)
             else:
-                self.draft = {}
-                yield from self._say("Okay, I won't create it.")
-        elif id == "change" and choice == "Folder":
-            self.waiting_for = "folder"
-            yield Question("folder", "Which folder should it read instead?")
-        elif id == "change":
-            yield Question("file_types", "Which files should it read?", ["PDF only", "Word only", "Everything"])
+                yield from self._say("Okay, only new files from now on.")
+        elif id in (CARD, "looks_at") and self.sketch is None:
+            yield from self._say("That question has already been answered.")
+        elif id in (CARD, "looks_at") and self.sketch["stage"] == "wants":
+            yield from self._open_question()  # a button of an earlier conversation: the open question again
+        elif id == "looks_at" and choice in _LOOKS:
+            yield from self._looks_at(choice)
+        elif id == CARD and choice == CREATE_IT and self.sketch["stage"] in ("card", "change"):
+            yield from self._create()
+        elif id == CARD and choice == CREATE_IT:
+            yield from self._open_question()  # no card is up yet: the open question again
+        elif id == CARD and choice == "Change something":
+            # A change is said in words, not picked from a list of settings.
+            self.sketch["stage"] = "change"
+            yield Question(DESIGN, "What should I change?")
+        elif id == CARD:
+            yield from self._call_off()
         else:
             yield Error(f"Nothing is waiting for an answer to {id!r}.")
 
@@ -490,34 +574,146 @@ class FakeEngine:
             yield NoirText(word + " ")
         yield done or NoirDone()
 
+    # The practice conversation in which a helper is worked out (see _ASKS_WHAT above).
+
+    def _design(self, text: str) -> Iterator[Event]:
+        """Something was typed while the practice helper is being worked out."""
+        sketch = self.sketch
+        whole = text.strip().lower().strip("!. ")
+        typed = next((choice for choice in _LOOKS if choice.lower() == whole), None)
+        if whole in CANCEL_WORDS or (sketch["stage"] == "card" and whole in ("no", "nope")):
+            yield from self._call_off()
+        elif sketch["stage"] == "wants":
+            sketch["rule"], sketch["stage"] = _as_rule(text), "looks_at"
+            yield from self._open_question()
+        elif sketch["stage"] == "looks_at" and typed:
+            yield from self._looks_at(typed)  # typed word for word instead of clicked
+        elif sketch["stage"] == "looks_at":
+            yield Question("looks_at", _ASKS_HOW, list(_LOOKS))
+        elif sketch["stage"] == "card" and whole in CARD_YES:
+            # A plain yes is a yes to the card on screen. Only the whole message counts.
+            yield from self._create()
+        else:
+            # Anything else said at the card is a change. Here it joins the rule as typed,
+            # and the try-out and the card come again, as they do after a real change.
+            sketch["rule"], sketch["stage"] = _as_rule(f"{sketch['rule'].rstrip('. ')}. {text}"), "card"
+            yield from self._say(_CHANGED)
+            yield from self._try_out(again=True)
+            yield self._card()
+
+    def _open_question(self) -> Iterator[Event]:
+        """The question the practice conversation is waiting on."""
+        if self.sketch["stage"] == "wants":
+            yield Question(DESIGN, _ASKS_WHAT)
+        else:
+            yield Question("looks_at", _PROPOSES, list(_LOOKS))
+
+    def _looks_at(self, choice: str) -> Iterator[Event]:
+        """Nothing needed is missing any more: a few words, the try-out, then the card."""
+        self.sketch["looks_at"], self.sketch["stage"] = choice, "card"
+        yield from self._say(_SUMS_UP)
+        yield from self._try_out()
+        yield self._card()
+
+    def _try_out(self, again: bool = False) -> Iterator[Event]:
+        """A try-out as the real one reports it (designer.row_line writes each file's line),
+        on made-up files. Nothing is read or moved."""
+        rows = _practice_rows(self.sketch["looks_at"] == parts.NAME_ONLY)
+        yield Thinking("Trying it on what's in Downloads now. Nothing moves.")
+        time.sleep(self.delay * 10)
+        if again:
+            yield Result(TRY_OUT, f"Tried again on the same {len(rows)} files in Downloads. Nothing was moved.\n"
+                                  "It came out the same as before.")
+            return
+        lines = [row_line(row, parts.MOVE) for row in rows]
+        yield Result(TRY_OUT, "\n".join([f"Tried on the {len(rows)} newest files in Downloads. Nothing was moved.",
+                                         *lines]))
+
+    def _slots(self) -> dict:
+        """The practice helper as the card the real app would save: one that works on the
+        new files of a folder and moves them by the rule, into folders made as the rule
+        calls for them, since the script can't know what folders the user's rule needs."""
+        sketch = self.sketch
+        return {"when": parts.NEW_FILE, "then": parts.MOVE, "folder": f"{_HOME}/Downloads",
+                "looks_at": sketch["looks_at"], "instruction": sketch["rule"], "choices": "",
+                "open": parts.OPEN_YES, "into": "", "name": sketch["name"]}
+
     def _card(self) -> AgentCard:
-        kinds = {"PDF only": "PDF files", "Word only": "Word files"}
-        files = kinds.get(self.draft.get("file_types", ""), "all files")
-        return AgentCard(
-            id="card",
-            name=self.draft.get("name", "Documents helper"),
-            kind="Ask my documents",
-            reads=[f"{self.draft.get('folder', 'Documents')} ({files}, 23 files)"],
-            can_do=["Find and quote passages", "Answer questions about them"],
-            cannot_do=["Change, move or delete files", "Use the internet"],
-            runs_on="Qwen 3.5 4B (the built-in model, no extra memory)",
-        )
+        """The card, every line written from the slots by the code that writes the real one."""
+        slots = self._slots()
+        kind, reads, can_do, cannot_do, runs_on = parts.card(slots, _BUILT_IN)
+        return AgentCard(id=CARD, name=slots["name"], kind=kind, reads=reads, can_do=can_do, cannot_do=cannot_do,
+                         runs_on=runs_on, actions=[CREATE_IT, "Change something", "Cancel"])
 
     def _create(self) -> Iterator[Event]:
-        name = self.draft.get("name", "Documents helper")
-        for step in ("Reading 23 files...", "Building the search index...", "Trying it out..."):
-            time.sleep(self.delay * 10)
-            yield Progress(step)
-        yield Result(
-            agent=name,
-            text="Test question: what are the payment terms? Invoices are due within 30 days.",
-            sources=[Source("Desktop/Work/contract_acme.pdf", "Payment is due within thirty (30) days")],
-        )
-        if name not in self.agents:
-            self.agents.append(name)
-        self.draft = {}
-        yield from self._say(f"{name} is ready. Ask it anything about those files.")
+        """The card's button, or a plain yes at the card: the helper joins the made-up ones.
+        Then what the real engine does for one that works on a folder's new files: it is
+        switched on, and the files already there are asked about, never taken."""
+        agent = Agent(self.sketch["name"], parts.CUSTOM, self._slots())
+        self.sketch = None
+        self.helpers.append(agent)
+        self._switch(agent, True)
+        yield from self._say(f"{agent.name} is ready.")
         yield self._agent_list()
+        rows = _practice_rows(agent.slots["looks_at"] == parts.NAME_ONLY)
+        self.going_through = agent.name
+        yield Question(FIRST_PASS, "It's on: new files in Downloads are handled as they land, and everything it does "
+                                     f"shows in your chores. There are {len(rows)} files there already. Go through "
+                                     "them now?", [GO_THROUGH, ONLY_NEW])
+
+    def _call_off(self) -> Iterator[Event]:
+        self.sketch = None
+        yield from self._say("Okay, I won't create it.")
+
+    def _go_through(self, agent: Agent) -> Iterator[Event]:
+        """The first pass over the files already there, as the real one reports it: a line
+        for each file while it is looked at, then what moved and what stayed, and one job
+        in the chores list that can be undone."""
+        by_name = agent.slots.get("looks_at") == parts.NAME_ONLY
+        rows = _practice_rows(by_name)
+        doing = "Looking at the name of" if by_name else "Reading"
+        for index, row in enumerate(rows, 1):
+            time.sleep(self.delay * 10)
+            yield Progress(f"{doing} {row['name']} ({index} of {len(rows)})...")
+        moved = Counter(row["choice"] for row in rows if row["choice"])
+        # Why each file that stayed did, by the reason alone, as a real pass counts them.
+        left = [row["why"].partition(": ")[0] for row in rows if not row["choice"]]
+        count = sum(moved.values())
+        files = f"{count} file{'' if count == 1 else 's'}"
+        where = " · ".join(f"{folder} {number}" for folder, number in moved.items())
+        sort = f"practice-{len(self.jobs) + 1}"
+        self._moved[sort] = count
+        self.jobs.append({"when": time.time(), "text": f"Moved {files} from Downloads", "undo": True,
+                          "details": where, "sort": sort, "agent": agent.name, "where": ""})
+        said = f"Moved {files}: {where}."
+        if left:
+            stayed = "it was" if len(left) == 1 else "they were"
+            said += f" {len(left)} left where {stayed}: {', '.join(dict.fromkeys(left))}."
+        yield Result(agent.name, f"{said} Undo is in your chores.")
+
+    def _ask(self, agent: Agent, text: str) -> Iterator[Event]:
+        """A message that starts with a helper's name and a colon is for that helper, as in
+        the real app (a helper's page sends one from its Try this button)."""
+        if agent.blueprint == parts.DOCUMENTS_QA:
+            yield from self._run_agent(agent.name, text)
+        elif not parts.watches(agent):
+            yield Result(agent.name, "Practice: this is where its answer would come.")
+        elif agent.name in self.on:
+            # Nothing lands in the practice run, so a pass asked for finds nothing new.
+            folder = parts.shown_place(Path(agent.slots["folder"]))
+            yield Result(agent.name, f"Nothing new has landed in {folder} since {agent.name} was switched on. A file "
+                                     "is looked at a few seconds after it has finished arriving; ask again in a "
+                                     "moment, or say which file.")
+        else:
+            yield from self._say(f"{agent.name} is switched off right now, so it hasn't been watching.")
+
+    def _free_name(self, base: str) -> str:
+        """A name none of the helpers has, the way the real app makes one when none was given."""
+        names = {agent.name.lower() for agent in self.helpers}
+        name, number = base, 2
+        while name.lower() in names:
+            name, number = f"{base} {number}", number + 1
+        return name
 
     def _run_agent(self, name: str, question: str) -> Iterator[Event]:
         for step in ("Searching 23 files...", "Reading the 3 best matches..."):
@@ -532,6 +728,49 @@ class FakeEngine:
             ],
         )
         yield from self._say("Acme's contract was signed on 12 March by Dana Kim.")
+
+
+def _practice_helpers() -> list[Agent]:
+    """The helpers the practice run starts with, each a card as the real app saves one:
+    one that answers from a folder's documents, one that works on what is highlighted, and
+    one that works on a folder's new files. All made up; nothing is saved or looked at."""
+    return [
+        Agent("Contracts helper", parts.DOCUMENTS_QA, {"folder": f"{_HOME}/Documents/Contracts", "name": "Contracts helper"},
+              contents=["lease.pdf", "offer.docx", "notes.txt"]),
+        Agent("Korean translator", parts.CUSTOM, {
+            "when": parts.WHILE_ON, "then": parts.SHOW, "instruction": "Translate the text into Korean.",
+            "show": BUBBLE, "keep": UNTIL_UNHIGHLIGHT, "skip_language": "Korean", "name": "Korean translator"}),
+        Agent("Home papers", parts.CUSTOM, {
+            "when": parts.NEW_FILE, "then": parts.MOVE, "folder": f"{_HOME}/Downloads", "looks_at": parts.INSIDE_FILE,
+            "instruction": "Put manuals and warranties in Manuals, and anything about a trip in Trips. "
+                           "Leave everything else where it is.",
+            "choices": "Manuals, Trips", "open": parts.OPEN_NO, "into": "", "name": "Home papers"}),
+    ]
+
+
+def _practice_jobs(now: float, agent: str) -> list[dict]:
+    """Two jobs the made-up helper for new files did earlier, as the real record keeps them."""
+    def job(number, minutes_ago, file, folder):
+        return {"when": now - minutes_ago * 60, "text": f"Put {file} in {folder}", "undo": True,
+                "details": f"from Downloads · The rule puts it in {folder}", "sort": f"practice-{number}",
+                "agent": agent, "where": f"{_HOME}/Downloads/{folder}"}
+
+    return [job(1, 90, "dishwasher-manual.pdf", "Manuals"), job(2, 30, "ferry-booking.pdf", "Trips")]
+
+
+def _practice_rows(by_name: bool) -> list[dict]:
+    """A try-out's rows as the real one gets them (folderwatch.rehearse), for three made-up
+    files: one that would go into a new folder, one into the folder that makes, and one
+    that would stay, for the reason the real record gives."""
+    stays = f"{LEFT_BY_RULE}: a program" if by_name else NO_TEXT
+    return [{"name": "practice-letter.pdf", "choice": "Practice folder", "new": True, "what": "a made-up letter"},
+            {"name": "practice-list.txt", "choice": "Practice folder", "new": False, "what": "a made-up list"},
+            {"name": "practice-setup.exe", "choice": "", "new": False, "what": "", "why": stays}]
+
+
+def _as_rule(text: str) -> str:
+    """What was typed, as a rule is kept: one paragraph, no longer than a rule may be."""
+    return " ".join(text.split())[:parts.MAX_RULE]
 
 
 def _practice_portrait() -> dict:

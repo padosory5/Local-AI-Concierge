@@ -1,6 +1,6 @@
 import pytest
 
-from concierge.catalog import load_catalog, recommend
+from concierge.catalog import load_catalog, load_designers, recommend
 from concierge.hardware import GPU, HardwareReport
 
 
@@ -72,6 +72,16 @@ def test_no_disk_space_is_explained():
     rec = recommend(machine(gpus=[nvidia(16)], disk=1.0))
     assert rec.model is None
     assert "disk" in rec.reason
+
+
+def test_the_local_models_that_may_design_are_listed_with_what_they_take():
+    designers = load_designers()
+    assert designers and all(model.tag and model.name and model.memory_gb > 0 for model in designers)
+    # Its figure is the card's own, never Ollama's: the rule for every model on the lists.
+    assert all(model.measured for model in designers)
+    # Only one that passed designer_eval is on the list, and its note says what it passed.
+    assert all("passed designer_eval" in model.notes.lower() and "before trusting" not in model.notes
+               for model in designers)
 
 
 def test_catalog_is_ordered_best_first_by_memory():

@@ -60,23 +60,39 @@ def test_the_users_own_words_change_how_long_it_stays(translator):
     assert b.ollama.asked == 0  # found in code
 
     events = list(b.choose(card.id, "Save changes"))
-    assert events[0].text.startswith("Saved. Korean translator now:")
+    assert events[0].text == "Saved the changes to Korean translator."
     assert isinstance(events[-1], AgentList)
     saved = store.find_agent("Korean translator")
     assert saved.slots["keep"] == UNTIL_UNHIGHLIGHT and saved.slots["instruction"] == "Translate the text into Korean."
+    # What it made is handed to the engine once, with whether it was a change.
+    assert b.take_created().name == "Korean translator" and b.edited and b.take_created() is None
     assert [a.name for a in store.list_agents()] == ["Korean translator"]  # no "Korean translator 2"
 
 
 def test_change_the_language_rewrites_what_it_does(translator):
     model = FakeModel(rewrite="Translate the text into Japanese.")
     card = list(builder(model).edit(translator, "make it Japanese"))[-1]
-    assert card.can_do[0] == "Does: Translate the text into Japanese."
+    assert card.can_do[0] == "Rule: Translate the text into Japanese."
     assert card.name == "Korean translator"  # a name is never changed behind the user's back
 
 
 def test_rename(translator):
-    card = list(builder().edit(translator, "rename it to My translator"))[-1]
+    b = builder()
+    card = list(b.edit(translator, "rename it to My translator"))[-1]
     assert card.name == "My translator"
+    list(b.choose(card.id, "Save changes"))
+    assert [a.name for a in store.list_agents()] == ["My translator"]
+    assert b.replaced == "Korean translator"  # the engine lets go of whatever ran under the old name
+
+
+def test_an_agent_that_works_on_a_folder_is_not_changed_the_plain_way(tmp_path):
+    from concierge.agents import parts
+
+    watcher = store.Agent("Paper sorter", parts.CUSTOM, {"when": parts.NEW_FILE, "then": parts.MOVE,
+                                                         "folder": str(tmp_path), "instruction": "x", "name": "Paper sorter"})
+    b = builder()
+    events = list(b.edit(watcher, "make it work on what I highlight"))  # words that would set another card's WHEN
+    assert not b.active and "don't know how to change Paper sorter" in events[0].text
 
 
 def test_model_picks_a_setting_when_code_cannot(translator):

@@ -52,9 +52,8 @@ EDGE_GAP = 16  # between the see-through window and the edge of the screen
 # as the screen's work area less a gap, see-through with the desktop blurred behind it.
 DRAWER_WIDTH = 380
 DRAWER_GAP = 16  # from the top of the work area, in logical pixels
-MOVE_NOTE_SECONDS = 12  # how long "Put practice5.py in College\CSE163 · Undo" stays by the circle
-STAY_NOTE_SECONDS = 8  # how long "output.pdf stayed in Downloads" and its reasons stay
-ASK_NOTE_SECONDS = 30  # how long "hw3.xlsx looks like CSE163 material. Sort .xlsx files like it?" stays
+MOVE_NOTE_SECONDS = 12  # how long the note about a file a helper moved or wrote about stays by the circle
+STAY_NOTE_SECONDS = 8  # how long the note about a file a helper looked at and left, with why, stays
 DRAWER_HEIGHT_SHARE = 0.62  # of the work area: tall enough for a day's chores, not a tower
 DRAWER_MAX_HEIGHT, DRAWER_MIN_HEIGHT = 680, 200
 DRAWER_SLIDE_STEPS, DRAWER_SLIDE_SECONDS = 14, 0.01
@@ -157,35 +156,30 @@ class ChatHub:
         call = getattr(getattr(self._engine, "book", None), name, None)
         return call(*args) if call else default
 
+    # Helpers that work on a folder's new files do so on a thread of their own, outside
+    # any conversation (folderwatch.py), so what they do reaches the windows through these
+    # four, not through events. The practice engine runs none: nothing is hooked there.
+
     def on_chores(self, callback) -> None:
-        """Told whenever an organizer did something, so the lists redraw."""
-        organizer = getattr(self._engine, "organizer", None)
-        if organizer is not None:
-            organizer.changed = callback
+        """Told whenever such a helper noticed or did something, so the lists redraw."""
+        self._hook("changed", callback)
 
     def on_move(self, callback) -> None:
-        """Told of each file an organizer moved on its own, for a small note on the screen."""
-        organizer = getattr(self._engine, "organizer", None)
-        if organizer is not None:
-            organizer.moved = callback
-
-    def on_ask(self, callback) -> None:
-        """Told of each question an organizer has (a new kind of file), for a note on the screen."""
-        organizer = getattr(self._engine, "organizer", None)
-        if organizer is not None:
-            organizer.asked = callback
+        """Told of each file such a helper moved or wrote about on its own, for a small note on the screen."""
+        self._hook("moved", callback)
 
     def on_working(self, callback) -> None:
-        """Told when an organizer starts and finishes reading a file, for the circle."""
-        organizer = getattr(self._engine, "organizer", None)
-        if organizer is not None:
-            organizer.working = callback
+        """Told when such a helper has a file in hand and when it has none again, for the circle."""
+        self._hook("working", callback)
 
     def on_stayed(self, callback) -> None:
-        """Told of each file an organizer read and left, with its steps, for the log by the circle."""
-        organizer = getattr(self._engine, "organizer", None)
-        if organizer is not None:
-            organizer.stayed = callback
+        """Told of each file such a helper looked at and left, with its steps, for the log by the circle."""
+        self._hook("stayed", callback)
+
+    def _hook(self, name: str, callback) -> None:
+        watching = getattr(self._engine, "folderwatch", None)
+        if watching is not None:
+            setattr(watching, name, callback)
 
     def latest(self, kind: str) -> dict:
         """The last event of a remembered kind (an AgentList, say), for lists drawn outside the chat."""
@@ -290,34 +284,32 @@ class WatchBridge(ChatBridge):
         self._overlay = overlay
 
     def today(self) -> dict:
-        """What the watch noticed and is doing, plus an organizer's question when the watch
-        has none: both windows draw it the same way, with Yes and No."""
+        """What the watch noticed and is doing. When the watch has no job running, a helper
+        with one of a folder's files in hand is the work in progress: the pages show it
+        where they show the watch's, so the user can tell it is at it without asking."""
         watch = self._overlay.watch
         today = dict(watch.today()) if watch else {}
-        if not today.get("noticed"):
-            pending = self._hub.ask("organizer_questions", default=[]) or []
-            if pending:
-                today["noticed"] = {"id": pending[0]["id"], "text": pending[0]["text"]}
+        if not today.get("working"):
+            doing = self._hub.ask("chore_doing", default="") or ""
+            if doing:
+                today["working"] = doing
         return today
 
     def chores(self) -> dict:
         """The chores list (chores.py): every chore, on or off, and the jobs done lately, by day."""
         watch = self._overlay.watch
-        done = (watch.done_lately() if watch else []) + list(self._hub.ask("organizer_done", default=[]) or [])
+        done = (watch.done_lately() if watch else []) + list(self._hub.ask("chore_done", default=[]) or [])
         return chores.listing(watch.today() if watch else {}, done, self._hub.ask("chore_agents", default=[]) or [],
                               self._overlay.bookings.listing())
 
     def answer(self, which: str, yes: bool) -> None:
-        if which.startswith(("kind:", "subject:")):  # an organizer's question: a kind of file, a new course
-            self._hub.ask("organizer_answer", which, bool(yes), default=0)
-            self._overlay.refresh_mini()
-            return
+        """Yes or No to something the watch noticed. Only the watch asks outside the chat."""
         if self._overlay.watch:
             self._overlay.watch.answer(which, bool(yes))
 
     def undo_sorting(self, id: str = "") -> None:
         if id and self._hub.ask("undo_move", id, default=0):
-            return  # an organizer's move, put back by the engine
+            return  # a helper's job, put back by the engine
         if self._overlay.watch:
             self._overlay.watch.undo(id or None)
 
@@ -615,6 +607,20 @@ class SpotBridge:
         self._overlay.hide_spot()
 
 
+def move_lines(move: dict) -> list[str]:
+    """The note by the circle about a job a helper did on its own: first the record's own
+    line, the one the chores list shows for it, then what was read and decided, in small
+    lines. The first line is never written here: this window once said "Put ... in ..." for
+    every job, which for a note written about a file named the notes file as a folder."""
+    # The first step only says the file was noticed, which the record's line makes plain.
+    return [move["text"], *move.get("steps", [])[1:]]
+
+
+def stay_lines(report: dict) -> list[str]:
+    """The note by the circle about a file a helper looked at and left where it was."""
+    return [f"{report['name']} stayed in {Path(report['where']).name}", *report.get("steps", [])[1:]]
+
+
 def pasted_file(text: str) -> Path:
     """A long paste, kept as a file so it goes to it like anything added with +. Each
     gets a folder of its own, so every one can keep the plain name "Pasted text"."""
@@ -827,7 +833,6 @@ class Overlay:
         self.bookings.start(self._run_booking, self._bookings_changed)
         self.hub.on_chores(self._chores_changed)
         self.hub.on_move(self._moved)
-        self.hub.on_ask(self._asked)
         self.hub.on_working(self._working)
         self.hub.on_stayed(self._stayed)
         if self._settings_path:  # the practice run looks at no real downloads
@@ -872,42 +877,20 @@ class Overlay:
             self._glass.run_js("window.app && app.refresh()")
 
     def refresh_mini(self) -> None:
-        """The circle's state: a line going round while a job runs, rings while a question
-        waits (the watch's or an organizer's), dots otherwise."""
+        """The circle's state: a line going round while a job runs (the watch's, or a helper
+        with a file in hand), rings while a question of the watch's waits, dots otherwise."""
         from .mini import ASKING, IDLE, WORKING
 
         if not self._mini or self._quitting:
             return
-        working = bool(self.watch and self.watch.today().get("working"))
-        asking = bool(self.watch and self.watch.asking) or bool(self.hub.ask("organizer_questions", default=[]))
+        working = bool(self.watch and self.watch.today().get("working")) or bool(self.hub.ask("chore_doing", default=""))
+        asking = bool(self.watch and self.watch.asking)
         self._mini.set_state(WORKING if working else ASKING if asking else IDLE)
 
-    def _asked(self, question: dict) -> None:
-        """An organizer wants a yes or no about a kind of file: a note by the circle asks, the
-        same one as the watch's questions; left alone, the question waits in both windows."""
-        if sys.platform != "win32" or self._quitting:
-            return
-        threading.Thread(target=self._show_question, args=(question,), name="ask-note", daemon=True).start()
-
-    def _show_question(self, question: dict) -> None:
-        from ..quick import note
-        from ..quick.glow import full_screen_in_use
-
-        if full_screen_in_use():
-            return
-        with self._note_lock:
-            if self._quitting:
-                return
-            yes = f"Call it {question['guess']}" if question.get("kind") == "subject" and question.get("guess") else "Yes"
-            answer = note.ask(question["text"], yes, "No", self._note_cancel, seconds=ASK_NOTE_SECONDS)
-        if answer in (yes, "No"):
-            self.hub.ask("organizer_answer", question["id"], answer == yes, default=0)
-            self._chores_changed()
-
     def _moved(self, move: dict) -> None:
-        """An organizer moved a file while the user worked: a small note by the circle says
-        which and where, with Undo, for a few seconds (quick/note.py, the same note as its
-        questions). Windows for now, like the note; never during a game, a video or a slideshow."""
+        """A helper moved a file, or wrote about one, while the user worked: a small note by
+        the circle says so for a few seconds, with Undo when it is a move (quick/note.py).
+        Windows for now, like the note; never during a game, a video or a slideshow."""
         if sys.platform != "win32" or self._quitting:
             return
         threading.Thread(target=self._show_move, args=(move,), name="move-note", daemon=True).start()
@@ -918,19 +901,18 @@ class Overlay:
 
         if full_screen_in_use():
             return
-        with self._note_lock:  # a second move waits its turn, never two notes at once
+        with self._note_lock:  # a second job waits its turn, never two notes at once
             if self._quitting:
                 return
-            lines = [f"Put {move['name']} in {move['folder']}", *move.get("steps", [])[1:]]
-            answer = note.tell(lines, "Undo" if move.get("sort") else None, "OK", self._note_cancel,
+            answer = note.tell(move_lines(move), "Undo" if move.get("sort") else None, "OK", self._note_cancel,
                                seconds=MOVE_NOTE_SECONDS)
         if answer == "Undo" and move.get("sort"):
             self.hub.ask("undo_move", move["sort"], default=0)
             self._chores_changed()
 
     def _working(self, on: bool) -> None:
-        """An organizer is reading and judging a file: the circle blinks once when it notices
-        it and runs its line while it works, then goes back to what it showed before."""
+        """A helper has one of a folder's files in hand: the circle blinks once when it
+        notices it and runs its line while it works, then goes back to what it showed before."""
         if self._quitting or not self._mini:
             return
         from .mini import WORKING
@@ -942,7 +924,7 @@ class Overlay:
             self.refresh_mini()
 
     def _stayed(self, report: dict) -> None:
-        """An organizer read a file and left it: the small log by the circle says why."""
+        """A helper looked at a file and left it: the small log by the circle says why."""
         if sys.platform != "win32" or self._quitting:
             return
         threading.Thread(target=self._show_stayed, args=(report,), name="stay-note", daemon=True).start()
@@ -956,8 +938,7 @@ class Overlay:
         with self._note_lock:
             if self._quitting:
                 return
-            lines = [f"{report['name']} stayed in {Path(report['where']).name}", *report.get("steps", [])[1:]]
-            note.tell(lines, None, "OK", self._note_cancel, seconds=STAY_NOTE_SECONDS)
+            note.tell(stay_lines(report), None, "OK", self._note_cancel, seconds=STAY_NOTE_SECONDS)
 
     def _bookings_changed(self) -> None:
         if not self._quitting:

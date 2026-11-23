@@ -104,21 +104,29 @@ helpers:
     languages: [en, ko, ja, zh]
     notes: Speech to text. Runs on the processor too, a little slower than real time.
 
-# Local models that may talk an agent's setup through with the user (agents/conductor.py):
-# the conductor reads the conversation and fills a form each turn, and code checks it.
-# Only models that passed `python -m concierge.conductor_eval <tag>` belong here, best
-# first. Size doesn't qualify one: on the same setup qwen3.5:9b switched the agent on with
-# no yes, and qwen3.6:35b-a3b wanted to move bank statements. One is used only when it is
-# installed and fits beside Noir's own model (catalog.helper_room); otherwise the plain
-# questions are asked. Same fields as above.
+# Local models that may work an agent out with the user (agents/designer.py): the design
+# model reads the conversation and fills one form each turn, and code checks every value.
+# Only models that passed `python -m concierge.designer_eval <tag>` belong here, best
+# first. Size doesn't qualify one: in the first probe of such a conversation (10 Nov 2026)
+# qwen3.5:9b switched the agent on with no yes, and qwen3.6:35b-a3b said it would move
+# files nobody had asked it to. A plan or key model the user picked designs before any of
+# these; one of these is used only when it is installed and fits beside Noir's own model
+# (catalog.helper_room); with neither, nobody designs. Same fields as above.
 
-conductors:
+designers:
   - tag: gemma4:12b
     name: Gemma 4 12B
     download_gb: 8.0
-    memory_gb: 9.7  # RTX 5080; Ollama claimed 1.45
+    # RTX 5080; Ollama claimed 1.45. With the 8,192 of room a designing conversation is
+    # given (designer.DESIGN_CONTEXT) the card showed 9.2 on 13 Nov 2026, and about the
+    # same over the desktop's own in the three plays of 22 Nov.
+    memory_gb: 9.7
     measured: true
     languages: [en, ko]
     notes: >-
-      Passed conductor_eval on 10 Nov 2026, 50 of 50 three runs in a row; one of its
-      seven setups is in Korean, the rest in English.
+      Passed designer_eval on 22 Nov 2026, thirteen conversations a play, one of them in
+      Korean: 175, 174 and 175 of 175 checks in three whole plays (the one failure was the
+      built-in chat model's own sum in an aside, not the designing), then, after the last
+      fixes, 166 of 168 (a fix that asked "Which one?" again after every yes, put right)
+      and 177 of 177. 7.4 to 7.8 s a turn on average; the fullest form held 5,805 of the
+      8,192 tokens it is given; never in memory together with Noir's own model.

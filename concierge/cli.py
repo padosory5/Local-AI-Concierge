@@ -139,7 +139,7 @@ def cmd_chat(setup_first: bool) -> int:
 def _chat_loop(engine: NoirEngine, screen: TerminalScreen) -> int:
     print("Chat with Noir. Type /new for a new chat (this one is saved), /think to see its")
     print("thinking (slower), /exit to leave.")
-    print('Try: "make an agent for my Documents folder".\n')
+    print('Try: "make me a helper", and say what you would like it to do.\n')
     think = False
     while True:
         try:

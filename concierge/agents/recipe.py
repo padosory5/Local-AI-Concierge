@@ -1,27 +1,28 @@
-"""Agents made from parts: when it works, what it works on, what it does with
-the text, and how it shows the result.
+"""Agents that work on text: one instruction, done on whatever text comes in.
 
-There is no code per kind of agent. What an agent does is one instruction
-Noir writes ("Explain this English word in simple Korean, with one
-example."), and run_instruction() applies it to whatever text comes in,
-whether highlighted (quick/agents.py) or sent in the chat (engine.py). The
-model writes and rewrites instructions; code decides everything else.
+There is no code per kind of agent. What an agent does with a piece of text is one
+instruction in plain words ("Explain this English word in simple Korean, with one
+example."), and run_instruction() applies it to whatever text comes in, whether
+highlighted (quick/agents.py) or sent in the chat (engine.py). What an agent can be made
+of, and how one is shown, is the catalog's (parts.py); this file is what is left for
+text: running an instruction, and writing or rewriting one on a computer where no model
+can talk an agent through (builder.py). The model writes and rewrites instructions; code
+decides everything else.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
 
 from ..noir import KEEP_ALIVE
 from ..ollama import Ollama, OllamaError
 from ..quick.agents import BOTH, BUBBLE, CLIPBOARD, FEW_SECONDS, UNTIL_UNHIGHLIGHT
-from ..quick.translate import language_in
-from . import store
-from .blueprint import Blueprint
+from . import parts
+# The texts an agent is saved with, and what one is shown and tried with, are the
+# catalog's. They are passed on from here because agents, starters and shared recipes have
+# always taken them from this file.
+from .parts import CUSTOM, IN_CHAT, SAMPLE_QUESTION, SAMPLE_TEXT, WHILE_ON, describe, is_switchable  # noqa: F401
 
-CUSTOM = "custom"
-WHILE_ON, IN_CHAT = "While it's switched on", "When you ask in the chat"
 MAX_INSTRUCTION = 300
 
 # What words mean for an agent's settings, decided in code. Users say these
@@ -35,56 +36,19 @@ STAY_WORDS = re.compile(r"\bstay|until i unhighlight|disappear|vanish|keep it (u
 SHORT_WORDS = re.compile(r"few seconds|after a (few|couple)|go away (by itself|on its own)|quickly", re.IGNORECASE)
 # An instruction that describes when or where instead of what to do with the
 # text ("When I highlight a sentence it should display it above").
-# What an agent can be tried with on its page.
-SAMPLE_TEXT = "The committee reached a quorum, so the motion carried."
-SAMPLE_QUESTION = "What are these files about?"
 MECHANICS = re.compile(r"highlight|display|above|bubble|\bwhen i\b|\bwhenever\b|clipboard|하이라이트", re.IGNORECASE)
 
-# Worked examples, because small models follow examples far better than rules.
+# Worked examples, because small models follow examples far better than rules. None names
+# a language or one of the ready-made helpers: a small model copies what it is shown, and
+# with a Korean translator first among them, a request that named no language could come
+# back translating into Korean.
 _EXAMPLES = """Examples:
-"translate what I highlight into Korean" ->
-{"name": "Korean translator", "instruction": "Translate the text into Korean.", "example": "The meeting moved to Thursday at 3 pm."}
-"explain hard English words I highlight, simply, in Korean" ->
-{"name": "Word explainer", "instruction": "Explain what this English word or phrase means in simple Korean, in one or two sentences, with one short example sentence.", "example": "serendipity"}
-"fix the grammar of what I write" ->
-{"name": "Grammar fixer", "instruction": "Correct the grammar and spelling of the text. Keep its meaning and tone.", "example": "me and him goes to the store yesterday"}"""
-
-
-def describe(agent) -> dict:
-    """What an agent's page shows, in the user's words: what it does, how it's
-    set up, and something to try it with."""
-    slots = agent.slots
-    if agent.blueprint == "documents_qa":
-        files = len(agent.contents)
-        return {"does": "Answers questions about your files, and shows which file each answer came from.",
-                "facts": [["Reads", Path(slots.get("folder", "")).name or "Your files"],
-                          ["Knows", f"{files} file{'' if files == 1 else 's'}"],
-                          ["How it answers", "In the chat"], ["Runs on", "This computer"]],
-                "sample": SAMPLE_QUESTION}
-    if agent.blueprint == "organizer":
-        return {"does": "Puts each new file in the folder it watches into a folder by what the file is about, and "
-                        "asks you once about a kind of file or a course it hasn't seen before.",
-                "facts": [["Watches", Path(slots.get("folder", "")).name or "a folder"],
-                          ["Tells files apart by", slots.get("by", "")], ["Folders", slots.get("groups", "")],
-                          ["Puts the folders in", slots.get("into") or "the watched folder"],
-                          ["Runs on", "This computer"]],
-                "sample": "organize it"}
-    if agent.blueprint == "summarizer":
-        notes = slots.get("notes") or str(Path(slots.get("folder", "")) / "Summaries.md")
-        return {"does": "Writes a few lines about each new document in the folder it watches into a notes file.",
-                "facts": [["Watches", Path(slots.get("folder", "")).name or "a folder"],
-                          ["Keeps the summaries in", notes], ["How much it writes", slots.get("length", "Three short lines")],
-                          ["Runs on", "This computer"]],
-                "sample": "sum up what landed"}
-    when = slots.get("when", WHILE_ON)
-    facts = [["When it works", when]]
-    if when == WHILE_ON:
-        facts += [["How it answers", slots.get("show", "A bubble above the text")],
-                  ["How long it stays", slots.get("keep", "Until you unhighlight the text")]]
-    else:
-        facts.append(["How it answers", "In the chat"])
-    facts.append(["Runs on", "This computer"])
-    return {"does": slots.get("instruction", ""), "facts": facts, "sample": SAMPLE_TEXT}
+"make what I write sound more polite" ->
+{"name": "Polite rewriter", "instruction": "Rewrite the text so it sounds polite and friendly. Keep its meaning.", "example": "send me the report now"}
+"turn what I highlight into a short to-do list" ->
+{"name": "To-do maker", "instruction": "Turn the text into a short list of the things to do, one on each line.", "example": "call the bank on Monday and pay the gas bill before Friday"}
+"spell out the short forms in what I paste" ->
+{"name": "Short form expander", "instruction": "Write the text again with every abbreviation spelled out in full. Change nothing else.", "example": "Pls send the ETA asap."}"""
 
 
 def run_instruction(ollama: Ollama, model: str, instruction: str, text: str,
@@ -95,14 +59,6 @@ def run_instruction(ollama: Ollama, model: str, instruction: str, text: str,
     messages = [{"role": "system", "content": system}, {"role": "user", "content": text}]
     chunks = ollama.chat(model, messages, think=think, options={"temperature": 0.3}, keep_alive=KEEP_ALIVE)
     return "".join(chunks).strip()
-
-
-def target_language(instruction: str) -> str | None:
-    """For a translating agent, the language it translates into; else None.
-    Used to skip text that is already in that language."""
-    if not re.search(r"translat|번역", instruction, re.IGNORECASE):
-        return None
-    return language_in(instruction, target_only=True) or language_in(instruction)
 
 
 def write_recipe(ollama: Ollama, model: str, request: str, think: bool | None = None) -> dict:
@@ -184,45 +140,12 @@ def settings_from_words(text: str) -> dict:
     return settings
 
 
-def needs_language(instruction: str) -> bool:
-    """A translating instruction that does not say into which language."""
-    return bool(re.search(r"translat|번역", instruction, re.IGNORECASE)) and target_language(instruction) is None
-
-
-def with_language(instruction: str, language: str) -> str:
-    """The instruction with its target language filled in."""
-    if re.match(r"\s*translate", instruction, re.IGNORECASE):
-        return f"Translate the text into {language}."
-    return f"{instruction.rstrip('.')}. Reply in {language}."
-
-
-def is_switchable(agent: store.Agent, blueprints: dict[str, Blueprint]) -> bool:
-    """Works outside the chat while switched on (rather than being asked in it)."""
-    if agent.blueprint == CUSTOM:
-        return agent.slots.get("when", WHILE_ON) == WHILE_ON
-    blueprint = blueprints.get(agent.blueprint)
-    return bool(blueprint and blueprint.switchable)
-
-
 def migrate() -> list[str]:
-    """Turn agents of the retired "Highlight translator" blueprint into agents
-    made from parts, keeping their settings. Returns the names changed."""
-    changed = []
-    for agent in store.list_agents():
-        if agent.blueprint != "translate_selection":
-            continue
-        slots = agent.slots
-        agent.blueprint = CUSTOM
-        agent.slots = {
-            "instruction": f"Translate the text into {slots.get('language', 'English')}.",
-            "when": WHILE_ON,
-            "show": slots.get("show", "A bubble above the text"),
-            "keep": slots.get("keep", "Until you unhighlight the text"),
-            "name": agent.name,
-        }
-        store.save(agent)
-        changed.append(agent.name)
-    return changed
+    """Turn the agents of older versions into cards, keeping their settings. Every kind
+    there ever was is known in one place only, the catalog (parts.migrate); this passes it
+    on, because the engine has always asked here. Returns the names of the agents that
+    became cards. (Called at startup, before the agents that were on are brought back.)"""
+    return parts.migrate()
 
 
 def _clean(value, limit: int) -> str:

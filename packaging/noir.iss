@@ -38,6 +38,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Put Noir on the desktop"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
+[InstallDelete]
+; The program's own files go before the new ones come in. Installed over an older version,
+; Inno Setup leaves every file the new one no longer ships, and the app reads every
+; blueprint it finds: two that a version took out stopped the next one from starting.
+; The data folder is elsewhere and is never touched.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "{#Source}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 

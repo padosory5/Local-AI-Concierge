@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from concierge.engine import WANTS_ORGANIZE, WANTS_STATUS, WANTS_WHERE
+from concierge.engine import WANTS_PASS, WANTS_STATUS, WANTS_WHERE
 from concierge.places import known_folder
 
 
@@ -33,6 +33,7 @@ def test_the_questions_about_chores_that_code_answers():
     assert WANTS_STATUS.search("did you move anything")
     assert WANTS_STATUS.search("which folders did you make")
     assert not WANTS_STATUS.search("what is the capital of France")
-    assert WANTS_ORGANIZE.search("I just downloaded a file")
-    assert WANTS_ORGANIZE.search("organize it")
-    assert not WANTS_ORGANIZE.search("how are you")
+    assert WANTS_PASS.search("I just downloaded a file")
+    assert WANTS_PASS.search("organize it")
+    assert WANTS_PASS.search("go through the new files")  # what an agent's page offers to try it with (parts.SAMPLE_FILES)
+    assert not WANTS_PASS.search("how are you")
